@@ -41,6 +41,26 @@ void NLJoinTranslator::probe(::mlir::OpBuilder& builder, mlir::relalg::Translato
       ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(loc, forOp2.getInductionVar());
       orderedAttributesLeft.setValuesForColumns(context, scope, unpacked.getResults());
+
+      // Debug: print all column values from left side
+      for (size_t i = 0; i < unpacked.getNumResults() - (impl->markable ? 1 : 0); i++) {
+         auto val = unpacked.getResult(i);
+         if (auto nullableType = val.getType().dyn_cast<mlir::db::NullableType>()) {
+            auto innerType = nullableType.cast<mlir::db::NullableType>().getType();
+            auto value = builder2.create<mlir::db::NullableGetVal>(loc, innerType, val);
+            auto isNull = builder2.create<mlir::db::IsNullOp>(loc, builder2.getI1Type(), val);
+
+            // Only extend if not already i32
+            ::mlir::Value extValue = value;
+            if (innerType.getIntOrFloatBitWidth() != 32) {
+               extValue = builder2.create<mlir::arith::ExtSIOp>(loc, builder2.getI32Type(), value);
+            }
+
+            auto extNull = builder2.create<mlir::arith::ExtUIOp>(loc, builder2.getI32Type(), isNull);
+            builder2.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintNullable", mlir::ValueRange{extValue, extNull});
+         }
+      }
+
       Value markerLeft = impl->markable ? unpacked.getResult(unpacked.getNumResults() - 1) : Value();
       Value matched = evaluatePredicate(context, builder2, scope);
       impl->handleLookup(matched, markerLeft, context, builder2);

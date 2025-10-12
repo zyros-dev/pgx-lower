@@ -49,14 +49,14 @@ FROM employees e
          LEFT JOIN departments d ON e.dept_id = d.dept_id
 ORDER BY e.emp_id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- emp_name | salary |  dept_name  |  location  
+ emp_name | salary |  dept_name  |  location
 ----------+--------+-------------+------------
  Alice    |  75000 | Engineering | Building A
- Carol    |  80000 | Engineering | Building A
  Bob      |  65000 | Sales       | Building B
+ Carol    |  80000 | Engineering | Building A
  David    |  70000 | HR          | Building C
- Eve      |  60000 |             | 
- Frank    |  72000 |             | 
+ Eve      |  60000 |             |
+ Frank    |  72000 |             |
 (6 rows)
 
 SELECT e.emp_name, e.salary, d.dept_name, d.location
@@ -64,7 +64,7 @@ FROM employees e
          RIGHT JOIN departments d ON e.dept_id = d.dept_id
 ORDER BY d.dept_id, e.emp_id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- emp_name | salary |  dept_name  |  location  
+ emp_name | salary |  dept_name  |  location
 ----------+--------+-------------+------------
  Alice    |  75000 | Engineering | Building A
  Carol    |  80000 | Engineering | Building A
@@ -80,7 +80,7 @@ WHERE EXISTS (SELECT 1
               WHERE d.dept_id = e.dept_id)
 ORDER BY e.emp_id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- emp_name | salary | dept_id 
+ emp_name | salary | dept_id
 ----------+--------+---------
  Alice    |  75000 |      10
  Bob      |  65000 |      20

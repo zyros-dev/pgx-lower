@@ -11,6 +11,7 @@ extern "C" {
 #include "utils/array.h"
 #include "utils/syscache.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "fmgr.h"
 }
 
@@ -18,6 +19,7 @@ extern "C" {
 #include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/utility/logging.h"
 #include "pgx-lower/runtime/tuple_access.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -132,18 +134,222 @@ auto processCountStarAggregate(mlir::OpBuilder& aggr_builder, const mlir::Locati
 
 auto createAggregateOperation(mlir::OpBuilder& aggr_builder, const mlir::Location loc, mlir::Type resultType,
                               mlir::relalg::AggrFunc aggrFuncEnum, mlir::Value relation,
-                              mlir::relalg::ColumnRefAttr columnRef, const bool isDistinct) -> mlir::Value {
+                              mlir::relalg::ColumnRefAttr columnRef, const bool isDistinct,
+                              const TranslationResult* childResult = nullptr) -> mlir::Value {
     if (isDistinct) {
+        mlir::IntegerAttr specPtrAttr;
+        if (childResult) {
+            auto colName = columnRef.getName();
+            std::string tableName = colName.getRootReference().str();
+            std::string columnName = colName.getLeafReference().str();
+
+            for (const auto& col : childResult->columns) {
+                if (col.table_name == tableName && col.column_name == columnName) {
+                    MemoryContext oldContext = MemoryContextSwitchTo(CurTransactionContext);
+                    auto* spec = static_cast<runtime::HashtableSpecification*>(
+                        palloc0(sizeof(runtime::HashtableSpecification)));
+                    spec->num_key_columns = 1;
+                    spec->num_value_columns = 0;
+                    spec->key_columns = static_cast<runtime::HashtableColumnInfo*>(
+                        palloc0(sizeof(runtime::HashtableColumnInfo)));
+                    spec->key_columns[0].table_name = pstrdup(tableName.c_str());
+                    spec->key_columns[0].column_name = pstrdup(columnName.c_str());
+                    spec->key_columns[0].type_oid = col.type_oid;
+                    spec->key_columns[0].typmod = col.typmod;
+                    spec->key_columns[0].is_nullable = col.nullable;
+                    MemoryContextSwitchTo(oldContext);
+
+                    specPtrAttr = aggr_builder.getIntegerAttr(
+                        aggr_builder.getIntegerType(64), reinterpret_cast<uint64_t>(spec));
+
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Created DISTINCT spec for %s.%s (oid=%u, nullable=%d)",
+                            tableName.c_str(), columnName.c_str(), col.type_oid, col.nullable);
+                    break;
+                }
+            }
+        }
+
         auto distinctStream = aggr_builder.create<mlir::relalg::ProjectionOp>(
             loc, mlir::relalg::TupleStreamType::get(aggr_builder.getContext()),
             mlir::relalg::SetSemanticAttr::get(aggr_builder.getContext(), mlir::relalg::SetSemantic::distinct),
-            relation, aggr_builder.getArrayAttr({columnRef}));
+            relation, aggr_builder.getArrayAttr({columnRef}), specPtrAttr);
 
         return aggr_builder.create<mlir::relalg::AggrFuncOp>(loc, resultType, aggrFuncEnum, distinctStream.getResult(),
                                                              columnRef);
     } else {
         return aggr_builder.create<mlir::relalg::AggrFuncOp>(loc, resultType, aggrFuncEnum, relation, columnRef);
     }
+}
+
+auto createHashtableSpecification(
+    const std::vector<mlir::Attribute>& groupByAttrs,
+    const TranslationResult& childResult,
+    const std::map<int, std::pair<std::string, std::string>>& aggregateMappings,
+    const std::map<int, mlir::Type>& aggregateTypes,
+    const std::map<int, std::string>& aggregateFunctions,
+    const List* targetlist
+) -> runtime::HashtableSpecification* {
+    PGX_IO(AST_TRANSLATE);
+
+    const auto num_key_columns = static_cast<int32_t>(groupByAttrs.size());
+    int32_t num_value_columns = 0;
+    for (const auto& [aggno, _] : aggregateMappings) {
+        auto funcIt = aggregateFunctions.find(aggno);
+        if (funcIt != aggregateFunctions.end() && funcIt->second == "avg") {
+            num_value_columns += 2;
+        } else {
+            num_value_columns += 1;
+        }
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "Creating HashtableSpecification: %d key columns, %d value columns",
+            num_key_columns, num_value_columns);
+
+    if (num_key_columns == 0 && num_value_columns == 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "No columns for spec, returning nullptr");
+        return nullptr;
+    }
+
+    // Allocate in transaction context (survives query execution, cleaned up at transaction end)
+    MemoryContext oldContext = MemoryContextSwitchTo(CurTransactionContext);
+
+    auto* spec = static_cast<runtime::HashtableSpecification*>(
+        palloc0(sizeof(runtime::HashtableSpecification)));
+
+    // Register callback to detect when spec is freed
+    static auto spec_delete_callback_func = [](void* arg) {
+        auto* freed_spec = static_cast<runtime::HashtableSpecification*>(arg);
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "HashtableSpecification at %p is being freed by memory context cleanup",
+                static_cast<void*>(freed_spec));
+    };
+
+    auto* callback = static_cast<MemoryContextCallback*>(
+        palloc0(sizeof(MemoryContextCallback)));
+    callback->func = spec_delete_callback_func;
+    callback->arg = spec;
+    MemoryContextRegisterResetCallback(CurTransactionContext, callback);
+
+    spec->num_key_columns = num_key_columns;
+    spec->num_value_columns = num_value_columns;
+
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "Allocated HashtableSpecification at %p in context %p",
+            static_cast<void*>(spec), static_cast<void*>(CurTransactionContext));
+
+    // Allocate column arrays
+    if (num_key_columns > 0) {
+        spec->key_columns = static_cast<runtime::HashtableColumnInfo*>(
+            palloc0(num_key_columns * sizeof(runtime::HashtableColumnInfo)));
+
+        // Populate key columns from GROUP BY
+        for (int32_t i = 0; i < num_key_columns; i++) {
+            auto colRef = mlir::dyn_cast<mlir::relalg::ColumnRefAttr>(groupByAttrs[i]);
+            if (!colRef) {
+                PGX_WARNING("GROUP BY attribute %d is not a ColumnRefAttr", i);
+                continue;
+            }
+
+            auto colName = colRef.getName();
+            std::string tableName = colName.getRootReference().str();
+            std::string columnName = colName.getLeafReference().str();
+
+            // Find column metadata from child result
+            uint32_t type_oid = UNKNOWNOID;
+            int32_t typmod = -1;
+            bool is_nullable = false;
+            for (const auto& col : childResult.columns) {
+                if (col.table_name == tableName && col.column_name == columnName) {
+                    type_oid = col.type_oid;
+                    typmod = col.typmod;
+                    is_nullable = col.nullable;
+                    break;
+                }
+            }
+
+            spec->key_columns[i].table_name = pstrdup(tableName.c_str());
+            spec->key_columns[i].column_name = pstrdup(columnName.c_str());
+            spec->key_columns[i].type_oid = type_oid;
+            spec->key_columns[i].typmod = typmod;
+            spec->key_columns[i].is_nullable = is_nullable;
+
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "Key column[%d]: %s.%s (oid=%u, typmod=%d, nullable=%d)",
+                    i, tableName.c_str(), columnName.c_str(), type_oid, typmod, is_nullable);
+        }
+    }
+
+    if (num_value_columns > 0) {
+        spec->value_columns = static_cast<runtime::HashtableColumnInfo*>(
+            palloc0(num_value_columns * sizeof(runtime::HashtableColumnInfo)));
+
+        // Populate value columns from aggregates
+        int32_t idx = 0;
+        ListCell* lc;
+        foreach (lc, targetlist) {
+            auto* te = static_cast<TargetEntry*>(lfirst(lc));
+            if (!te || !te->expr || !IsA(te->expr, Aggref))
+                continue;
+
+            auto* aggref = reinterpret_cast<Aggref*>(te->expr);
+            auto it = aggregateMappings.find(aggref->aggno);
+            if (it == aggregateMappings.end())
+                continue;
+
+            const auto& [scopeName, columnName] = it->second;
+            uint32_t type_oid = aggref->aggtype;
+            int32_t typmod = -1; // Aggregates typically don't have typmod
+
+            // Determine if aggregate result is nullable from MLIR type
+            bool is_nullable = false;
+            auto typeIt = aggregateTypes.find(aggref->aggno);
+            if (typeIt != aggregateTypes.end()) {
+                is_nullable = mlir::isa<mlir::db::NullableType>(typeIt->second);
+            }
+
+            // Check if this is AVG - it stores (sum, count)
+            auto funcIt = aggregateFunctions.find(aggref->aggno);
+            bool is_avg = (funcIt != aggregateFunctions.end() && funcIt->second == "avg");
+
+            // First value column: the aggregate result (or sum for AVG)
+            spec->value_columns[idx].table_name = pstrdup(scopeName.c_str());
+            spec->value_columns[idx].column_name = pstrdup(columnName.c_str());
+            spec->value_columns[idx].type_oid = type_oid;
+            spec->value_columns[idx].typmod = typmod;
+            spec->value_columns[idx].is_nullable = is_nullable;
+
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "Value column[%d]: %s.%s (oid=%u, typmod=%d, nullable=%d)%s",
+                    idx, scopeName.c_str(), columnName.c_str(), type_oid, typmod, is_nullable,
+                    is_avg ? " [AVG sum]" : "");
+
+            idx++;
+
+            // AVG needs a second column for the count accumulator
+            if (is_avg) {
+                spec->value_columns[idx].table_name = pstrdup(scopeName.c_str());
+                spec->value_columns[idx].column_name = pstrdup((std::string(columnName) + "_count").c_str());
+                spec->value_columns[idx].type_oid = INT8OID;  // i64 count
+                spec->value_columns[idx].typmod = -1;
+                spec->value_columns[idx].is_nullable = false;  // count is never nullable
+
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "Value column[%d]: %s.%s_count (oid=%u, typmod=%d, nullable=%d) [AVG count]",
+                        idx, scopeName.c_str(), columnName.c_str(), INT8OID, -1, false);
+
+                idx++;
+            }
+        }
+    }
+
+    MemoryContextSwitchTo(oldContext);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "Created HashtableSpecification at %p", static_cast<void*>(spec));
+
+    return spec;
 }
 
 } // namespace
@@ -166,11 +372,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     auto groupByAttrs = std::vector<mlir::Attribute>{};
     const auto type_mapper = PostgreSQLTypeMapper(*ctx.builder.getContext());
 
-    // Check if this is a combining aggregation (parallel aggregation final phase)
     const bool is_combining = (agg->aggsplit & 0x01) != 0; // AGGSPLITOP_COMBINE flag
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: aggsplit=%d, is_combining=%d", agg->aggsplit, is_combining);
 
-    // Section 1: Identify groups - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     {
         if (agg->numCols > 0 && agg->grpColIdx) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Building GROUP BY from grpColIdx, numCols=%d", agg->numCols);
@@ -248,6 +452,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     auto createdCols = std::vector<mlir::Attribute>{};
 
     auto aggregateMappings = std::map<int, std::pair<std::string, std::string>>();
+    auto aggregateTypes = std::map<int, mlir::Type>();  // Track MLIR types for nullable info
+    auto aggregateFunctions = std::map<int, std::string>();  // Track function names for AVG detection
 
     auto needs_post_processing = std::set<int>();
     auto post_process_exprs = std::map<int, Expr*>();
@@ -260,6 +466,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         }
         const auto funcName = std::string(rawFuncName);
         pfree(rawFuncName);
+
+        // Track function name for spec creation
+        aggregateFunctions[aggref->aggno] = funcName;
 
         auto aggColumnName = resname ? std::string(resname) : ("agg_" + std::to_string(aggref->aggno));
         const auto relation = block->getArgument(0);
@@ -296,6 +505,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 auto resultType = ctx.builder.getI64Type();
                 const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
                 aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                aggregateTypes[aggref->aggno] = resultType;  // Store for spec creation
 
                 aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
                     ctx.builder.getUnknownLoc(), resultType, mlir::relalg::AggrFunc::sum, relation, column_ref);
@@ -355,6 +565,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             }
             const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
             aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+            aggregateTypes[aggref->aggno] = resultType;  // Store for spec creation
 
             // TODO: AVG in combining mode also needs special handling - it should combine using
             auto aggrFuncEnum = getAggregateFunction(funcName);
@@ -364,7 +575,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         table_name.c_str(), column_name.c_str(), aggref->aggno);
             }
             aggResult = createAggregateOperation(aggr_builder, ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum,
-                                                 relation, column_ref, aggref->aggdistinct);
+                                                 relation, column_ref, aggref->aggdistinct, &childResult);
             createdCols.push_back(attrDef);
             createdValues.push_back(aggResult);
         }
@@ -428,11 +639,32 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         }
     }
 
+    // Section 3.5: Create HashtableSpecification for deep copy support - - - - - - - - - - - - - - - - - - - - - - - - -
+    runtime::HashtableSpecification* spec = createHashtableSpecification(
+        groupByAttrs, childResult, aggregateMappings, aggregateTypes, aggregateFunctions, agg->plan.targetlist);
+
+    // Create attribute with pointer to spec (following SortOp pattern)
+    // Use signless i64 type required by MLIR
+    auto specPtrAttr = ctx.builder.getIntegerAttr(
+        ctx.builder.getIntegerType(64),  // signless 64-bit
+        reinterpret_cast<uint64_t>(spec)
+    );
+
+    if (spec) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created HashtableSpecification pointer 0x%lx",
+                reinterpret_cast<uint64_t>(spec));
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "No HashtableSpecification created (spec is nullptr)");
+    }
+
     aggr_builder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), createdValues);
     auto aggOp = ctx.builder.create<mlir::relalg::AggregationOp>(ctx.builder.getUnknownLoc(), tupleStreamType,
                                                                  childOutput, ctx.builder.getArrayAttr(groupByAttrs),
                                                                  ctx.builder.getArrayAttr(createdCols));
     aggOp.getAggrFunc().push_back(block);
+
+    // Store spec pointer as attribute for downstream passes (following SortOp pattern)
+    aggOp->setAttr("hashtable_spec", specPtrAttr);
 
     mlir::Value finalOutput = aggOp;
     auto finalScope = aggrScopeName;

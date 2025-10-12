@@ -1,19 +1,27 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "lingodb/mlir-support/parsing.h"
 #include "mlir/Support/LLVM.h"
 
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "runtime-defs/Hashtable.h"
 #include "runtime-defs/LazyJoinHashtable.h"
 #include "runtime-defs/PgSortRuntime.h"
 #include "runtime-defs/TableBuilder.h"
 #include "runtime-defs/Vector.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
+#include "pgx-lower/utility/logging.h"
+
+extern "C" {
+#include "postgres.h"
+#include "catalog/pg_type.h"
+#include "utils/memutils.h"
+}
+
 using namespace mlir;
 namespace {
 static mlir::util::RefType getLoweredVectorType(MLIRContext* context, Type elementType) {
@@ -27,6 +35,73 @@ static TupleType getHashtableEntryType(MLIRContext* context, Type keyType, Type 
    auto i8PtrType = mlir::util::RefType::get(context, IntegerType::get(context, 8));
    return mlir::TupleType::get(context, {i8PtrType, IndexType::get(context), getHashtableKVType(context, keyType, aggrType)});
 }
+static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType) {
+    auto extractColumns = [](mlir::Type tupleType) -> std::vector<std::pair<uint32_t, bool>> {
+        std::vector<std::pair<uint32_t, bool>> columns;
+        if (auto tuple = tupleType.dyn_cast<mlir::TupleType>()) {
+            for (auto fieldType : tuple.getTypes()) {
+                bool nullable = false;
+                mlir::Type baseType = fieldType;
+
+                if (auto nullableType = fieldType.dyn_cast<mlir::db::NullableType>()) {
+                    nullable = true;
+                    baseType = nullableType.getType();
+                }
+
+                // Map MLIR type to PostgreSQL OID
+                uint32_t oid = INT4OID; // default
+                if (baseType.isInteger(32)) {
+                    oid = INT4OID;
+                } else if (baseType.isInteger(64)) {
+                    oid = INT8OID;
+                } else if (auto stringType = baseType.dyn_cast<mlir::db::StringType>()) {
+                    oid = TEXTOID;
+                } else if (auto decimalType = baseType.dyn_cast<mlir::db::DecimalType>()) {
+                    oid = NUMERICOID;
+                }
+
+                columns.push_back({oid, nullable});
+            }
+        }
+        return columns;
+    };
+
+    auto keyColumns = extractColumns(keyType);
+    auto valColumns = extractColumns(valType);
+
+    if (keyColumns.empty() && valColumns.empty()) {
+        return nullptr;
+    }
+
+    MemoryContext oldContext = MemoryContextSwitchTo(CurTransactionContext);
+
+    auto* spec = static_cast<runtime::HashtableSpecification*>(
+        MemoryContextAlloc(CurTransactionContext, sizeof(runtime::HashtableSpecification)));
+
+    spec->num_key_columns = keyColumns.size();
+    spec->num_value_columns = valColumns.size();
+
+    spec->key_columns = static_cast<runtime::HashtableColumnInfo*>(
+        MemoryContextAlloc(CurTransactionContext, keyColumns.size() * sizeof(runtime::HashtableColumnInfo)));
+
+    spec->value_columns = static_cast<runtime::HashtableColumnInfo*>(
+        MemoryContextAlloc(CurTransactionContext, valColumns.size() * sizeof(runtime::HashtableColumnInfo)));
+
+    for (size_t i = 0; i < keyColumns.size(); i++) {
+        spec->key_columns[i].type_oid = keyColumns[i].first;
+        spec->key_columns[i].is_nullable = keyColumns[i].second;
+    }
+
+    for (size_t i = 0; i < valColumns.size(); i++) {
+        spec->value_columns[i].type_oid = valColumns[i].first;
+        spec->value_columns[i].is_nullable = valColumns[i].second;
+    }
+
+    MemoryContextSwitchTo(oldContext);
+
+    return spec;
+}
+
 static Type getHashtableType(MLIRContext* context, Type keyType, Type aggrType) {
    auto idxType = IndexType::get(context);
    auto entryType = getHashtableEntryType(context, keyType, aggrType);
@@ -39,108 +114,115 @@ static Type getHashtableType(MLIRContext* context, Type keyType, Type aggrType) 
 
 class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
    public:
-    using OpConversionPattern<mlir::dsa::CreateDS>::OpConversionPattern;
-    LogicalResult matchAndRewrite(mlir::dsa::CreateDS createOp, OpAdaptor adaptor,
-                                  ConversionPatternRewriter& rewriter) const override {
-        auto loc = createOp->getLoc();
-        if (auto joinHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::JoinHashtableType>()) {
-            auto entryType = mlir::TupleType::get(rewriter.getContext(),
-                                                  {joinHtType.getKeyType(), joinHtType.getValType()});
-            auto tupleType = mlir::TupleType::get(rewriter.getContext(), {rewriter.getIndexType(), entryType});
-            Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(),
-                                                                   typeConverter->convertType(tupleType));
-            Value ptr = rt::LazyJoinHashtable::create(rewriter, loc)(typesize)[0];
-            rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(joinHtType), ptr);
-            return success();
-        } else if (auto vecType = createOp.getDs().getType().dyn_cast<mlir::dsa::VectorType>()) {
-            Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 1024);
-            auto elementType = typeConverter->convertType(vecType.getElementType());
+   using OpConversionPattern<mlir::dsa::CreateDS>::OpConversionPattern;
+   LogicalResult matchAndRewrite(mlir::dsa::CreateDS createOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      auto loc = createOp->getLoc();
+      if (auto genericType = createOp.getDs().getType().dyn_cast<mlir::dsa::GenericIterableType>()) {
+         if (genericType.getIteratorName() == "pgsort_iterator") {
+            // Create PgSortState - extract spec pointer from attribute
+            auto elementType = typeConverter->convertType(genericType.getElementType());
             auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
-            auto ptr = rt::Vector::create(rewriter, loc)({typeSize, initialCapacity})[0];
-            mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(
-                loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
-            rewriter.replaceOp(createOp, createdVector);
-            return success();
-        } else if (auto aggrHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
-            TupleType keyType = aggrHtType.getKeyType();
-            TupleType aggrType = aggrHtType.getValType();
-            if (keyType.getTypes().empty()) {
-                ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(
-                    loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
-                rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, ::mlir::Value());
-                rewriter.replaceOp(createOp, ref);
-                return success();
+
+            // Extract SortSpecification pointer from InitialCapacity attribute
+            mlir::Value specPtrValue;
+            if (auto specAttr = createOp.getInitAttr()) {
+               // specAttr is an IntegerAttr with the spec pointer value (already signless)
+               if (auto intAttr = specAttr->dyn_cast<mlir::IntegerAttr>()) {
+                  specPtrValue = rewriter.create<mlir::arith::ConstantOp>(loc, intAttr);
+               } else {
+                  // Unexpected attribute type - pass 0
+                  specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                     loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
+                  );
+               }
             } else {
-                auto typeSize = rewriter.create<mlir::util::SizeOfOp>(
-                    loc, rewriter.getIndexType(), getHashtableEntryType(rewriter.getContext(), keyType, aggrType));
-                Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 4);
-                auto ptr = rt::Hashtable::create(rewriter, loc)({typeSize, initialCapacity})[0];
-                mlir::Value casted = rewriter.create<mlir::util::GenericMemrefCastOp>(
-                    loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
-                Value initValAddress = rewriter.create<util::TupleElementPtrOp>(
-                    loc, mlir::util::RefType::get(rewriter.getContext(), adaptor.getInitVal().getType()), casted, 5);
-                rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), initValAddress, Value());
-                rewriter.replaceOp(createOp, casted);
-                return success();
-            }
-        } else if (auto sortStateType = createOp.getDs().getType().dyn_cast<mlir::dsa::SortStateType>()) {
-            auto allTypeOids = sortStateType.getAllTypeOids();
-            auto allTypmods = sortStateType.getAllTypmods();
-            auto sortKeyIndices = sortStateType.getSortKeyIndices();
-            auto sortOpOids = sortStateType.getSortOpOids();
-            auto directions = sortStateType.getSortDirections();
-
-            int32_t numTotalCols = allTypeOids.size();
-            int32_t numSortKeys = sortKeyIndices.size();
-
-            auto i32Ty = rewriter.getI32Type();
-            auto i8Ty = rewriter.getI8Type();
-
-            // Arrays for ALL columns
-            auto allColsSize = rewriter.create<arith::ConstantIndexOp>(loc, numTotalCols * 4);
-            auto refTy = mlir::util::RefType::get(rewriter.getContext(), i8Ty);
-            auto allTypeOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, allColsSize);
-            auto allTypmodsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, allColsSize);
-
-            // Arrays for sort keys only
-            auto sortKeysSize = rewriter.create<arith::ConstantIndexOp>(loc, numSortKeys * 4);
-            auto sortKeyIndicesArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, sortKeysSize);
-            auto sortOpOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, sortKeysSize);
-            auto sortDirectionsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, sortKeysSize);
-
-            // Fill arrays for all columns
-            for (int i = 0; i < numTotalCols; i++) {
-                auto idx = rewriter.create<arith::ConstantIndexOp>(loc, i * 4);
-                auto typeOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, allTypeOids[i].cast<IntegerAttr>());
-                auto typmodVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, allTypmods[i].cast<IntegerAttr>());
-                rewriter.create<mlir::util::StoreOp>(loc, typeOidVal, allTypeOidsArray, idx);
-                rewriter.create<mlir::util::StoreOp>(loc, typmodVal, allTypmodsArray, idx);
+               // No spec provided - pass 0
+               specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                  loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
+               );
             }
 
-            // Fill arrays for sort keys
-            for (int i = 0; i < numSortKeys; i++) {
-                auto idx = rewriter.create<arith::ConstantIndexOp>(loc, i * 4);
-                auto sortKeyIdxVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, sortKeyIndices[i].cast<IntegerAttr>());
-                auto sortOpOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, sortOpOids[i].cast<IntegerAttr>());
-                auto dirVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, directions[i].cast<IntegerAttr>());
-                rewriter.create<mlir::util::StoreOp>(loc, sortKeyIdxVal, sortKeyIndicesArray, idx);
-                rewriter.create<mlir::util::StoreOp>(loc, sortOpOidVal, sortOpOidsArray, idx);
-                rewriter.create<mlir::util::StoreOp>(loc, dirVal, sortDirectionsArray, idx);
-            }
-
-            auto numTotalColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numTotalCols));
-            auto numSortKeysConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numSortKeys));
-
-            Value sortstate = rt::PgSortRuntime::beginHeapSort(rewriter, loc)({
-                allTypeOidsArray, allTypmodsArray, numTotalColsConst,
-                sortKeyIndicesArray, sortOpOidsArray, sortDirectionsArray, numSortKeysConst
-            })[0];
-
-            rewriter.replaceOp(createOp, sortstate);
+            auto ptr = rt::PgSortState::create(rewriter, loc)({typeSize, specPtrValue})[0];
+            rewriter.replaceOp(createOp, ptr);
             return success();
-        }
-        return failure();
-    }
+         }
+      } else if (auto joinHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::JoinHashtableType>()) {
+         auto entryType = mlir::TupleType::get(rewriter.getContext(), {joinHtType.getKeyType(), joinHtType.getValType()});
+         auto tupleType = mlir::TupleType::get(rewriter.getContext(), {rewriter.getIndexType(), entryType});
+         Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), typeConverter->convertType(tupleType));
+
+         Value specPtr;
+         auto* spec = createHashtableSpecFromTypes(joinHtType.getKeyType(), joinHtType.getValType());
+         if (spec) {
+            specPtr = rewriter.create<arith::ConstantIndexOp>(loc, reinterpret_cast<uint64_t>(spec));
+         } else {
+            specPtr = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+         }
+
+         Value ptr = rt::LazyJoinHashtable::create(rewriter, loc)({typesize, specPtr})[0];
+         rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(joinHtType), ptr);
+         return success();
+      } else if (auto vecType = createOp.getDs().getType().dyn_cast<mlir::dsa::VectorType>()) {
+         auto elementType = typeConverter->convertType(vecType.getElementType());
+         auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
+
+         if (auto initAttr = createOp.getInitAttr()) {
+            if (auto specPtrAttr = initAttr->dyn_cast<mlir::IntegerAttr>()) {
+               auto ptr = rt::PgSortState::create(rewriter, loc)({typeSize})[0];
+               mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
+               rewriter.replaceOp(createOp, createdVector);
+               return success();
+            }
+         }
+
+         Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 1024);
+         auto ptr = rt::Vector::create(rewriter, loc)({typeSize, initialCapacity})[0];
+         mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
+         rewriter.replaceOp(createOp, createdVector);
+         return success();
+      } else if (auto aggrHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
+         TupleType keyType = aggrHtType.getKeyType();
+         TupleType aggrType = aggrHtType.getValType();
+         if (keyType.getTypes().empty()) {
+            ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
+            rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, ::mlir::Value());
+            rewriter.replaceOp(createOp, ref);
+            return success();
+         } else {
+            auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), getHashtableEntryType(rewriter.getContext(), keyType, aggrType));
+            Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 4);
+
+            Value specPtrValue;
+            if (auto specAttr = createOp->getAttrOfType<mlir::IntegerAttr>("spec_ptr")) {
+               uint64_t ptrVal = specAttr.getValue().getZExtValue();
+               // Create ConstantOp with I64 type (not ConstantIndexOp!)
+               specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                  loc, rewriter.getIntegerAttr(rewriter.getI64Type(), ptrVal)
+               );
+            } else {
+               // PGX-LOWER: Create spec from AggregationHashtableType's key/value types
+               auto* spec = createHashtableSpecFromTypes(keyType, aggrType);
+               if (spec) {
+                  specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                     loc, rewriter.getIntegerAttr(rewriter.getI64Type(), reinterpret_cast<uint64_t>(spec))
+                  );
+               } else {
+                  specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                     loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
+                  );
+               }
+            }
+
+            auto ptr = rt::Hashtable::create(rewriter, loc)({typeSize, initialCapacity, specPtrValue})[0];
+            mlir::Value casted = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
+            Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), adaptor.getInitVal().getType()), casted, 5);
+            rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), initValAddress, Value());
+            rewriter.replaceOp(createOp, casted);
+            return success();
+         }
+      }
+      return failure();
+   }
 };
 class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> {
    public:
@@ -286,7 +368,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                                  b.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
                               }
                               b.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
-
+                              
                               // Else branch of ifOp2
                               b.setInsertionPointToStart(&ifOp2.getElseRegion().emplaceBlock());
                               //          ptr = &entry.next
@@ -296,7 +378,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                         }
                         b.setInsertionPointAfter(ifOp2);
                         b.create<scf::YieldOp>(loc, ifOp2.getResults());
-
+                        
                         // Else branch of ifOpH
                         b.setInsertionPointToStart(&ifOpH.getElseRegion().emplaceBlock());
                         //          ptr = &entry.next
@@ -305,31 +387,40 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                         b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
                   }
                   b.setInsertionPointAfter(ifOpH);
-                  b.create<scf::YieldOp>(loc, ifOpH.getResults());
-
-               // Else branch of outer ifOp
+                  b.create<scf::YieldOp>(loc, ifOpH.getResults()); 
+               
+               // Else branch of outer ifOp - create new entry with deep copy
                rewriter.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
                b = rewriter;  // Keep alias for minimal changes
                   Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), aggrType), adaptor.getHt(), 5);
                   Value initialVal = b.create<util::LoadOp>(loc, aggrType, initValAddress);
                   Value newAggr = reduceFnBuilder ? reduceFnBuilder(b,initialVal, adaptor.getVal()): initialVal;
-                  Value newKVPair = b.create<util::PackOp>(loc,ValueRange({adaptor.getKey(), newAggr}));
-                  Value invalidNext  = b.create<util::InvalidRefOp>(loc,i8PtrType);
-                  //       %newEntry = ...
-                  Value newEntry = b.create<util::PackOp>(loc, ValueRange({invalidNext, hashed, newKVPair}));
-                  Value valuesAddress = b.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(b.getContext(),valuesType), adaptor.getHt(), 3);
-                  Value values = b.create<util::LoadOp>(loc, valuesType, valuesAddress);
-                  Value newValueLocPtr=b.create<util::ArrayElementPtrOp>(loc,bucketPtrType,values,len);
-                  //       append(vec,newEntry)
-                  b.create<util::StoreOp>(loc, newEntry, newValueLocPtr,Value());
 
-                  //       *ptr=len
+                  Value hashedI64 = b.create<arith::IndexCastOp>(loc, b.getI64Type(), hashed);
+                  Value lenI64 = b.create<arith::IndexCastOp>(loc, b.getI64Type(), len);
+
+                  auto keyRefType = mlir::util::RefType::get(b.getContext(), adaptor.getKey().getType());
+                  auto keyRef = b.create<mlir::util::AllocaOp>(loc, keyRefType, mlir::Value());
+                  b.create<mlir::util::StoreOp>(loc, adaptor.getKey(), keyRef, mlir::Value());
+                  auto i8RefType = mlir::util::RefType::get(b.getContext(), b.getI8Type());
+                  Value keyPtr = b.create<mlir::util::GenericMemrefCastOp>(loc, i8RefType, keyRef);
+
+                  auto valueRefType = mlir::util::RefType::get(b.getContext(), newAggr.getType());
+                  auto valueRef = b.create<mlir::util::AllocaOp>(loc, valueRefType, mlir::Value());
+                  b.create<mlir::util::StoreOp>(loc, newAggr, valueRef, mlir::Value());
+                  Value valuePtr = b.create<mlir::util::GenericMemrefCastOp>(loc, i8RefType, valueRef);
+
+                  Value newValueLocPtr = rt::Hashtable::appendEntryWithDeepCopy(b, loc)(
+                     {adaptor.getHt(), hashedI64, lenI64, keyPtr, valuePtr}
+                  )[0];
+
+                  newValueLocPtr = b.create<util::GenericMemrefCastOp>(loc, bucketPtrType, newValueLocPtr);
+
                   b.create<util::StoreOp>(loc, newValueLocPtr, ptr, Value());
                   Value newLen = b.create<arith::AddIOp>(loc, len, one);
-                  //       yield 0,0,done=true
                   b.create<mlir::util::StoreOp>(loc, newLen, lenAddress, Value());
 
-                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr});
+                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); 
             }
 
             Value done = ifOp.getResult(0);
@@ -429,73 +520,69 @@ class FinalizeTBLowering : public OpConversionPattern<mlir::dsa::Finalize> {
       return success();
    }
 };
-class SortStateAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
+class PgSortAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
    public:
-    using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
-    LogicalResult
-    matchAndRewrite(mlir::dsa::Append appendOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-        if (!appendOp.getDs().getType().isa<mlir::dsa::SortStateType>()) {
-            return failure();
-        }
+   using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
+   LogicalResult matchAndRewrite(mlir::dsa::Append appendOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      PGX_IO(DSA_LOWER);
+      PGX_LOG(DSA_LOWER, DEBUG, "PgSortAppendLowering: checking dsa.ds_append");
 
-        auto loc = appendOp->getLoc();
-        Value sortstate = adaptor.getDs();
-        Value tuple = adaptor.getVal();
+      // Log the entire operation
+      std::string opStr;
+      llvm::raw_string_ostream opStream(opStr);
+      appendOp->print(opStream);
+      opStream.flush();
+      PGX_LOG(DSA_LOWER, DEBUG, "  Full operation: %s", opStr.c_str());
 
-        auto tupleType = tuple.getType().cast<TupleType>();
-        int32_t numCols = tupleType.size();
+      auto origType = appendOp.getDs().getType();
 
-        auto i32Ty = rewriter.getI32Type();
-        auto i64Ty = rewriter.getI64Type();
-        auto i1Ty = rewriter.getI1Type();
-        const auto i8Ty = rewriter.getI8Type();
+      auto genericType = mlir::dyn_cast_or_null<mlir::dsa::GenericIterableType>(origType);
+      if (!genericType) {
+         PGX_LOG(DSA_LOWER, DEBUG, "  Not GenericIterableType, skipping");
+         return failure();
+      }
 
-        auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numCols));
+      if (genericType.getIteratorName() != "pgsort_iterator") {
+         PGX_LOG(DSA_LOWER, DEBUG, "  Not pgsort_iterator, skipping");
+         return failure();
+      }
 
-        auto datumsSize = rewriter.create<arith::ConstantIndexOp>(loc, numCols * 8);
-        auto nullsSize = rewriter.create<arith::ConstantIndexOp>(loc, numCols);
-        auto refTy = mlir::util::RefType::get(rewriter.getContext(), i8Ty);
-        auto datumsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, datumsSize);
-        auto nullsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, nullsSize);
+      PGX_LOG(DSA_LOWER, DEBUG, "  MATCH! Lowering PgSort append");
 
-        for (int i = 0; i < numCols; i++) {
-            auto datumIdx = rewriter.create<arith::ConstantIndexOp>(loc, i * 8);
-            auto nullIdx = rewriter.create<arith::ConstantIndexOp>(loc, i);
+      auto loc = appendOp->getLoc();
+      Value pgSortState = adaptor.getDs();  // This is !util.ref<i8> (opaque pointer)
+      Value tuple = adaptor.getVal();       // This is the packed tuple
 
-            auto fieldType = tupleType.getType(i);
-            auto field = rewriter.create<util::GetTupleOp>(loc, fieldType, tuple, i);
+      PGX_LOG(DSA_LOWER, DEBUG, "    Lowering PgSort append with state and tuple");
 
-            Value datumVal;
-            Value isNull;
-            if (auto tupleTy = field.getType().dyn_cast<TupleType>()) {
-                auto unpacked = rewriter.create<util::UnPackOp>(
-                    loc, mlir::TypeRange{tupleTy.getType(0), tupleTy.getType(1)}, field);
-                isNull = unpacked.getResult(0);
-                auto baseVal = unpacked.getResult(1);
-                datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, baseVal);
-            } else {
-                isNull = rewriter.create<arith::ConstantOp>(loc, i1Ty, rewriter.getIntegerAttr(i1Ty, 0));
-                datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, field);
-            }
+      auto tupleRefType = mlir::util::RefType::get(rewriter.getContext(), tuple.getType());
+      auto tupleRef = rewriter.create<mlir::util::AllocaOp>(loc, tupleRefType, mlir::Value());
 
-            rewriter.create<mlir::util::StoreOp>(loc, datumVal, datumsArray, datumIdx);
-            rewriter.create<mlir::util::StoreOp>(loc, isNull, nullsArray, nullIdx);
-        }
+      rewriter.create<mlir::util::StoreOp>(loc, tuple, tupleRef, mlir::Value());
 
-        rt::PgSortRuntime::putHeapTuple(rewriter, loc)({sortstate, datumsArray, nullsArray, numColsConst});
+      auto i8RefType = mlir::util::RefType::get(rewriter.getContext(), rewriter.getI8Type());
+      auto tuplePtr = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, i8RefType, tupleRef);
 
-        rewriter.eraseOp(appendOp);
-        return success();
-    }
+      rt::PgSortState::appendTuple(rewriter, loc)({pgSortState, tuplePtr});
+
+      rewriter.eraseOp(appendOp);
+
+      PGX_LOG(DSA_LOWER, DEBUG, "  PgSort append lowered successfully");
+      return success();
+   }
 };
 
 class DSAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
    public:
    using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::Append appendOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      PGX_IO(DSA_LOWER);
+      PGX_LOG(DSA_LOWER, DEBUG, "DSAppendLowering: checking dsa.ds_append");
       if (!appendOp.getDs().getType().isa<mlir::dsa::VectorType>()) {
+         PGX_LOG(DSA_LOWER, DEBUG, "  Not a VectorType, skipping");
          return failure();
       }
+      PGX_LOG(DSA_LOWER, DEBUG, "  VectorType match, lowering");
       Value builderVal = adaptor.getDs();
       Value v = adaptor.getVal();
       auto convertedElementType = typeConverter->convertType(appendOp.getDs().getType().cast<mlir::dsa::VectorType>().getElementType());
@@ -597,6 +684,12 @@ class FreeLowering : public OpConversionPattern<mlir::dsa::FreeOp> {
    public:
    using OpConversionPattern<mlir::dsa::FreeOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::FreeOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      if (auto genericType = op.getVal().getType().dyn_cast<mlir::dsa::GenericIterableType>()) {
+         if (genericType.getIteratorName() == "pgsort_iterator") {
+            // TODO: Fix runtime function registration for PgSortState::destroy
+            // rt::PgSortState::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
+         }
+      }
       if (auto aggrHtType = op.getVal().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
          if (aggrHtType.getKeyType().getTypes().empty()) {
          } else {
@@ -628,7 +721,7 @@ class SetDecimalScaleLowering : public OpConversionPattern<mlir::dsa::SetDecimal
 } // end namespace
 namespace mlir::dsa {
 void populateDSAToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
-   patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, SortStateAppendLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
+   patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, PgSortAppendLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
    patterns.insert<CreateTableBuilderLowering, TBAppendLowering, FinalizeTBLowering, NextRowLowering, SetDecimalScaleLowering>(typeConverter, patterns.getContext());
    typeConverter.addConversion([&typeConverter](mlir::dsa::VectorType vectorType) {
       return getLoweredVectorType(vectorType.getContext(), typeConverter.convertType(vectorType.getElementType()));

@@ -29,6 +29,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/utility/error_handling.cpp
         ../src/pgx-lower/utility/logging.cpp
         ../src/pgx-lower/utility/logging_c.cpp
+        ../src/pgx-lower/utility/mlir_logging.cpp
         ../src/pgx-lower/runtime/tuple_access.cpp
         ../src/pgx-lower/runtime/PostgreSQLDataSource.cpp
         ../src/pgx-lower/runtime/PostgreSQLRuntime.cpp

@@ -25,12 +25,12 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
- IT         |  60000 | Bob
  IT         |  60000 | Frank
+ IT         |  60000 | Bob
  IT         |  65000 | David
  Sales      |  45000 | Carol
- Sales      |  50000 | Alice
  Sales      |  50000 | Eve
+ Sales      |  50000 | Alice
 (7 rows)
 
 SELECT department, salary, name
@@ -40,12 +40,12 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
- IT         |  60000 | Bob
  IT         |  60000 | Frank
+ IT         |  60000 | Bob
  IT         |  65000 | David
  Sales      |  45000 | Carol
- Sales      |  50000 | Alice
  Sales      |  50000 | Eve
+ Sales      |  50000 | Alice
 (7 rows)
 
 SELECT department, salary, name
@@ -56,8 +56,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 ------------+--------+-------
  HR         |  55000 | Grace
  IT         |  65000 | David
- IT         |  60000 | Bob
  IT         |  60000 | Frank
+ IT         |  60000 | Bob
  Sales      |  50000 | Alice
  Sales      |  50000 | Eve
  Sales      |  45000 | Carol

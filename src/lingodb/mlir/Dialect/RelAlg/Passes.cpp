@@ -10,70 +10,64 @@ void mlir::relalg::setStaticDB(std::shared_ptr<runtime::Database> db) {
    PGX_WARNING("Warning: setting static database, should only be used in combination with mlir-db-opt");
    staticDB = db;
 }
-void mlir::relalg::createQueryOptPipeline(OpPassManager& pm/*, runtime::Database* db*/) {
-   pm.addNestedPass<func::FuncOp>(createSimplifyAggregationsPass());
-   pm.addNestedPass<func::FuncOp>(createExtractNestedOperatorsPass());
-   pm.addPass(createCSEPass());
-   pm.addPass(createCanonicalizerPass());
-   pm.addNestedPass<func::FuncOp>(createDecomposeLambdasPass());
-   pm.addPass(createCanonicalizerPass());
-   pm.addNestedPass<func::FuncOp>(createImplicitToExplicitJoinsPass());
-   pm.addNestedPass<func::FuncOp>(createPushdownPass());
-   pm.addNestedPass<func::FuncOp>(createUnnestingPass());
-   // if (db) {
-   //    pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createAttachMetaDataPass(*db));
-   // }
-   pm.addNestedPass<func::FuncOp>(createReduceGroupByKeysPass());
-   pm.addNestedPass<func::FuncOp>(createExpandTransitiveEqualities());
-   pm.addNestedPass<func::FuncOp>(createOptimizeJoinOrderPass());
-   // if (db) {
-   //    pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createDetachMetaDataPass());
-   // }
-   pm.addNestedPass<func::FuncOp>(createCombinePredicatesPass());
-   pm.addNestedPass<func::FuncOp>(createOptimizeImplementationsPass());
-   pm.addNestedPass<func::FuncOp>(createIntroduceTmpPass());
-   pm.addPass(createCanonicalizerPass());
+void mlir::relalg::createQueryOptPipeline(mlir::OpPassManager& pm/*, runtime::Database* db*/) {
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createSimplifyAggregationsPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createExtractNestedOperatorsPass());
+   pm.addPass(mlir::createCSEPass());
+   pm.addPass(mlir::createCanonicalizerPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createDecomposeLambdasPass());
+   pm.addPass(mlir::createCanonicalizerPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createImplicitToExplicitJoinsPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createPushdownPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createUnnestingPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createReduceGroupByKeysPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createExpandTransitiveEqualities());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createOptimizeJoinOrderPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createCombinePredicatesPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createOptimizeImplementationsPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createIntroduceTmpPass());
+   pm.addPass(mlir::createCanonicalizerPass());
 }
 void mlir::relalg::registerQueryOptimizationPasses() {
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createExtractNestedOperatorsPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createExtractNestedOperatorsPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createDecomposeLambdasPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createDecomposeLambdasPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createImplicitToExplicitJoinsPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createImplicitToExplicitJoinsPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createUnnestingPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createUnnestingPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createPushdownPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createPushdownPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createOptimizeJoinOrderPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createOptimizeJoinOrderPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createCombinePredicatesPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createCombinePredicatesPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createOptimizeImplementationsPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createOptimizeImplementationsPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createIntroduceTmpPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createIntroduceTmpPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createSimplifyAggregationsPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createSimplifyAggregationsPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createReduceGroupByKeysPass();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createReduceGroupByKeysPass();
    });
-   registerPass([]() -> std::unique_ptr<Pass> {
-      return createExpandTransitiveEqualities();
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::relalg::createExpandTransitiveEqualities();
    });
 
    ::mlir::PassPipelineRegistration<EmptyPipelineOptions>(
       "relalg-query-opt",
       "",
-      [](OpPassManager& pm) { return createQueryOptPipeline(pm/*, staticDB.get()*/); });
+      [](mlir::OpPassManager& pm) { return createQueryOptPipeline(pm/*, staticDB.get()*/); });
 }

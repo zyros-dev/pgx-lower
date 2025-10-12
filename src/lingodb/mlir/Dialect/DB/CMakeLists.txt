@@ -11,6 +11,7 @@ gen_rt_def(dump-rt-defs "DumpRuntime.h")
 gen_rt_def(string-rt-defs "StringRuntime.h" "pgx-lower")
 gen_rt_def(date-rt-defs "DateRuntime.h")
 gen_rt_def(postgresql-rt-defs "PostgreSQLRuntime.h" "pgx-lower")
+gen_rt_def(print-rt-defs "PrintRuntime.h")
 
 add_mlir_dialect_library(MLIRDBDialect
         DBDialect.cpp
@@ -30,6 +31,7 @@ add_mlir_dialect_library(MLIRDBDialect
         string-rt-defs
         date-rt-defs
         postgresql-rt-defs
+        print-rt-defs
         PGXLowerDBOpsIncGen
         PGXLowerRelAlgOpsIncGen
         MLIRDBEliminateNullsIncGen

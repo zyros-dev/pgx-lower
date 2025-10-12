@@ -32,6 +32,7 @@ void runtime::Vector::resize() {
    cap = newCapacity;
 }
 size_t runtime::Vector::getLen() const {
+   PGX_LOG(RUNTIME, DEBUG, "Vector::getLen() called - this=%p, len=%zu, cap=%zu, ptr=%p", this, len, cap, ptr);
    return len;
 }
 size_t runtime::Vector::getCap() const {

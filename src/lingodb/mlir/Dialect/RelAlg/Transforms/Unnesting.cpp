@@ -269,7 +269,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          OpBuilder builder(binaryOperator.getOperation());
          providerChild.moveSubTreeBefore(getFirstOfTree(dependentChild));
          builder.setInsertionPointAfter(providerChild);
-         auto proj = builder.create<relalg::ProjectionOp>(binaryOperator->getLoc(), relalg::TupleStreamType::get(&getContext()), relalg::SetSemantic::distinct, providerChild.asRelation(), dependentAttributes.asRefArrayAttr(&getContext()));
+         auto proj = builder.create<relalg::ProjectionOp>(binaryOperator->getLoc(), relalg::TupleStreamType::get(&getContext()), relalg::SetSemantic::distinct, providerChild.asRelation(), dependentAttributes.asRefArrayAttr(&getContext()), mlir::IntegerAttr());
          Operator d = mlir::dyn_cast_or_null<Operator>(proj.getOperation());
          Operator unnestedChild = pushDependJoinDown(binaryOperator->getLoc(),d, dependentChild);
          Operator newLeft = leftProvides ? providerChild : unnestedChild;

@@ -8,57 +8,51 @@
 #include <llvm/ADT/TypeSwitch.h>
 
 mlir::Type mlir::dsa::CollectionType::getElementType() const {
-   return ::llvm::TypeSwitch<CollectionType, Type>(*this)
-      .Case<GenericIterableType>([&](GenericIterableType t) {
+   return ::llvm::TypeSwitch<::mlir::dsa::CollectionType, Type>(*this)
+      .Case<::mlir::dsa::GenericIterableType>([&](::mlir::dsa::GenericIterableType t) {
          return t.getElementType();
       })
-      .Case<VectorType>([&](VectorType t) {
+      .Case<::mlir::dsa::VectorType>([&](::mlir::dsa::VectorType t) {
          return t.getElementType();
       })
-      .Case<JoinHashtableType>([&](JoinHashtableType t) {
+      .Case<::mlir::dsa::JoinHashtableType>([&](::mlir::dsa::JoinHashtableType t) {
          return TupleType::get(getContext(), {t.getKeyType(), t.getValType()});
       })
-      .Case<AggregationHashtableType>([&](AggregationHashtableType t) {
+      .Case<::mlir::dsa::AggregationHashtableType>([&](::mlir::dsa::AggregationHashtableType t) {
          return TupleType::get(t.getContext(), {t.getKeyType(), t.getValType()});
       })
-      .Case<RecordBatchType>([&](RecordBatchType t) {
-         return RecordType::get(t.getContext(), t.getRowType());
+      .Case<mlir::dsa::RecordBatchType>([&](mlir::dsa::RecordBatchType t) {
+         return mlir::dsa::RecordType::get(t.getContext(), t.getRowType());
       })
-      .Case<SortStateType>([&](SortStateType t) {
-         return t.getElementType();
-      })
-      .Default([](Type) { return Type(); });
+      .Default([](::mlir::Type) { return Type(); });
 }
 bool mlir::dsa::CollectionType::classof(Type t) {
    return ::llvm::TypeSwitch<Type, bool>(t)
-      .Case<GenericIterableType>([&](GenericIterableType t) { return true; })
-      .Case<VectorType>([&](VectorType t) {
+      .Case<::mlir::dsa::GenericIterableType>([&](::mlir::dsa::GenericIterableType t) { return true; })
+      .Case<::mlir::dsa::VectorType>([&](::mlir::dsa::VectorType t) {
          return true;
       })
-      .Case<JoinHashtableType>([&](JoinHashtableType t) {
+      .Case<::mlir::dsa::JoinHashtableType>([&](::mlir::dsa::JoinHashtableType t) {
          return true;
       })
-      .Case<AggregationHashtableType>([&](AggregationHashtableType t) {
+      .Case<::mlir::dsa::AggregationHashtableType>([&](::mlir::dsa::AggregationHashtableType t) {
          return true;
       })
-      .Case<RecordBatchType>([&](RecordBatchType t) {
+      .Case<::mlir::dsa::RecordBatchType>([&](::mlir::dsa::RecordBatchType t) {
          return true;
       })
-      .Case<SortStateType>([&](SortStateType t) {
-         return true;
-      })
-      .Default([](Type) { return false; });
+      .Default([](::mlir::Type) { return false; });
 }
 
-mlir::Type mlir::dsa::GenericIterableType::parse(AsmParser& parser) {
+::mlir::Type mlir::dsa::GenericIterableType::parse(mlir::AsmParser& parser) {
    Type type;
    StringRef parserName;
    if (parser.parseLess() || parser.parseType(type) || parser.parseComma(), parser.parseKeyword(&parserName) || parser.parseGreater()) {
-      return Type();
+      return ::mlir::Type();
    }
-   return get(parser.getBuilder().getContext(), type, parserName.str());
+   return mlir::dsa::GenericIterableType::get(parser.getBuilder().getContext(), type, parserName.str());
 }
-void mlir::dsa::GenericIterableType::print(AsmPrinter& p) const {
+void mlir::dsa::GenericIterableType::print(mlir::AsmPrinter& p) const {
    p << "<" << getElementType() << "," << getIteratorName() << ">";
 }
 

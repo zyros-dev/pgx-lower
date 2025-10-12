@@ -99,10 +99,6 @@ def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
-def DSA_SortState : DSA_Collection<"SortState","sortstate"> {
-    let parameters = (ins "Type":$elementType,"ArrayAttr":$allTypeOids,"ArrayAttr":$allTypmods,"ArrayAttr":$sortKeyIndices,"ArrayAttr":$sortOpOids,"ArrayAttr":$sortDirections);
-    let assemblyFormat = "`<` $elementType `,` $allTypeOids `,` $allTypmods `,` $sortKeyIndices `,` $sortOpOids `,` $sortDirections `>`";
-}
 
 def DSA_CreateFlag : DSA_Op<"createflag"> {
     let summary = "Create flag";
@@ -202,9 +198,13 @@ def DSA_Lookup : DSA_Op<"lookup", [Pure]> {
 }
 
 
-def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
-    let arguments = (ins AnyTypeOf<[DSA_Vector, DSA_SortState]>:$toSort);
-    let regions = (region AnyRegion:$region);
+def DSA_SortOp : DSA_Op<"sort"> {
+    let summary = "sort collection";
+    let description = [{
+        Sort records in a collection (vector or generic iterable).
+        For PgSort (GenericIterableType with "pgsort_iterator"), uses SortSpecification metadata.
+    }];
+    let arguments = (ins DSA_Collection:$toSort);
 }
 
 def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,

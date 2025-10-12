@@ -84,10 +84,10 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  Grace | HR         |  55000 |     3
  Henry | HR         |  48000 |     2
  David | IT         |  65000 |     4
- Bob   | IT         |  60000 |     2
  Frank | IT         |  60000 |     6
- Alice | Sales      |  50000 |     3
+ Bob   | IT         |  60000 |     2
  Eve   | Sales      |  50000 |     1
+ Alice | Sales      |  50000 |     3
  Carol | Sales      |  45000 |     5
 (8 rows)
 

@@ -3,8 +3,13 @@
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "lingodb/runtime/PgSortRuntime.h"
+#include <unordered_map>
+#include <string>
 
 class SortTranslator : public mlir::relalg::Translator {
    mlir::relalg::SortOp sortOp;
@@ -15,116 +20,103 @@ class SortTranslator : public mlir::relalg::Translator {
    SortTranslator(mlir::relalg::SortOp sortOp) : mlir::relalg::Translator(sortOp), sortOp(sortOp) {
    }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      ::mlir::Value packed = orderedAttributes.pack(context, builder, sortOp->getLoc());
+       // Since things can randomly become null, just force them to be null instead. incredible.
+       // TODO: NV, if you feel like saving one byte per typle, you can change this!
+      std::vector<::mlir::Value> values;
+      std::vector<::mlir::Type> types;
+      for (const auto* attr : orderedAttributes.getAttrs()) {
+         ::mlir::Value val = context.getValueForAttribute(attr);
+
+         if (!mlir::isa<mlir::db::NullableType>(val.getType())) {
+            auto nullableType = mlir::db::NullableType::get(builder.getContext(), val.getType());
+            val = builder.create<mlir::db::AsNullableOp>(sortOp->getLoc(), nullableType, val);
+            types.push_back(nullableType);
+         } else {
+            types.push_back(val.getType());
+         }
+         values.push_back(val);
+      }
+
+      auto tupleType = mlir::TupleType::get(builder.getContext(), types);
+      ::mlir::Value packed = values.empty()
+         ? builder.create<mlir::util::UndefOp>(sortOp->getLoc(), tupleType).getResult()
+         : builder.create<mlir::util::PackOp>(sortOp->getLoc(), tupleType, values).getResult();
+
       builder.create<mlir::dsa::Append>(sortOp->getLoc(), vector, packed);
    }
-   ::mlir::Value createSortPredicate(::mlir::OpBuilder& builder, std::vector<std::pair<::mlir::Value, ::mlir::Value>> sortCriteria, ::mlir::Value trueVal, ::mlir::Value falseVal, size_t pos) {
-      if (pos < sortCriteria.size()) {
-         ::mlir::Value lt = builder.create<mlir::db::CmpOp>(sortOp->getLoc(), mlir::db::DBCmpPredicate::lt, sortCriteria[pos].first, sortCriteria[pos].second);
-         lt = builder.create<mlir::db::DeriveTruth>(sortOp->getLoc(), lt);
-         auto ifOp =
-             builder.create<mlir::scf::IfOp>(sortOp->getLoc(), mlir::TypeRange{builder.getI1Type()}, lt, true, true);
-         {
-             auto& thenBlock = ifOp.getThenRegion().front();
-             mlir::OpBuilder thenBuilder(&thenBlock, thenBlock.begin());
-             thenBuilder.create<mlir::scf::YieldOp>(sortOp->getLoc(), trueVal);
-         }
-         {
-             auto& elseBlock = ifOp.getElseRegion().front();
-             mlir::OpBuilder elseBuilder(&elseBlock, elseBlock.begin());
-             mlir::Value eq = elseBuilder.create<mlir::db::CmpOp>(sortOp->getLoc(),
-                                                                  mlir::db::DBCmpPredicate::eq,
-                                                                  sortCriteria[pos].first,
-                                                                  sortCriteria[pos].second);
-             eq = elseBuilder.create<mlir::db::DeriveTruth>(sortOp->getLoc(), eq);
-             auto ifOp2 =
-                 elseBuilder.create<mlir::scf::IfOp>(sortOp->getLoc(), mlir::TypeRange{builder.getI1Type()}, eq, true, true);
-             {
-                 auto& thenBlock2 = ifOp2.getThenRegion().front();
-                 mlir::OpBuilder thenBuilder2(&thenBlock2, thenBlock2.begin());
-                 thenBuilder2.create<mlir::scf::YieldOp>(
-                     sortOp->getLoc(),
-                     createSortPredicate(thenBuilder2, sortCriteria, trueVal, falseVal, pos + 1));
-             }
-             {
-                 auto& elseBlock2 = ifOp2.getElseRegion().front();
-                 mlir::OpBuilder elseBuilder2(&elseBlock2, elseBlock2.begin());
-                 elseBuilder2.create<mlir::scf::YieldOp>(sortOp->getLoc(), falseVal);
-             }
-             elseBuilder.create<mlir::scf::YieldOp>(sortOp->getLoc(), ifOp2.getResult(0));
-         }
-         return ifOp.getResult(0);
-      } else {
-         return falseVal;
-      }
-   }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-       auto scope = context.createScope();
-       orderedAttributes = mlir::relalg::OrderedAttributes::fromColumns(requiredAttributes);
-       const auto tupleType = orderedAttributes.getTupleType(builder.getContext());
+      auto scope = context.createScope();
+      orderedAttributes = mlir::relalg::OrderedAttributes::fromColumns(requiredAttributes);
 
-       const auto sortSpecs = sortOp.getSortspecs();
+      // PGX-LOWER: Reorder SortSpecification to match actual tuple layout from orderedAttributes
+      if (auto specPtrAttr = sortOp.getSpecPtrAttr()) {
+         auto specPtr = specPtrAttr.cast<mlir::IntegerAttr>().getInt();
+         auto* spec = reinterpret_cast<runtime::SortSpecification*>(specPtr);
 
-       // Get tuple type which has ALL columns
-       auto tupleTy = tupleType.cast<mlir::TupleType>();
-       int32_t numTotalCols = tupleTy.size();
+         // Build map from column pointer to new position in orderedAttributes
+         std::unordered_map<std::string, size_t> newPositions;
+         auto& columnManager = builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-       // For now, extract type OIDs from sortSpecs for the sort key columns
-       // and use placeholder values for non-sort columns
-       // TODO: Get actual type OIDs for all columns from SortOp attributes
-       std::vector<mlir::Attribute> allTypeOids;
-       std::vector<mlir::Attribute> allTypmods;
+         for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
+            auto [scope, name] = columnManager.getName(orderedAttributes.getAttrs()[i]);
+            std::string key = scope + "." + name;
+            newPositions[key] = i;
+         }
 
-       // Temporary: assume all columns have same type as first sort key
-       // This is WRONG but will compile - needs proper fix in AST translation
-       for (int i = 0; i < numTotalCols; i++) {
-           if (i < sortSpecs.size()) {
-               auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(sortSpecs[i]);
-               allTypeOids.push_back(builder.getI32IntegerAttr(sortSpec.getTypeOid()));
-               allTypmods.push_back(builder.getI32IntegerAttr(sortSpec.getTypmod()));
-           } else {
-               // Use type from first sort key as placeholder
-               auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(sortSpecs[0]);
-               allTypeOids.push_back(builder.getI32IntegerAttr(sortSpec.getTypeOid()));
-               allTypmods.push_back(builder.getI32IntegerAttr(sortSpec.getTypmod()));
-           }
-       }
+         // Reorder spec->columns to match orderedAttributes order
+         std::vector<runtime::SortColumnInfo> reorderedColumns(spec->num_columns);
+         for (int32_t i = 0; i < spec->num_columns; i++) {
+            std::string key = std::string(spec->columns[i].table_name) + "." + std::string(spec->columns[i].column_name);
+            auto it = newPositions.find(key);
+            if (it != newPositions.end()) {
+               reorderedColumns[it->second] = spec->columns[i];
+            }
+         }
 
-       // Extract sort key information
-       std::vector<mlir::Attribute> sortKeyIndices;
-       std::vector<mlir::Attribute> sortOpOids;
-       std::vector<mlir::Attribute> directions;
+         // Write back reordered columns
+         for (int32_t i = 0; i < spec->num_columns; i++) {
+            spec->columns[i] = reorderedColumns[i];
+         }
 
-       for (size_t i = 0; i < sortSpecs.size(); i++) {
-           auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(sortSpecs[i]);
+         // Update sort_key_indices to point to new positions
+         for (int32_t i = 0; i < spec->num_sort_keys; i++) {
+            int32_t oldIdx = spec->sort_key_indices[i];
+            if (oldIdx >= 0 && oldIdx < spec->num_columns) {
+               std::string key = std::string(reorderedColumns[oldIdx].table_name) + "." + std::string(reorderedColumns[oldIdx].column_name);
+               auto it = newPositions.find(key);
+               if (it != newPositions.end()) {
+                  spec->sort_key_indices[i] = static_cast<int32_t>(it->second);
+               }
+            }
+         }
+      }
 
-           sortKeyIndices.push_back(builder.getI32IntegerAttr(i));
-           sortOpOids.push_back(builder.getI32IntegerAttr(sortSpec.getSortOpOid()));
+      std::vector<::mlir::Type> nullableTypes;
+      for (const auto* attr : orderedAttributes.getAttrs()) {
+         ::mlir::Type attrType = attr->type;
+         if (!mlir::isa<mlir::db::NullableType>(attrType)) {
+            attrType = mlir::db::NullableType::get(builder.getContext(), attrType);
+         }
+         nullableTypes.push_back(attrType);
+      }
+      auto tupleType = mlir::TupleType::get(builder.getContext(), nullableTypes);
 
-           int dir = (sortSpec.getSortSpec() == mlir::relalg::SortSpec::asc) ? 1 : 0;
-           directions.push_back(builder.getI32IntegerAttr(dir));
-       }
-
-       auto sortStateType = mlir::dsa::SortStateType::get(
-           builder.getContext(), tupleType, builder.getArrayAttr(allTypeOids), builder.getArrayAttr(allTypmods),
-           builder.getArrayAttr(sortKeyIndices), builder.getArrayAttr(sortOpOids), builder.getArrayAttr(directions));
-
-       vector = builder.create<mlir::dsa::CreateDS>(sortOp.getLoc(), sortStateType);
-       children[0]->produce(context, builder);
-       builder.create<mlir::dsa::SortOp>(sortOp->getLoc(), vector);
-       {
-           auto forOp2 = builder.create<mlir::dsa::ForOp>(sortOp->getLoc(), ::mlir::TypeRange{}, vector,
-                                                          ::mlir::Value(), ::mlir::ValueRange{});
-           ::mlir::Block* block2 = new ::mlir::Block;
-           block2->addArgument(tupleType, sortOp->getLoc());
-           forOp2.getBodyRegion().push_back(block2);
-           ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
-           auto unpacked = builder2.create<mlir::util::UnPackOp>(sortOp->getLoc(), forOp2.getInductionVar());
-           orderedAttributes.setValuesForColumns(context, scope, unpacked.getResults());
-           consumer->consume(this, builder2, context);
-           builder2.create<mlir::dsa::YieldOp>(sortOp->getLoc(), ::mlir::ValueRange{});
-       }
-       builder.create<mlir::dsa::FreeOp>(sortOp->getLoc(), vector);
+      // Use GenericIterableType with "pgsort_iterator" to distinguish from regular Vector
+      vector = builder.create<mlir::dsa::CreateDS>(sortOp.getLoc(), mlir::dsa::GenericIterableType::get(builder.getContext(), tupleType, "pgsort_iterator"), sortOp.getSpecPtrAttr());
+      children[0]->produce(context,builder);
+      builder.create<mlir::dsa::SortOp>(sortOp->getLoc(), vector);
+      {
+         auto forOp2 = builder.create<mlir::dsa::ForOp>(sortOp->getLoc(), ::mlir::TypeRange{}, vector, ::mlir::Value(), ::mlir::ValueRange{});
+         ::mlir::Block* block2 = new ::mlir::Block;
+         block2->addArgument(tupleType, sortOp->getLoc());
+         forOp2.getBodyRegion().push_back(block2);
+         ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+         auto unpacked = builder2.create<mlir::util::UnPackOp>(sortOp->getLoc(), forOp2.getInductionVar());
+         orderedAttributes.setValuesForColumns(context, scope, unpacked.getResults());
+         consumer->consume(this, builder2, context);
+         builder2.create<mlir::dsa::YieldOp>(sortOp->getLoc(), ::mlir::ValueRange{});
+      }
+      builder.create<mlir::dsa::FreeOp>(sortOp->getLoc(), vector);
    }
 
    virtual ~SortTranslator() {}

@@ -19,50 +19,8 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
    public:
    using OpConversionPattern<mlir::dsa::SortOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::SortOp sortOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-       // Redirect over to new sort function
-      if (sortOp.getToSort().getType().isa<mlir::dsa::SortStateType>()) {
-         rt::PgSortRuntime::performSort(rewriter, sortOp->getLoc())({adaptor.getToSort()});
-         rewriter.eraseOp(sortOp);
-         return success();
-      }
-     // TODO: Remove the below
-
-      static size_t id = 0;
-
-      auto ptrType = mlir::util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
-
-      ModuleOp parentModule = sortOp->getParentOfType<ModuleOp>();
-      Type elementType = sortOp.getToSort().getType().cast<mlir::dsa::VectorType>().getElementType();
-      mlir::func::FuncOp funcOp;
-      {
-         OpBuilder::InsertionGuard insertionGuard(rewriter);
-         rewriter.setInsertionPointToStart(parentModule.getBody());
-         funcOp = rewriter.create<mlir::func::FuncOp>(parentModule.getLoc(), "dsa_sort_compare" + std::to_string(id++), rewriter.getFunctionType(TypeRange({ptrType, ptrType}), TypeRange(rewriter.getI1Type())));
-         auto* funcBody = new Block;
-         funcBody->addArguments(TypeRange({ptrType, ptrType}), {parentModule->getLoc(), parentModule->getLoc()});
-         funcOp.getBody().push_back(funcBody);
-         rewriter.setInsertionPointToStart(funcBody);
-         Value left = funcBody->getArgument(0);
-         Value right = funcBody->getArgument(1);
-
-         Value genericMemrefLeft = rewriter.create<util::GenericMemrefCastOp>(sortOp.getLoc(), util::RefType::get(rewriter.getContext(), elementType), left);
-         Value genericMemrefRight = rewriter.create<util::GenericMemrefCastOp>(sortOp.getLoc(), util::RefType::get(rewriter.getContext(), elementType), right);
-         Value tupleLeft = rewriter.create<util::LoadOp>(sortOp.getLoc(), elementType, genericMemrefLeft, Value());
-         Value tupleRight = rewriter.create<util::LoadOp>(sortOp.getLoc(), elementType, genericMemrefRight, Value());
-         auto terminator = rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc());
-         Block* sortLambda = &sortOp.getRegion().front();
-         auto* sortLambdaTerminator = sortLambda->getTerminator();
-         rewriter.inlineBlockBefore(sortLambda, terminator, {tupleLeft, tupleRight});
-         mlir::dsa::YieldOp yieldOp = mlir::cast<mlir::dsa::YieldOp>(terminator->getPrevNode());
-         Value x = yieldOp.getResults()[0];
-         rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc(), x);
-         rewriter.eraseOp(sortLambdaTerminator);
-         rewriter.eraseOp(terminator);
-      }
-
-
-      Value functionPointer = rewriter.create<mlir::func::ConstantOp>(sortOp->getLoc(), funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
-      rt::Vector::sort(rewriter, sortOp->getLoc())({adaptor.getToSort(), functionPointer});
+      // Sorting logic is entirely in PgSort runtime
+      rt::PgSortState::performSort(rewriter, sortOp->getLoc())({adaptor.getToSort()});
       rewriter.eraseOp(sortOp);
       return success();
    }
@@ -391,6 +349,8 @@ void mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConver
          auto types = genericIterableType.getElementType().cast<mlir::TupleType>().getTypes();
          auto ptrType = mlir::util::RefType::get(context, typeConverter.convertType(TupleType::get(context, {i8ptrType, types[0]})));
          return (Type) TupleType::get(context, {ptrType, indexType});
+      } else if (genericIterableType.getIteratorName() == "pgsort_iterator") {
+         return (Type) i8ptrType;
       }
       return Type();
    });

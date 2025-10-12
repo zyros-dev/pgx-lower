@@ -115,40 +115,17 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
 
 ParseResult mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::OperationState& result) {
    OpAsmParser::UnresolvedOperand toSort;
-   dsa::VectorType vecType;
-   if (parser.parseOperand(toSort) || parser.parseColonType(vecType)) {
+   Type collectionType;
+   if (parser.parseOperand(toSort) || parser.parseColonType(collectionType)) {
       return failure();
    }
-   parser.resolveOperand(toSort, vecType, result.operands);
-   OpAsmParser::Argument left, right;
-   left.type = vecType.getElementType();
-   right.type = vecType.getElementType();
-   if (parser.parseLParen() || parser.parseArgument(left) || parser.parseComma() || parser.parseArgument(right) || parser.parseRParen()) {
-      return failure();
-   }
-   Region* body = result.addRegion();
-   if (parser.parseRegion(*body, {left, right})) return failure();
+   parser.resolveOperand(toSort, collectionType, result.operands);
    return success();
 }
 
 void dsa::SortOp::print(OpAsmPrinter& p) {
    dsa::SortOp& op = *this;
-   p << " " << op.getToSort() << ":" << op.getToSort().getType() << " ";
-
-   if (!op.getRegion().empty()) {
-      p << "(";
-      bool first = true;
-      for (auto arg : op.getRegion().front().getArguments()) {
-         if (first) {
-            first = false;
-         } else {
-            p << ",";
-         }
-         p << arg;
-      }
-      p << ")";
-      p.printRegion(op.getRegion(), false, true);
-   }
+   p << " " << op.getToSort() << " : " << op.getToSort().getType();
 }
 
 ParseResult mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {

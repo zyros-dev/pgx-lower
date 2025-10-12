@@ -67,6 +67,19 @@ class BaseTableTranslator : public mlir::relalg::Translator {
          if (attr->type.isa<mlir::db::NullableType>()) {
             mlir::Value isNull = builder2.create<mlir::db::NotOp>(baseTableOp->getLoc(), atOp.getValid());
             mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getVal(), isNull);
+
+            // Print: base table scan - raw value and validity (only for i32)
+            auto baseType = getBaseType(attr->type);
+            if (baseType.isInteger(32)) {
+               auto extValid = builder2.create<mlir::arith::ExtUIOp>(baseTableOp->getLoc(), builder2.getI32Type(), atOp.getValid());
+               builder2.create<mlir::db::RuntimeCall>(baseTableOp->getLoc(), mlir::TypeRange{}, "PrintNullable", mlir::ValueRange{atOp.getVal(), extValid});
+
+               // Print: nullable wrapper - value and isNull flag
+               auto extractedVal = builder2.create<mlir::db::NullableGetVal>(baseTableOp->getLoc(), baseType, val);
+               auto extIsNull = builder2.create<mlir::arith::ExtUIOp>(baseTableOp->getLoc(), builder2.getI32Type(), isNull);
+               builder2.create<mlir::db::RuntimeCall>(baseTableOp->getLoc(), mlir::TypeRange{}, "PrintNullable", mlir::ValueRange{extractedVal, extIsNull});
+            }
+
             context.setValueForAttribute(scope, attr, val);
          } else {
             context.setValueForAttribute(scope, attr, atOp.getVal());

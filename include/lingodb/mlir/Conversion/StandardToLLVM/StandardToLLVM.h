@@ -6,6 +6,7 @@
 
 namespace mlir {
 namespace pgx_lower {
+
 std::unique_ptr<Pass> createStandardToLLVMPass();
 
 } // namespace pgx_lower

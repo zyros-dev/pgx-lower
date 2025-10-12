@@ -291,21 +291,6 @@ class ArrayElementPtrOpLowering : public OpConversionPattern<mlir::util::ArrayEl
       return success();
    }
 };
-class LoadDatumOpLowering : public OpConversionPattern<mlir::util::LoadDatumOp> {
-   public:
-   using OpConversionPattern<mlir::util::LoadDatumOp>::OpConversionPattern;
-   LogicalResult matchAndRewrite(mlir::util::LoadDatumOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto targetPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
-      auto elementType = typeConverter->convertType(op.getRef().getType().cast<mlir::util::RefType>().getElementType());
-      if (adaptor.getIdx()) {
-         Value elementPtr = rewriter.create<LLVM::GEPOp>(op->getLoc(), targetPtrType, elementType, adaptor.getRef(), ValueRange(adaptor.getIdx()));
-         rewriter.replaceOp(op, elementPtr);
-      } else {
-         rewriter.replaceOp(op, adaptor.getRef());
-      }
-      return success();
-   }
-};
 
 class CreateVarLenLowering : public OpConversionPattern<mlir::util::CreateVarLen> {
    public:
@@ -467,7 +452,6 @@ void mlir::util::populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeCon
    patterns.add<DeAllocOpLowering>(typeConverter, patterns.getContext());
    patterns.add<ArrayElementPtrOpLowering>(typeConverter, patterns.getContext());
    patterns.add<TupleElementPtrOpLowering>(typeConverter, patterns.getContext());
-   patterns.add<LoadDatumOpLowering>(typeConverter, patterns.getContext());
 
    patterns.add<ToGenericMemrefOpLowering>(typeConverter, patterns.getContext());
    patterns.add<ToMemrefOpLowering>(typeConverter, patterns.getContext());

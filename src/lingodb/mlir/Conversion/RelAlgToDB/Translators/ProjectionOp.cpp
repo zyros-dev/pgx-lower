@@ -109,7 +109,15 @@ class DistinctProjectionTranslator : public mlir::relalg::Translator {
       valTupleType = mlir::TupleType::get(builder.getContext(), {});
       auto keyTupleType = key.getTupleType(builder.getContext());
       ::mlir::Value emptyTuple = builder.create<mlir::util::UndefOp>(projectionOp.getLoc(), mlir::TupleType::get(builder.getContext()));
-      aggrHt = builder.create<mlir::dsa::CreateDS>(projectionOp.getLoc(), mlir::dsa::AggregationHashtableType::get(builder.getContext(), keyTupleType, valTupleType), emptyTuple);
+
+      auto createDSOp = builder.create<mlir::dsa::CreateDS>(projectionOp.getLoc(), mlir::dsa::AggregationHashtableType::get(builder.getContext(), keyTupleType, valTupleType), emptyTuple);
+      if (auto specOpt = projectionOp.getHashtableSpec()) {
+         uint64_t specPtrValue = specOpt.value();
+         createDSOp->setAttr("spec_ptr", builder.getI64IntegerAttr(specPtrValue));
+         PGX_LOG(RELALG_LOWER, DEBUG, "Extracted HashtableSpecification pointer 0x%lx from projectionOp (DISTINCT)",
+                 specPtrValue);
+      }
+      aggrHt = createDSOp.getResult();
 
       entryType = mlir::TupleType::get(builder.getContext(), {keyTupleType, valTupleType});
       children[0]->produce(context, builder);

@@ -12,6 +12,7 @@ extern "C" {
 }
 #endif
 
+
 namespace pgx_lower {
 
 struct QueryCapabilities {
@@ -36,7 +37,7 @@ class QueryAnalyzer {
 #ifdef POSTGRESQL_EXTENSION
     static QueryCapabilities analyzePlan(const PlannedStmt* stmt);
     static QueryCapabilities analyzeNode(const Plan* plan);
-
+    
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
 #endif

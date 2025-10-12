@@ -216,13 +216,13 @@ SELECT interval_col,
        interval_col < INTERVAL '1 year' AS less_than_year
 FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-        interval_col         | more_than_day | less_than_year 
------------------------------+---------------+----------------
- @ 120 hours                 | t             | t
- @ 2126 hours 9 mins 36 secs | t             | t
- @ 9922 hours 4 mins 48 secs | t             | f
-                             |               | 
- @ 0                         | f             | t
+ interval_col  | more_than_day | less_than_year 
+---------------+---------------+----------------
+ @ 120 hours   | t             | t
+ @ 2160 hours  | t             | t
+ @ 10080 hours | t             | f
+               |               | 
+ @ 0           | f             | t
 (5 rows)
 
 SELECT int2_col::float4 > float4_col AS int_to_float_compare,
@@ -257,11 +257,11 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT * FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- bool_col | int2_col | int4_col | int8_col  | float4_col |   float8_col   | string_col |  char_col  |     text_col     | decimal_col | numeric_col |  date_col  |          timestamp_col          |        interval_col         
-----------+----------+----------+-----------+------------+----------------+------------+------------+------------------+-------------+-------------+------------+---------------------------------+-----------------------------
+ bool_col | int2_col | int4_col | int8_col  | float4_col |   float8_col   | string_col |  char_col  |     text_col     | decimal_col | numeric_col |  date_col  |          timestamp_col          | interval_col  
+----------+----------+----------+-----------+------------+----------------+------------+------------+------------------+-------------+-------------+------------+---------------------------------+---------------
  t        |      100 |     1000 |    100000 |       3.14 |  3.14159265359 | hello      | fixed      | longer text here |     1245.67 |   9865.4321 | 01-15-2024 | Mon Jan 15 10:30:00 2024        | @ 120 hours
- f        |     -200 |    -2000 |   -200000 |      -2.71 | -2.71828182846 | world      | test       | another text     |    -9999.99 |  -1245.6789 | 06-30-2024 | Sun Jun 30 14:45:30.123 2024    | @ 2126 hours 9 mins 36 secs
- t        |      322 |    21474 | 922337203 |   1.23e+10 |       1.23e+20 | special!@# | chars$%^   | unicode αβγ      |     9999.99 |  9999.99999 | 12-31-2024 | Tue Dec 31 23:59:59.999999 2024 | @ 9922 hours 4 mins 48 secs
+ f        |     -200 |    -2000 |   -200000 |      -2.71 | -2.71828182846 | world      | test       | another text     |    -9999.99 |  -1245.6789 | 06-30-2024 | Sun Jun 30 14:45:30.123 2024    | @ 2160 hours
+ t        |      322 |    21474 | 922337203 |   1.23e+10 |       1.23e+20 | special!@# | chars$%^   | unicode αβγ      |     9999.99 |  9999.99999 | 12-31-2024 | Tue Dec 31 23:59:59.999999 2024 | @ 10080 hours
           |          |          |           |            |                |            |            |                  |             |             |            |                                 | 
  f        |        0 |        0 |         0 |          0 |              0 |            |            |                  |        0.00 |     0.00000 | 02-29-2024 | Thu Feb 29 00:00:00 2024        | @ 0
 (5 rows)

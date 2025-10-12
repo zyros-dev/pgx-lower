@@ -322,6 +322,10 @@ class PostgreSQLASTTranslator::Impl {
     static auto merge_translation_results(const TranslationResult* left_child, const TranslationResult* right_child)
         -> TranslationResult;
 
+    // Scan helper: build columns from targetlist for table scans
+    auto build_scan_columns(List* targetlist, const std::vector<pgx_lower::frontend::sql::ColumnInfo>& allColumns,
+                           const std::string& table_scope) const -> std::vector<TranslationResult::ColumnSchema>;
+
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;

@@ -98,6 +98,8 @@ struct BatchStorage {
     // or we can edit the LLVM commands. Unfortunately, I opted to be lazy.
     int32_t** string_lengths;
     uint8_t*** string_data_ptrs;
+
+    __int128** decimal_values;
 };
 
 struct DataSourceIterator {
@@ -577,6 +579,7 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
     batch->column_nulls = static_cast<bool**>(palloc(num_cols * sizeof(bool*)));
     batch->string_lengths = static_cast<int32_t**>(palloc(num_cols * sizeof(int32_t*)));
     batch->string_data_ptrs = static_cast<uint8_t***>(palloc(num_cols * sizeof(uint8_t**)));
+    batch->decimal_values = static_cast<__int128**>(palloc(num_cols * sizeof(__int128*)));
 
     for (size_t col = 0; col < num_cols; col++) {
         batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
@@ -587,6 +590,9 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
         batch->string_data_ptrs[col] = static_cast<uint8_t**>(palloc(capacity * sizeof(uint8_t*)));
         memset(batch->string_lengths[col], 0, capacity * sizeof(int32_t));
         memset(batch->string_data_ptrs[col], 0, capacity * sizeof(uint8_t*));
+
+        batch->decimal_values[col] = static_cast<__int128*>(palloc(capacity * sizeof(__int128)));
+        memset(batch->decimal_values[col], 0, capacity * sizeof(__int128));
     }
 
     MemoryContextSwitchTo(oldContext);
@@ -735,14 +741,108 @@ bool DataSourceIteration::isValid() {
                     PGX_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
                             col_spec.name.c_str(), str_len, str_data);
                 }
-            } else {
-                iter->batch->column_values[json_col_idx][row_idx] = datumTransfer(temp_values[pg_col_idx], attr->attbyval,
-                                                                              attr->attlen);
+            } else if (attr->atttypid == NUMERICOID) {
+                if (temp_nulls[pg_col_idx]) {
+                    iter->batch->decimal_values[json_col_idx][row_idx] = 0;
+                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC is NULL",
+                            row_idx, json_col_idx, col_spec.name.c_str());
+                } else {
+                    // Convert Numeric to i128
+                    const Numeric num = DatumGetNumeric(temp_values[pg_col_idx]);
 
-                PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu null=%s", row_idx,
-                        json_col_idx, col_spec.name.c_str(), pg_col_idx,
-                        static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]),
-                        temp_nulls[pg_col_idx] ? "true" : "false");
+                    int32_t type_scale = 0;
+                    if (attr->atttypmod >= 0) {
+                        // typmod encoding: ((precision << 16) | scale) + 4
+                        const int32_t adjusted = attr->atttypmod - 4; // VARHDRSZ = 4
+                        type_scale = adjusted & 0xFFFF;
+                    } else {
+                        type_scale = 6; // unconstrained
+                    }
+
+                    char* numeric_str = DatumGetCString(DirectFunctionCall1(numeric_out, NumericGetDatum(num)));
+
+                    __int128 scaled_value = 0;
+                    const char* p = numeric_str;
+                    const bool negative = (*p == '-');
+                    if (negative) p++;
+
+                    int digits_after_decimal = 0;
+                    bool seen_decimal = false;
+
+                    while (*p) {
+                        if (*p == '.') {
+                            seen_decimal = true;
+                        } else if (*p >= '0' && *p <= '9') {
+                            scaled_value = scaled_value * 10 + (*p - '0');
+                            if (seen_decimal) {
+                                digits_after_decimal++;
+                            }
+                        }
+                        p++;
+                    }
+
+                    // Apply additional scaling if needed
+                    int scale_diff = type_scale - digits_after_decimal;
+                    while (scale_diff > 0) {
+                        scaled_value *= 10;
+                        scale_diff--;
+                    }
+
+                    if (negative) {
+                        scaled_value = -scaled_value;
+                    }
+
+                    pfree(numeric_str);
+
+                    iter->batch->decimal_values[json_col_idx][row_idx] = scaled_value;
+                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC->i128: scale=%d, value=%lld",
+                            row_idx, json_col_idx, col_spec.name.c_str(), type_scale,
+                            static_cast<long long>(scaled_value));
+                }
+            } else if (attr->atttypid == INTERVALOID) {
+                if (temp_nulls[pg_col_idx]) {
+                    iter->batch->column_values[json_col_idx][row_idx] = 0;
+                    iter->batch->column_nulls[json_col_idx][row_idx] = false;
+                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL is NULL",
+                            row_idx, json_col_idx, col_spec.name.c_str());
+                } else {
+                    // Extract full interval and convert to microseconds (LingoDB's !db.interval<daytime> format)
+                    Interval* interval = DatumGetIntervalP(temp_values[pg_col_idx]);
+
+                    // Combine time (microseconds) + day (convert to microseconds) + month (approximate)
+                    int64_t totalMicroseconds = interval->time +
+                        (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
+
+                    if (interval->month != 0) {
+                        // TODO Phase N+: This loses precision for month-based intervals
+                        // Using 30-day approximation (matches frontend/SQL translation constants)
+                        constexpr int64_t AVERAGE_DAYS_PER_MONTH = 30;
+                        int64_t monthMicroseconds = static_cast<int64_t>(
+                            interval->month * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
+                        totalMicroseconds += monthMicroseconds;
+                    }
+
+                    // Store as int64 Datum (LingoDB format)
+                    iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
+
+                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL: time=%lld, day=%d, month=%d → total_us=%lld",
+                            row_idx, json_col_idx, col_spec.name.c_str(),
+                            static_cast<long long>(interval->time), interval->day, interval->month,
+                            static_cast<long long>(totalMicroseconds));
+                }
+            } else {
+                if (temp_nulls[pg_col_idx]) {
+                    iter->batch->column_values[json_col_idx][row_idx] = 0;
+                    PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] is NULL", row_idx,
+                            json_col_idx, col_spec.name.c_str(), pg_col_idx);
+                } else {
+                    iter->batch->column_values[json_col_idx][row_idx] = datumTransfer(temp_values[pg_col_idx], attr->attbyval,
+                                                                                  attr->attlen);
+
+                    PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu", row_idx,
+                            json_col_idx, col_spec.name.c_str(), pg_col_idx,
+                            static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]));
+                }
             }
 
             // A bit goofy - requires inverting because lingodb stores the opposite null flags...
@@ -818,6 +918,13 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
             PGX_LOG(RUNTIME, TRACE, "  DATA_BUFFER_IDX → %p", reinterpret_cast<void*>(column_info_ptr[DATA_BUFFER_IDX]));
             PGX_LOG(RUNTIME, TRACE, "  VARLEN_BUFFER_IDX → %p",
                     reinterpret_cast<void*>(column_info_ptr[VARLEN_BUFFER_IDX]));
+        } else if (iter->columns[col].type == ::ColumnType::DECIMAL) {
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->decimal_values[col][row_idx]);
+            column_info_ptr[VARLEN_BUFFER_IDX] = 0;
+
+            PGX_LOG(RUNTIME, DEBUG, "access() col=%zu DECIMAL i128 at %p, value=%lld", col,
+                    &iter->batch->decimal_values[col][row_idx],
+                    static_cast<long long>(iter->batch->decimal_values[col][row_idx]));
         } else {
             // Pass address of Datum itself (contains value)
             column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);

@@ -6,7 +6,6 @@
 #include <vector>
 
 // Forward declarations
-
 extern "C" {
 struct PlannedStmt;
 struct EState;
@@ -32,7 +31,8 @@ using ExternalFunction = std::function<int64_t()>;
 bool initialize_mlir_context(::mlir::MLIRContext& context);
 bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 bool executeJITWithDestReceiver(mlir::ModuleOp module, EState* estate, DestReceiver* dest);
-
+auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool;
+auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool;
 bool runPhase3a(::mlir::ModuleOp module);
 bool runPhase3b(::mlir::ModuleOp module);
 bool runPhase3c(::mlir::ModuleOp module);

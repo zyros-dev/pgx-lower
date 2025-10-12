@@ -75,6 +75,9 @@ mlir::Value JoinTranslator::evaluatePredicate(TranslatorContext& context, ::mlir
    if (hasRealPredicate) {
       auto val = mergeRelationalBlock(
          builder.getInsertionBlock(), joinOp, [](auto x) { return &x->getRegion(0).front(); }, context, scope)[0];
+      if (val.getType().isInteger(1)) {
+         return val;
+      }
       return builder.create<mlir::db::DeriveTruth>(joinOp->getLoc(), val);
    } else {
       return builder.create<mlir::db::ConstantOp>(joinOp.getLoc(), builder.getI1Type(), builder.getIntegerAttr(builder.getI64Type(), 1));

@@ -1,4 +1,5 @@
 #include "translator_internals.h"
+#include "lingodb/runtime/PgSortRuntime.h"
 extern "C" {
 #include "postgres.h"
 #include "nodes/nodes.h"
@@ -11,6 +12,7 @@ extern "C" {
 #include "utils/array.h"
 #include "utils/syscache.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"  // CurTransactionContext
 #include "fmgr.h"
 }
 
@@ -138,22 +140,8 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
 
                 if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
                     const auto& column = childResult.columns[var->varattno - 1];
-
-                    const Oid typeOid = exprType((Node*)var);
-                    const int32_t typmod = exprTypmod((Node*)var);
-                    const Oid sortOpOid = sort->sortOperators ? sort->sortOperators[i] : InvalidOid;
-                    const Oid collation = sort->collations ? sort->collations[i] : InvalidOid;
-                    const bool nullsFirst = sort->nullsFirst ? sort->nullsFirst[i] : false;
-
                     sortSpecs.push_back(mlir::relalg::SortSpecificationAttr::get(
-                        ctx.builder.getContext(),
-                        columnManager.createRef(column.table_name, column.column_name),
-                        spec,
-                        typeOid,
-                        typmod,
-                        sortOpOid,
-                        collation,
-                        nullsFirst));
+                        ctx.builder.getContext(), columnManager.createRef(column.table_name, column.column_name), spec));
                 }
             }
             break;
@@ -164,9 +152,81 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         return childResult;
     }
 
+    // Allocate SortSpecification struct in long-lived PostgreSQL memory context
+    // Must survive from AST translation through MLIR compilation to runtime execution
+    const int32_t numColumns = childResult.columns.size();
+    const int32_t numSortKeys = sort->numCols;
+
+    // Use CurTransactionContext for long-lived allocation (declared in PostgreSQL headers)
+    MemoryContext oldContext = MemoryContextSwitchTo(CurTransactionContext);
+
+    // Allocate column info array
+    auto* colInfos = static_cast<runtime::SortColumnInfo*>(
+        MemoryContextAlloc(CurTransactionContext, numColumns * sizeof(runtime::SortColumnInfo))
+    );
+
+    for (int i = 0; i < numColumns; i++) {
+        colInfos[i].table_name = pstrdup(childResult.columns[i].table_name.c_str());  // pstrdup already uses current context
+        colInfos[i].column_name = pstrdup(childResult.columns[i].column_name.c_str());
+        colInfos[i].type_oid = childResult.columns[i].type_oid;
+        colInfos[i].typmod = childResult.columns[i].typmod;
+    }
+
+    // Allocate and fill sort key arrays
+    auto* sortKeyIdxs = static_cast<int32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(int32_t)));
+    auto* sortOps = static_cast<uint32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(uint32_t)));
+    auto* collations = static_cast<uint32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(uint32_t)));
+    auto* nullsFirst = static_cast<bool*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(bool)));
+
+    int validSortKeys = 0;
+    for (int i = 0; i < numSortKeys; i++) {
+        const AttrNumber colIdx = sort->sortColIdx[i];
+        if (colIdx <= 0 || colIdx > numColumns)
+            continue;
+
+        sortKeyIdxs[validSortKeys] = colIdx - 1; // 0-based
+        sortOps[validSortKeys] = sort->sortOperators ? sort->sortOperators[i] : InvalidOid;
+        collations[validSortKeys] = sort->collations ? sort->collations[i] : InvalidOid;
+        nullsFirst[validSortKeys] = sort->nullsFirst ? sort->nullsFirst[i] : false;
+        validSortKeys++;
+    }
+
+    if (validSortKeys == 0) {
+        // Free allocated memory if no valid sort keys (still in transaction context)
+        pfree(colInfos);
+        pfree(sortKeyIdxs);
+        pfree(sortOps);
+        pfree(collations);
+        pfree(nullsFirst);
+        MemoryContextSwitchTo(oldContext);  // Restore original context
+        return childResult;
+    }
+
+    // Allocate spec struct
+    auto* spec = static_cast<runtime::SortSpecification*>(
+        MemoryContextAlloc(CurTransactionContext, sizeof(runtime::SortSpecification))
+    );
+    spec->columns = colInfos;
+    spec->num_columns = numColumns;
+    spec->sort_key_indices = sortKeyIdxs;
+    spec->sort_operators = sortOps;
+    spec->collations = collations;
+    spec->nulls_first = nullsFirst;
+    spec->num_sort_keys = validSortKeys;
+
+    // Restore original memory context
+    MemoryContextSwitchTo(oldContext);
+
+    // Create attribute with pointer to spec (using IntegerAttr for simplicity)
+    // Use signless i64 type required by MLIR arith.constant
+    auto specPtrAttr = ctx.builder.getIntegerAttr(
+        ctx.builder.getIntegerType(64),  // signless 64-bit
+        reinterpret_cast<uint64_t>(spec)
+    );
+
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
     const auto sortOp = ctx.builder.create<mlir::relalg::SortOp>(
-        ctx.builder.getUnknownLoc(), tupleStreamType, childResult.op->getResult(0), ctx.builder.getArrayAttr(sortSpecs));
+        ctx.builder.getUnknownLoc(), tupleStreamType, childResult.op->getResult(0), ctx.builder.getArrayAttr(sortSpecs), specPtrAttr);
 
     TranslationResult result;
     result.op = sortOp;
@@ -176,18 +236,27 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         ListCell* lc;
         foreach (lc, sort->plan.targetlist) {
             const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (!tle || tle->resjunk)
+            if (!tle)
                 continue;
 
             if (tle->expr && IsA(tle->expr, Var)) {
                 const auto* var = reinterpret_cast<Var*>(tle->expr);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Sort targetentry: resjunk=%d, varattno=%d, childResult.columns.size()=%zu",
+                        tle->resjunk, var->varattno, childResult.columns.size());
                 if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
-                    result.columns.push_back(childResult.columns[var->varattno - 1]);
+                    const auto& col = childResult.columns[var->varattno - 1];
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "  Adding column: %s.%s", col.table_name.c_str(), col.column_name.c_str());
+                    result.columns.push_back(col);
                 }
             }
         }
     } else {
         result.columns = childResult.columns;
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort returning %zu columns:", result.columns.size());
+    for (size_t i = 0; i < result.columns.size(); i++) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s", i, result.columns[i].table_name.c_str(), result.columns[i].column_name.c_str());
     }
 
     return result;
@@ -452,7 +521,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
+        const auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", tmp_ctx.params.size());
 
         mlir::Value predicateResult = nullptr;
@@ -544,7 +613,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
+        const auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", tmp_ctx.params.size());
 
         mlir::Value predicateResult = nullptr;
@@ -609,6 +678,37 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
     return result;
 }
 
+auto PostgreSQLASTTranslator::Impl::build_scan_columns(List* targetlist,
+                                                       const std::vector<pgx_lower::frontend::sql::ColumnInfo>& allColumns,
+                                                       const std::string& table_scope) const
+    -> std::vector<TranslationResult::ColumnSchema> {
+    std::vector<TranslationResult::ColumnSchema> columns;
+    const PostgreSQLTypeMapper type_mapper(context_);
+
+    ListCell* lc;
+    foreach (lc, targetlist) {
+        const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle)
+            continue;
+        if (tle->expr && IsA(tle->expr, Var)) {
+            const auto* var = reinterpret_cast<Var*>(tle->expr);
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
+                const auto& colInfo = allColumns[var->varattno - 1];
+                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                            colInfo.nullable);
+
+                columns.push_back({.table_name = table_scope,
+                                   .column_name = colInfo.name,
+                                   .type_oid = colInfo.type_oid,
+                                   .typmod = colInfo.typmod,
+                                   .mlir_type = mlirType,
+                                   .nullable = colInfo.nullable});
+            }
+        }
+    }
+    return columns;
+}
+
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const QueryCtxT& ctx,
                                                                       const TranslationResult& input,
                                                                       const List* target_list,
@@ -634,14 +734,17 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
 
     for (int i = 0; i < target_list->length; i++) {
         auto* tle = static_cast<TargetEntry*>(lfirst(&target_list->elements[i]));
-        if (tle && !tle->resjunk) {
+        if (tle) {
             if (handleAllEntries) {
                 targetEntries.push_back(tle);
                 if (tle->expr && tle->expr->type != T_Var) {
                     computedEntries.push_back(tle);
                 }
-            } else if (tle->expr && tle->expr->type != T_Var) {
-                computedEntries.push_back(tle);
+            } else {
+                targetEntries.push_back(tle);
+                if (tle->expr && tle->expr->type != T_Var) {
+                    computedEntries.push_back(tle);
+                }
             }
         }
     }
@@ -776,21 +879,92 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(), computedValues);
     }
 
-    TranslationResult intermediateResult;
-    intermediateResult.op = mapOp;
-    intermediateResult.columns = input.columns;
+    std::vector<TranslationResult::ColumnSchema> allColumns = input.columns;
     for (size_t i = 0; i < expressionTypes.size(); i++) {
-        intermediateResult.columns.push_back({.table_name = COMPUTED_EXPRESSION_SCOPE,
-                                              .column_name = columnNames[i],
-                                              .type_oid = expressionOids[i],
-                                              .typmod = -1,
-                                              .mlir_type = expressionTypes[i],
-                                              .nullable = true});
+        allColumns.push_back({.table_name = COMPUTED_EXPRESSION_SCOPE,
+                             .column_name = columnNames[i],
+                             .type_oid = expressionOids[i],
+                             .typmod = -1,
+                             .mlir_type = expressionTypes[i],
+                             .nullable = true});
     }
 
+    TranslationResult intermediateResult;
+    intermediateResult.op = mapOp;
+
     if (!handleAllEntries) {
+        // Build result columns in TARGETLIST ORDER (not input-first order)
+        // Include ALL entries (both resjunk and non-resjunk) for downstream operations like Sort
+        size_t computedIdx = 0;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Building columns from %zu targetEntries, input has %zu columns, %zu computed",
+                targetEntries.size(), input.columns.size(), expressionTypes.size());
+        for (size_t i = 0; i < targetEntries.size(); i++) {
+            auto* tle = targetEntries[i];
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] resno=%d, resjunk=%d, expr type=%d",
+                    i, tle->resno, tle->resjunk, tle->expr ? tle->expr->type : -1);
+
+            // Include ALL targetlist entries (don't skip resjunk here - materialize will filter)
+            if (tle->expr && tle->expr->type == T_Var) {
+                // This is a Var - find it in input.columns by name, not by varattno
+                const auto* var = reinterpret_cast<const Var*>(tle->expr);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "    Var: varno=%d, varattno=%d", var->varno, var->varattno);
+
+                // Resolve the Var to get table and column name
+                std::string tableName, colName;
+                bool nullable = false;
+
+                std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
+                std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
+
+                if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
+                    tableName = resolved->table_name;
+                    colName = resolved->column_name;
+                    nullable = resolved->nullable;
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Resolved via varno_resolution to %s.%s", tableName.c_str(), colName.c_str());
+                } else {
+                    // Fallback: use PostgreSQL catalog
+                    int schema_varno = IS_SPECIAL_VARNO(var->varno) ? var->varnosyn : var->varno;
+                    tableName = get_table_alias_from_rte(&ctx.current_stmt, schema_varno);
+                    colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, var->varattno);
+                    nullable = is_column_nullable(&ctx.current_stmt, schema_varno, var->varattno);
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Resolved via schema lookup to %s.%s", tableName.c_str(), colName.c_str());
+                }
+
+                // Find the column in input.columns by matching table and column name
+                bool found = false;
+                for (const auto& col : input.columns) {
+                    if (col.table_name == tableName && col.column_name == colName) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "    Adding from input: %s.%s", col.table_name.c_str(), col.column_name.c_str());
+                        intermediateResult.columns.push_back(col);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Column %s.%s not found in input", tableName.c_str(), colName.c_str());
+                }
+            } else {
+                // This is a computed expression - use the computedIdx
+                PGX_LOG(AST_TRANSLATE, DEBUG, "    Computed expr, computedIdx=%zu", computedIdx);
+                if (computedIdx < expressionTypes.size()) {
+                    size_t columnIndex = input.columns.size() + computedIdx;
+                    const auto& col = allColumns[columnIndex];
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Adding computed: %s.%s", col.table_name.c_str(), col.column_name.c_str());
+                    intermediateResult.columns.push_back(col);
+                    computedIdx++;
+                }
+            }
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "apply_projection returning intermediateResult with %zu columns (handleAllEntries=false, includes resjunk):", intermediateResult.columns.size());
+        for (size_t i = 0; i < intermediateResult.columns.size(); i++) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s", i, intermediateResult.columns[i].table_name.c_str(), intermediateResult.columns[i].column_name.c_str());
+        }
         return intermediateResult;
     }
+
+    intermediateResult.columns = allColumns;
 
     // When handling all entries we need to add a ProjectionOp to select only the columns from the target list
     std::vector<mlir::Attribute> projectedColumnRefs;
@@ -851,7 +1025,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
         ctx.builder.getUnknownLoc(), tupleStreamType,
         mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), mapOp.getResult(),
-        ctx.builder.getArrayAttr(projectedColumnRefs));
+        ctx.builder.getArrayAttr(projectedColumnRefs), mlir::IntegerAttr());
 
     TranslationResult result;
     result.op = projectionOp;
@@ -885,7 +1059,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     ListCell* lc;
     foreach (lc, target_list) {
         const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk)
+        if (!tle)
             continue;
 
         if (tle->expr && IsA(tle->expr, Var)) {
@@ -975,7 +1149,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
             ctx.builder.getUnknownLoc(), tupleStreamType,
             mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), inputValue,
-            ctx.builder.getArrayAttr(columnRefs));
+            ctx.builder.getArrayAttr(columnRefs), mlir::IntegerAttr());
 
         TranslationResult result;
         result.op = projectionOp;
@@ -1006,13 +1180,20 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
         const auto* topPlan = context.current_stmt.planTree;
         const auto* targetList = topPlan ? topPlan->targetlist : nullptr;
 
-        size_t colIndex = 0;
-        for (const auto& column : translation_result.columns) {
+        for (size_t colIndex = 0; colIndex < translation_result.columns.size(); colIndex++) {
+            const auto& column = translation_result.columns[colIndex];
+            if (targetList && colIndex < static_cast<size_t>(list_length(targetList))) {
+                const auto* tle = static_cast<TargetEntry*>(list_nth(targetList, colIndex));
+                if (tle && tle->resjunk) {
+                    continue;
+                }
+            }
+
             auto outputName = column.column_name;
 
             if (targetList && colIndex < static_cast<size_t>(list_length(targetList))) {
                 const auto* tle = static_cast<TargetEntry*>(list_nth(targetList, colIndex));
-                if (tle && tle->resname && !tle->resjunk) {
+                if (tle && tle->resname) {
                     outputName = tle->resname;
                 }
             }
@@ -1025,8 +1206,6 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
 
             auto nameAttr = context.builder.getStringAttr(outputName);
             columnNameAttrs.push_back(nameAttr);
-
-            colIndex++;
         }
 
         auto columnRefs = context.builder.getArrayAttr(columnRefAttrs);

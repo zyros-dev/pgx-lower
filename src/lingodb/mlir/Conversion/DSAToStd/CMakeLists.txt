@@ -1,9 +1,9 @@
 gen_rt_def(tb-rt-defs "TableBuilder.h")
 gen_rt_def(ds-it-rt-defs "DataSourceIteration.h")
 gen_rt_def(vec-rt-defs "Vector.h")
+gen_rt_def(pgsort-rt-defs "PgSortRuntime.h")
 gen_rt_def(join-ht-rt-defs "LazyJoinHashtable.h")
 gen_rt_def(ht-rt-defs "Hashtable.h")
-gen_rt_def(pg-sort-rt-defs "PgSortRuntime.h")
 
 add_mlir_conversion_library(MLIRDSAToStd
         CollectionIterators.cpp
@@ -19,9 +19,9 @@ add_mlir_conversion_library(MLIRDSAToStd
         tb-rt-defs
         ds-it-rt-defs
         vec-rt-defs
+        pgsort-rt-defs
         join-ht-rt-defs
         ht-rt-defs
-        pg-sort-rt-defs
         LINK_COMPONENTS
         Core
 

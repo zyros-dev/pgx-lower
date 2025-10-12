@@ -6,6 +6,7 @@
 #include "runtime-defs/DateRuntime.h"
 #include "runtime-defs/DumpRuntime.h"
 #include "runtime-defs/StringRuntime.h"
+#include "runtime-defs/PrintRuntime.h"
 
 mlir::db::RuntimeFunction* mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
    return registeredFunctions[name].get();
@@ -216,5 +217,13 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument()).implementedAs(absIntImpl);
    builtinRegistry->add("AbsDecimal").handlesInvalid().matchesTypes({RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(absDecimalImpl);
    builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateSubImpl);
+
+   // Print functions for runtime debugging
+   builtinRegistry->add("Print").implementedAs(rt::PrintRuntime::print).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::noReturnType);
+   builtinRegistry->add("PrintVal").implementedAs(rt::PrintRuntime::printVal).matchesTypes({RuntimeFunction::anyType, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
+   builtinRegistry->add("PrintPtr").implementedAs(rt::PrintRuntime::printPtr).matchesTypes({RuntimeFunction::anyType, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
+   builtinRegistry->add("PrintI32").implementedAs(rt::PrintRuntime::printI32).matchesTypes({RuntimeFunction::anyType, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
+   builtinRegistry->add("PrintNullable").implementedAs(rt::PrintRuntime::printNullable).matchesTypes({RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
+
    return builtinRegistry;
 }

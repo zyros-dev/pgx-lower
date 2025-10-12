@@ -9,8 +9,11 @@ namespace mlir {
 class Pass;
 
 namespace pgx_conversion {
+
 std::unique_ptr<Pass> createRelAlgToDBPass();
+
 void registerRelAlgToDBConversionPasses();
+
 } // namespace pgx_conversion
 } // namespace mlir
 

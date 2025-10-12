@@ -17,15 +17,6 @@ VALUES (30, 3),
        (40, 4),
        (15, 5);
 
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_io = true;
-SET pgx_lower.log_ir = true;
-SET pgx_lower.log_trace = true;
-SET pgx_lower.log_verbose = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
-
 SELECT value, name
 FROM test_order_basic
 ORDER BY value;
@@ -65,3 +56,27 @@ SET client_min_messages TO NOTICE;
 SELECT name
 FROM test_order_string
 ORDER BY name DESC;
+
+DROP TABLE IF EXISTS test_order_decimal;
+CREATE TABLE test_order_decimal
+(
+    id     SERIAL PRIMARY KEY,
+    price  NUMERIC(18, 2)
+);
+
+INSERT INTO test_order_decimal(price)
+VALUES (99.99),
+       (1234567890123.45),
+       (0.01),
+       (5000.00),
+       (999999999999.99);
+
+SELECT price * 2.2
+FROM test_order_decimal
+ORDER BY price;
+
+SELECT price
+FROM test_order_decimal
+ORDER BY price;
+
+DROP TABLE test_order_decimal;

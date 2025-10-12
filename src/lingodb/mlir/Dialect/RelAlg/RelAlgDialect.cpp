@@ -178,37 +178,23 @@ void mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
    return parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
 }
 void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) const {
-    printer << "<" << getAttr().getName() << "," << stringifyEnum(getSortSpec()) << "," << getTypeOid() << ","
-            << getTypmod() << "," << getSortOpOid() << "," << getCollation() << ","
-            << (getNullsFirst() ? "nulls_first" : "nulls_last") << ">";
+   printer << "<" << getAttr().getName() << "," << stringifyEnum(getSortSpec()) << ">";
 }
+
+// SortSpecPtrAttr print/parse removed - using UI64Attr instead
+
 ::mlir::Attribute mlir::relalg::SortSpecificationAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
-    mlir::SymbolRefAttr sym;
-    std::string sortSpecDescr;
-    uint32_t typeOid;
-    int32_t typmod;
-    uint32_t sortOpOid;
-    uint32_t collation;
-    std::string nullsFirstDescr;
-
-    if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseComma()
-        || parser.parseKeywordOrString(&sortSpecDescr) || parser.parseComma() || parser.parseInteger(typeOid)
-        || parser.parseComma() || parser.parseInteger(typmod) || parser.parseComma() || parser.parseInteger(sortOpOid)
-        || parser.parseComma() || parser.parseInteger(collation) || parser.parseComma()
-        || parser.parseKeywordOrString(&nullsFirstDescr)
-        || parser.parseGreater())
-    {
-        return ::mlir::Attribute();
-    }
-
+   mlir::SymbolRefAttr sym;
+   std::string sortSpecDescr;
+   if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseComma() || parser.parseKeywordOrString(&sortSpecDescr) || parser.parseGreater()) {
+      return ::mlir::Attribute();
+   }
    auto sortSpec = symbolizeSortSpec(sortSpecDescr);
    if (!sortSpec.has_value()) {
       return {};
    }
-   bool nullsFirst = (nullsFirstDescr == "nulls_first");
    auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
-   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value(),
-                                                    typeOid, typmod, sortOpOid, collation, nullsFirst);
+   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value());
 }
 void RelAlgDialect::printAttribute(Attribute attr, DialectAsmPrinter& printer) const {
    if (auto columnDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {

@@ -1200,11 +1200,6 @@ void DBToStdLoweringPass::runOnOperation() {
    typeConverter.addConversion([&](mlir::dsa::JoinHashtableType r) { return mlir::dsa::JoinHashtableType::get(r.getContext(), typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); });
    typeConverter.addConversion([&](mlir::dsa::AggregationHashtableType r) { return mlir::dsa::AggregationHashtableType::get(r.getContext(), typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); });
    typeConverter.addConversion([&](mlir::dsa::TableBuilderType r) { return mlir::dsa::TableBuilderType::get(r.getContext(), typeConverter.convertType(r.getRowType()).cast<mlir::TupleType>()); });
-   typeConverter.addConversion([&](mlir::dsa::SortStateType r) {
-       return mlir::dsa::SortStateType::get(r.getContext(), typeConverter.convertType(r.getElementType()),
-                                            r.getAllTypeOids(), r.getAllTypmods(), r.getSortKeyIndices(),
-                                            r.getSortOpOids(), r.getSortDirections());
-   });
 
    RewritePatternSet patterns(&getContext());
 

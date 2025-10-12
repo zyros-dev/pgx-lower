@@ -7,20 +7,21 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/IR/Module.h"
 
-namespace pgx_lower { namespace execution {
+namespace pgx_lower {
+namespace execution {
 
 class WrappedExecutionEngine;
 
 class PostgreSQLJITExecutionEngine {
-   public:
+public:
     PostgreSQLJITExecutionEngine();
     ~PostgreSQLJITExecutionEngine();
-
+    
     PostgreSQLJITExecutionEngine(const PostgreSQLJITExecutionEngine&) = delete;
     PostgreSQLJITExecutionEngine& operator=(const PostgreSQLJITExecutionEngine&) = delete;
     PostgreSQLJITExecutionEngine(PostgreSQLJITExecutionEngine&&) = default;
     PostgreSQLJITExecutionEngine& operator=(PostgreSQLJITExecutionEngine&&) = default;
-
+    
     bool initialize(::mlir::ModuleOp module);
     bool setupJITOptimizationPipeline();
     bool compileToLLVMIR(::mlir::ModuleOp module);
@@ -28,11 +29,12 @@ class PostgreSQLJITExecutionEngine {
     void setOptimizationLevel(llvm::CodeGenOptLevel level);
     bool setupMemoryContexts();
     bool executeCompiledQuery(void* estate, void* dest);
-
-   private:
+    
+private:
     // Implementation details hidden in .cpp file using anonymous namespaces
     class Impl;
     std::unique_ptr<Impl> pImpl;
 };
 
-}} // namespace pgx_lower::execution
+} // namespace execution
+} // namespace pgx_lower

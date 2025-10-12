@@ -87,16 +87,9 @@ def ColumnRefAttr : RelAlg_Attr<"ColumnRef"> {
 
 def SortSpecificationAttr : RelAlg_Attr<"SortSpecification"> {
     let mnemonic = "sortspec";
-    let parameters = (ins
-        "ColumnRefAttr":$attr,
-        "SortSpec":$sortSpec,
-        "uint32_t":$typeOid,
-        "int32_t":$typmod,
-        "uint32_t":$sortOpOid,
-        "uint32_t":$collation,
-        "bool":$nullsFirst
-    );
-    let hasCustomAssemblyFormat=1;
+    let parameters = (ins "ColumnRefAttr":$attr,"SortSpec":$sortSpec);
+        let hasCustomAssemblyFormat=1;
+
 }
 
 //===----------------------------------------------------------------------===//
@@ -110,6 +103,8 @@ def RelAlg_SortSpec : I64EnumAttr<"SortSpec", "sort order",
         [RelAlg_SortSpec_DESC,RelAlg_AggrFunc_ASC]> {
     let cppNamespace = "::mlir::relalg";
 }
+
+// SortSpecPtrAttr removed - using UI64Attr instead for simplicity
 
 def RelAlg_AggrFunc_Sum   : I64EnumAttrCase<"sum", 0>;
 def RelAlg_AggrFunc_Min   : I64EnumAttrCase<"min", 1>;
@@ -266,9 +261,9 @@ def AggregationOp : RelAlg_Op<"aggregation", [Pure,Operator,UnaryOperator]> {
 def SortOp : RelAlg_Op<"sort", [Pure,Operator,UnaryOperator]> {
     let summary = "sort operation";
 
-    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$sortspecs);
+    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$sortspecs, OptionalAttr<I64Attr>:$spec_ptr);
     let results = (outs RelAlg_TupleStream:$result);
-    let assemblyFormat = [{ $rel custom<SortSpecs>($sortspecs) attr-dict}];
+    let assemblyFormat = [{ $rel custom<SortSpecs>($sortspecs) (`spec` $spec_ptr^)? attr-dict}];
     let extraClassDeclaration = [{
         ColumnSet getUsedColumns();
     }];
@@ -364,7 +359,7 @@ def MarkJoinOp : RelAlg_JoinOp<"markjoin"> {
 def ProjectionOp : RelAlg_Op<"projection",[Pure,Operator,UnaryOperator]> {
     let summary = "projection operation";
 
-    let arguments = (ins RelAlg_SetSemantic:$set_semantic,RelAlg_TupleStream:$rel, ArrayAttr:$cols);
+    let arguments = (ins RelAlg_SetSemantic:$set_semantic,RelAlg_TupleStream:$rel, ArrayAttr:$cols, OptionalAttr<I64Attr>:$hashtable_spec);
     let results = (outs RelAlg_TupleStream:$result);
     let assemblyFormat = [{ $set_semantic custom<CustRefArr>($cols) $rel attr-dict }];
 

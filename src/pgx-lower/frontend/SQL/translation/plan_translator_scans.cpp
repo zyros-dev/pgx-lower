@@ -120,28 +120,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
         throw std::runtime_error("SeqScan had an empty target list");
     }
 
-    ListCell* lc;
-    foreach (lc, seqScan->scan.plan.targetlist) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk)
-            continue;
-        if (tle->expr && IsA(tle->expr, Var)) {
-            auto* var = reinterpret_cast<Var*>(tle->expr);
-            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
-                const auto& colInfo = allColumns[var->varattno - 1];
-                PostgreSQLTypeMapper type_mapper(context_);
-                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                            colInfo.nullable);
-
-                result.columns.push_back({.table_name = uniqueScope,
-                                          .column_name = colInfo.name,
-                                          .type_oid = colInfo.type_oid,
-                                          .typmod = colInfo.typmod,
-                                          .mlir_type = mlirType,
-                                          .nullable = colInfo.nullable});
-            }
-        }
-    }
+    result.columns = build_scan_columns(seqScan->scan.plan.targetlist, allColumns, uniqueScope);
 
     if (uniqueScope != aliasName) {
         PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -249,28 +228,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
         throw std::runtime_error("IndexScan had an empty target list");
     }
 
-    ListCell* lc;
-    foreach (lc, indexScan->scan.plan.targetlist) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk)
-            continue;
-        if (tle->expr && IsA(tle->expr, Var)) {
-            auto* var = reinterpret_cast<Var*>(tle->expr);
-            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
-                const auto& colInfo = allColumns[var->varattno - 1];
-                PostgreSQLTypeMapper type_mapper(context_);
-                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                            colInfo.nullable);
-
-                result.columns.push_back({.table_name = uniqueScope,
-                                          .column_name = colInfo.name,
-                                          .type_oid = colInfo.type_oid,
-                                          .typmod = colInfo.typmod,
-                                          .mlir_type = mlirType,
-                                          .nullable = colInfo.nullable});
-            }
-        }
-    }
+    result.columns = build_scan_columns(indexScan->scan.plan.targetlist, allColumns, uniqueScope);
 
     // populate varno_resolution for IndexScan because indexqual contains INDEX_VAR nodes
     PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -384,28 +342,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_only_scan(QueryCtxT& ctx, In
         throw std::runtime_error("IndexOnlyScan had an empty target list");
     }
 
-    ListCell* lc;
-    foreach (lc, indexOnlyScan->scan.plan.targetlist) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk)
-            continue;
-        if (tle->expr && IsA(tle->expr, Var)) {
-            auto* var = reinterpret_cast<Var*>(tle->expr);
-            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
-                const auto& colInfo = allColumns[var->varattno - 1];
-                PostgreSQLTypeMapper type_mapper(context_);
-                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                            colInfo.nullable);
-
-                result.columns.push_back({.table_name = uniqueScope,
-                                          .column_name = colInfo.name,
-                                          .type_oid = colInfo.type_oid,
-                                          .typmod = colInfo.typmod,
-                                          .mlir_type = mlirType,
-                                          .nullable = colInfo.nullable});
-            }
-        }
-    }
+    result.columns = build_scan_columns(indexOnlyScan->scan.plan.targetlist, allColumns, uniqueScope);
 
     // populate varno_resolution for IndexOnlyScan because indexqual/recheckqual may contain INDEX_VAR nodes
     PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -529,28 +466,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bitmap_heap_scan(QueryCtxT& ctx, B
         throw std::runtime_error("BitmapHeapScan had an empty target list");
     }
 
-    ListCell* lc;
-    foreach (lc, bitmapScan->scan.plan.targetlist) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk)
-            continue;
-        if (tle->expr && IsA(tle->expr, Var)) {
-            auto* var = reinterpret_cast<Var*>(tle->expr);
-            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
-                const auto& colInfo = allColumns[var->varattno - 1];
-                PostgreSQLTypeMapper type_mapper(context_);
-                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                            colInfo.nullable);
-
-                result.columns.push_back({.table_name = uniqueScope,
-                                          .column_name = colInfo.name,
-                                          .type_oid = colInfo.type_oid,
-                                          .typmod = colInfo.typmod,
-                                          .mlir_type = mlirType,
-                                          .nullable = colInfo.nullable});
-            }
-        }
-    }
+    result.columns = build_scan_columns(bitmapScan->scan.plan.targetlist, allColumns, uniqueScope);
 
     PGX_LOG(AST_TRANSLATE, DEBUG,
             "[SCOPE_DEBUG] translate_bitmap_heap_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
@@ -625,9 +541,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
 
         foreach (lc, targetlist) {
             auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (tle->resjunk) {
-                continue;
-            }
 
             if (!tle->expr) {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan: Skipping targetlist entry with no expression at attno=%d",
@@ -746,8 +659,6 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
 
     foreach (lc, targetlist) {
         auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (tle->resjunk)
-            continue;
 
         if (tle->expr && IsA(tle->expr, Var)) {
             auto* var = reinterpret_cast<Var*>(tle->expr);
@@ -790,7 +701,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
         auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
             ctx.builder.getUnknownLoc(), tupleStreamType,
             mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
-            result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns));
+            result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns), mlir::IntegerAttr());
 
         result.op = projectionOp.getOperation();
         result.columns = newColumns;
