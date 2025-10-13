@@ -504,19 +504,48 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
                 is_null = (null_flag != 0);
             }
             if (!is_null) {
-                // VarLen32 layout: len at offset+0, pointer at offset+8
-                const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(&tupleData[layout.value_offset]);
-                const size_t len = len_with_flag & ~0x80000000;
+                // VarLen32 i128 layout - TWO cases:
+                // Case 1 (lazy flag SET): Runtime pointer-based string from table scan
+                //   bytes[0-3]:   len | 0x80000000
+                //   bytes[4-7]:   unused
+                //   bytes[8-15]:  valid pointer to string data
+                // Case 2 (lazy flag CLEAR): MLIR inlined constant from CASE/literal
+                //   bytes[0-3]:   len (no flag)
+                //   bytes[4-7]:   first 4 bytes of string
+                //   bytes[8-15]:  remaining bytes of string
 
-                if (char* str_ptr = *reinterpret_cast<char* const*>(&tupleData[layout.value_offset + 8])) {
-                    saved_strings[i].len = len;
-                    saved_strings[i].data = static_cast<char*>(malloc(len + 1));
-                    if (saved_strings[i].data) {
+                // Get pointer to the start of the i128 data (trust layout.value_offset!)
+                const uint8_t* i128_data = &tupleData[layout.value_offset];
+
+                // Read length and check lazy flag
+                const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(i128_data);
+                const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
+                const size_t len = len_with_flag & ~0x80000000u;
+
+                saved_strings[i].len = len;
+                saved_strings[i].data = static_cast<char*>(malloc(len + 1));
+
+                if (saved_strings[i].data) {
+                    if (is_lazy) {
+                        // Case 1: Runtime pointer-based string
+                        // The pointer is valid and located at offset 8
+                        char* str_ptr = *reinterpret_cast<char* const*>(i128_data + 8);
+                        PGX_LOG(RUNTIME, DEBUG, "appendTuple: Column[%zu] runtime string (lazy): len=%zu, ptr=%p",
+                                i, len, static_cast<void*>(str_ptr));
                         memcpy(saved_strings[i].data, str_ptr, len);
-                        saved_strings[i].data[len] = '\0';
-                        PGX_LOG(RUNTIME, DEBUG, "appendTuple: Pre-extracted Column[%zu] string: len=%zu, value='%.*s'",
-                                i, len, static_cast<int>(len), saved_strings[i].data);
+                    } else {
+                        // Case 2: MLIR inlined constant (len <= 12)
+                        // Reconstruct from the two halves of the i128
+                        size_t first = std::min(len, 4ul);
+                        memcpy(saved_strings[i].data, i128_data + 4, first);
+                        if (len > 4) {
+                            memcpy(saved_strings[i].data + 4, i128_data + 8, len - 4);
+                        }
+                        PGX_LOG(RUNTIME, DEBUG, "appendTuple: Column[%zu] inlined constant: len=%zu, reconstructed from i128",
+                                i, len);
                     }
+                    saved_strings[i].data[len] = '\0';
+                    PGX_LOG(RUNTIME, DEBUG, "  Final string: '%.*s'", static_cast<int>(len), saved_strings[i].data);
                 }
             }
         }
