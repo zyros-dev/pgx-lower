@@ -362,31 +362,48 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
         case PhysicalType::DECIMAL128: {
             const Numeric num = DatumGetNumeric(values[i]);
 
-            const Numeric num_shift = int64_to_numeric(1LL << 63);
-            const Datum divisor_datum = DirectFunctionCall2(numeric_mul,
-                                                      NumericGetDatum(num_shift),
-                                                      NumericGetDatum(int64_to_numeric(2)));  // 2^64
+            // Convert Numeric to string, then parse to __int128
+            char* num_str = DatumGetCString(DirectFunctionCall1(numeric_out, NumericGetDatum(num)));
+            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: input Numeric = %s", i, num_str);
 
-            const Datum upper_datum = DirectFunctionCall2(numeric_div_trunc,
-                                                    NumericGetDatum(num),
-                                                    divisor_datum);
+            // Parse string to __int128
+            __int128 val = 0;
+            bool negative = false;
+            char* p = num_str;
 
-            bool error = false;
-            const int64_t upper = numeric_int8_opt_error(DatumGetNumeric(upper_datum), &error);
+            // Skip whitespace
+            while (*p == ' ') p++;
 
-            const Datum lower_datum = DirectFunctionCall2(numeric_mod,
-                                                    NumericGetDatum(num),
-                                                    divisor_datum);
-            const int64_t lower = numeric_int8_opt_error(DatumGetNumeric(lower_datum), &error);
-
-            if (!error) {
-                const __int128 val = (static_cast<__int128>(upper) << 64) | static_cast<uint64_t>(lower);
-                *reinterpret_cast<__int128*>(&mlir_tuple[layout.value_offset]) = val;
-                PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: upper=%ld, lower=%ld", i, upper, lower);
-            } else {
-                memset(&mlir_tuple[layout.value_offset], 0, 16);
-                PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: ERROR converting", i);
+            // Check for sign
+            if (*p == '-') {
+                negative = true;
+                p++;
+            } else if (*p == '+') {
+                p++;
             }
+
+            // Parse digits
+            while (*p >= '0' && *p <= '9') {
+                val = val * 10 + (*p - '0');
+                p++;
+            }
+
+            // Skip decimal point and fractional part (we're working with scaled integers)
+            if (*p == '.') {
+                p++;
+                while (*p >= '0' && *p <= '9') {
+                    p++;
+                }
+            }
+
+            if (negative) {
+                val = -val;
+            }
+
+            *reinterpret_cast<__int128*>(&mlir_tuple[layout.value_offset]) = val;
+            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: string='%s'", i, num_str);
+
+            pfree(num_str);
             break;
         }
         default:
@@ -551,41 +568,39 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
             break;
         }
         case PhysicalType::DECIMAL128: {
-            // Read i128 from MLIR tuple and convert to Numeric
             const __int128 val = *reinterpret_cast<const __int128*>(&tupleData[layout.value_offset]);
 
-            const int64_t upper = static_cast<int64_t>(val >> 64);
-            const uint64_t lower = static_cast<uint64_t>(val & 0xFFFFFFFFFFFFFFFFULL);
+            char buf[64];
+            char* p = buf + sizeof(buf) - 1;
+            *p = '\0';
 
-            // Build result: upper * 2^64 + lower
-            const int64_t lower_high = static_cast<int64_t>(lower >> 32);
-            const int64_t lower_low = lower & 0xFFFFFFFFULL;
+            __int128 tmp = val;
+            const bool negative = (tmp < 0);
+            if (negative) {
+                tmp = -tmp;
+            }
 
-            // upper * 2^64
-            const Numeric num_upper = int64_to_numeric(upper);
-            const Numeric num_2_64 = int64_to_numeric(1LL << 63);
-            Datum upper_shifted = DirectFunctionCall2(numeric_mul,
-                                                      NumericGetDatum(num_upper),
-                                                      NumericGetDatum(num_2_64));
-            upper_shifted = DirectFunctionCall2(numeric_mul,
-                                                upper_shifted,
-                                                NumericGetDatum(int64_to_numeric(2)));
+            if (tmp == 0) {
+                *--p = '0';
+            } else {
+                while (tmp > 0) {
+                    *--p = '0' + static_cast<char>(tmp % 10);
+                    tmp /= 10;
+                }
+            }
 
-            // lower_high * 2^32
-            const Numeric num_lower_high = int64_to_numeric(lower_high);
-            const Numeric num_2_32 = int64_to_numeric(1LL << 32);
-            Datum lower_high_shifted = DirectFunctionCall2(numeric_mul,
-                                                           NumericGetDatum(num_lower_high),
-                                                           NumericGetDatum(num_2_32));
+            if (negative) {
+                *--p = '-';
+            }
 
-            // Add all parts
-            Datum temp = DirectFunctionCall2(numeric_add, upper_shifted, lower_high_shifted);
-            const Datum result = DirectFunctionCall2(numeric_add,
-                                                     temp,
-                                                     NumericGetDatum(int64_to_numeric(lower_low)));
-
+            const Datum result = DirectFunctionCall3(
+                numeric_in,
+                CStringGetDatum(p),
+                ObjectIdGetDatum(InvalidOid),
+                Int32GetDatum(-1)
+            );
             values[i] = result;
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: i128 val, upper=%ld, lower=%lu", i, upper, lower);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: %s", i, p);
             break;
         }
         default:
