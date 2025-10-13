@@ -1,4 +1,5 @@
 #include "lingodb/runtime/Hashtable.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
 
 extern "C" {
 #include "postgres.h"
@@ -129,13 +130,6 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
             const size_t col_size = get_physical_size(type_oid);
 
             if (type_oid == VARCHAROID || type_oid == TEXTOID) {
-                // VarLen32 i128 layout - TWO cases:
-                // Case 1 (lazy flag SET): Runtime pointer-based string from table scan
-                //   bytes[0-3]:   len | 0x80000000
-                //   bytes[8-15]:  valid pointer to string data
-                // Case 2 (lazy flag CLEAR): MLIR inlined constant from CASE/literal
-                //   bytes[0-3]:   len (no flag)
-                //   bytes[4-15]:  inlined string data
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
 
@@ -144,19 +138,11 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 const uint32_t len = len_with_flag & ~0x80000000u;
 
                 if (is_lazy) {
-                    // Case 1: Runtime pointer-based string - must deep-copy
-                    const uint64_t ptr_val = *reinterpret_cast<uint64_t*>(i128_data + 8);
-                    char* src_str = reinterpret_cast<char*>(ptr_val);
-
-                    PGX_LOG(RUNTIME, DEBUG, "Deep copying key string[%d] (lazy): len=%u, src=%p", i, len, static_cast<void*>(src_str));
-
+                    PGX_LOG(RUNTIME, DEBUG, "Deep copying key string[%d] (lazy): len=%u", i, len);
                     char* new_str = static_cast<char*>(palloc(len + 1));
-                    memcpy(new_str, src_str, len);
-                    new_str[len] = '\0';
+                    extract_varlen32_string(i128_data, new_str, len);
 
-                    // Update pointer in i128
                     *reinterpret_cast<uint64_t*>(i128_data + 8) = reinterpret_cast<uint64_t>(new_str);
-
                     PGX_LOG(RUNTIME, DEBUG, "  Copied to %p: '%s'", static_cast<void*>(new_str), new_str);
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "Key string[%d] (inlined): len=%u, no deep copy needed", i, len);
@@ -166,7 +152,6 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
             offset += col.is_nullable ? (1 + col_size) : col_size;
         }
 
-        // Process value columns
         offset = key_size;  // Start after keys
         for (int32_t i = 0; i < meta.spec->num_value_columns; i++) {
             const auto& col = meta.spec->value_columns[i];
@@ -184,18 +169,11 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 const uint32_t len = len_with_flag & ~0x80000000u;
 
                 if (is_lazy) {
-                    // Runtime pointer-based string - must deep-copy
-                    const uint64_t ptr_val = *reinterpret_cast<uint64_t*>(i128_data + 8);
-                    char* src_str = reinterpret_cast<char*>(ptr_val);
-
-                    PGX_LOG(RUNTIME, DEBUG, "Deep copying value string[%d] (lazy): len=%u, src=%p", i, len, static_cast<void*>(src_str));
+                    PGX_LOG(RUNTIME, DEBUG, "Deep copying value string[%d] (lazy): len=%u", i, len);
 
                     char* new_str = static_cast<char*>(palloc(len + 1));
-                    memcpy(new_str, src_str, len);
-                    new_str[len] = '\0';
-
+                    extract_varlen32_string(i128_data, new_str, len);
                     *reinterpret_cast<uint64_t*>(i128_data + 8) = reinterpret_cast<uint64_t>(new_str);
-
                     PGX_LOG(RUNTIME, DEBUG, "  Copied to %p: '%s'", static_cast<void*>(new_str), new_str);
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "Value string[%d] (inlined): len=%u, no deep copy needed", i, len);

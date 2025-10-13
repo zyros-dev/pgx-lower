@@ -1,5 +1,6 @@
 // ReSharper disable CppUseStructuredBinding
 #include "lingodb/runtime/PgSortRuntime.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
 #include "pgx-lower/utility/logging.h"
 #include <cstdlib>
 #include <cstring>
@@ -488,7 +489,9 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
     }
     PGX_LOG(RUNTIME, DEBUG, "appendTuple: tuple #%zu, hexdump: %s%s", tupleCount, hexdump.str().c_str(),
             (tupleSize > 32 ? "..." : ""));
-    // Pre-allocate saved string data for all VarLen32 columns
+
+    const MemoryContext oldcontext = MemoryContextSwitchTo(static_cast<MemoryContext>(sortcontext));
+
     struct SavedString {
         char* data;
         size_t len;
@@ -504,54 +507,23 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
                 is_null = (null_flag != 0);
             }
             if (!is_null) {
-                // VarLen32 i128 layout - TWO cases:
-                // Case 1 (lazy flag SET): Runtime pointer-based string from table scan
-                //   bytes[0-3]:   len | 0x80000000
-                //   bytes[4-7]:   unused
-                //   bytes[8-15]:  valid pointer to string data
-                // Case 2 (lazy flag CLEAR): MLIR inlined constant from CASE/literal
-                //   bytes[0-3]:   len (no flag)
-                //   bytes[4-7]:   first 4 bytes of string
-                //   bytes[8-15]:  remaining bytes of string
-
-                // Get pointer to the start of the i128 data (trust layout.value_offset!)
                 const uint8_t* i128_data = &tupleData[layout.value_offset];
 
-                // Read length and check lazy flag
                 const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(i128_data);
-                const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
                 const size_t len = len_with_flag & ~0x80000000u;
 
                 saved_strings[i].len = len;
-                saved_strings[i].data = static_cast<char*>(malloc(len + 1));
+                saved_strings[i].data = static_cast<char*>(palloc(len + 1));
 
                 if (saved_strings[i].data) {
-                    if (is_lazy) {
-                        // Case 1: Runtime pointer-based string
-                        // The pointer is valid and located at offset 8
-                        char* str_ptr = *reinterpret_cast<char* const*>(i128_data + 8);
-                        PGX_LOG(RUNTIME, DEBUG, "appendTuple: Column[%zu] runtime string (lazy): len=%zu, ptr=%p",
-                                i, len, static_cast<void*>(str_ptr));
-                        memcpy(saved_strings[i].data, str_ptr, len);
-                    } else {
-                        // Case 2: MLIR inlined constant (len <= 12)
-                        // Reconstruct from the two halves of the i128
-                        size_t first = std::min(len, 4ul);
-                        memcpy(saved_strings[i].data, i128_data + 4, first);
-                        if (len > 4) {
-                            memcpy(saved_strings[i].data + 4, i128_data + 8, len - 4);
-                        }
-                        PGX_LOG(RUNTIME, DEBUG, "appendTuple: Column[%zu] inlined constant: len=%zu, reconstructed from i128",
-                                i, len);
-                    }
-                    saved_strings[i].data[len] = '\0';
-                    PGX_LOG(RUNTIME, DEBUG, "  Final string: '%.*s'", static_cast<int>(len), saved_strings[i].data);
+                    extract_varlen32_string(i128_data, saved_strings[i].data, len);
+                    PGX_LOG(RUNTIME, DEBUG, "appendTuple: Column[%zu] string extracted: len=%zu, value='%.*s'",
+                            i, len, static_cast<int>(len), saved_strings[i].data);
                 }
             }
         }
     }
 
-    const MemoryContext oldcontext = MemoryContextSwitchTo(static_cast<MemoryContext>(sortcontext));
     auto* values = static_cast<Datum*>(palloc(spec->num_columns * sizeof(Datum)));
     auto* isnull = static_cast<bool*>(palloc(spec->num_columns * sizeof(bool)));
     for (size_t i = 0; i < column_layouts_.size(); i++) {
@@ -668,7 +640,7 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
 
     for (auto& saved : saved_strings) {
         if (saved.data) {
-            free(saved.data);
+            pfree(saved.data);
         }
     }
 

@@ -54,4 +54,37 @@ PhysicalType get_physical_type(uint32_t type_oid) {
     }
 }
 
+size_t extract_varlen32_string(const uint8_t* i128_data, char* dest, size_t max_len) {
+    // VarLen32 i128 layout - TWO cases:
+    // Case 1 (lazy flag SET): Runtime pointer-based string from table scan
+    //   bytes[0-3]:   len | 0x80000000
+    //   bytes[4-7]:   unused
+    //   bytes[8-15]:  valid pointer to string data
+    // Case 2 (lazy flag CLEAR): MLIR inlined constant from CASE/literal
+    //   bytes[0-3]:   len (no flag)
+    //   bytes[4-7]:   first 4 bytes of string
+    //   bytes[8-15]:  remaining bytes of string
+
+    const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(i128_data);
+    const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
+    const size_t len = len_with_flag & ~0x80000000u;
+
+    // Safety check
+    const size_t copy_len = (len > max_len) ? max_len : len;
+
+    if (is_lazy) {
+        const char* str_ptr = *reinterpret_cast<char* const*>(i128_data + 8);
+        memcpy(dest, str_ptr, copy_len);
+    } else {
+        const size_t first = (copy_len < 4) ? copy_len : 4;
+        memcpy(dest, i128_data + 4, first);
+        if (copy_len > 4) {
+            memcpy(dest + 4, i128_data + 8, copy_len - 4);
+        }
+    }
+
+    dest[copy_len] = '\0';
+    return len;
+}
+
 } // namespace runtime

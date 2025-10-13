@@ -31,7 +31,8 @@ struct ColumnLayout {
 size_t get_physical_size(uint32_t type_oid);
 PhysicalType get_physical_type(uint32_t type_oid);
 
-// Sort-specific structures
+size_t extract_varlen32_string(const uint8_t* i128_data, char* dest, size_t max_len);
+
 struct SortColumnInfo {
     const char* table_name;
     const char* column_name;
