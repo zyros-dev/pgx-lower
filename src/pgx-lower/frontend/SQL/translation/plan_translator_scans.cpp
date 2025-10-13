@@ -701,7 +701,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
         auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
             ctx.builder.getUnknownLoc(), tupleStreamType,
             mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
-            result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns), mlir::IntegerAttr());
+            result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns));
 
         result.op = projectionOp.getOperation();
         result.columns = newColumns;

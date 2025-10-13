@@ -961,7 +961,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
         ctx.builder.getUnknownLoc(), tupleStreamType,
         mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), mapOp.getResult(),
-        ctx.builder.getArrayAttr(projectedColumnRefs), mlir::IntegerAttr());
+        ctx.builder.getArrayAttr(projectedColumnRefs));
 
     TranslationResult result;
     result.op = projectionOp;
@@ -1085,7 +1085,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
             ctx.builder.getUnknownLoc(), tupleStreamType,
             mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), inputValue,
-            ctx.builder.getArrayAttr(columnRefs), mlir::IntegerAttr());
+            ctx.builder.getArrayAttr(columnRefs));
 
         TranslationResult result;
         result.op = projectionOp;

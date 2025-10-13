@@ -119,11 +119,7 @@ class SimplifyAggregations : public ::mlir::PassWrapper<SimplifyAggregations, ::
                      ::mlir::OpBuilder builder(aggregationOp);
                      auto cols = mlir::relalg::ColumnSet::fromArrayAttr(aggregationOp.getGroupByCols());
                      cols.insert(mlir::relalg::ColumnSet::fromArrayAttr(projectionOp.getCols()));
-                     // Preserve the hashtable_spec from the original ProjectionOp
-                     auto hashtableSpec = projectionOp.getHashtableSpec() ?
-                        builder.getI64IntegerAttr(projectionOp.getHashtableSpec().value()) :
-                        mlir::IntegerAttr();
-                     auto newProj = builder.create<mlir::relalg::ProjectionOp>(projectionOp->getLoc(), mlir::relalg::TupleStreamType::get(&getContext()), mlir::relalg::SetSemantic::distinct, aggregationOp.getRel(), cols.asRefArrayAttr(&getContext()), hashtableSpec);
+                     auto newProj = builder.create<mlir::relalg::ProjectionOp>(projectionOp->getLoc(), mlir::relalg::TupleStreamType::get(&getContext()), mlir::relalg::SetSemantic::distinct, aggregationOp.getRel(), cols.asRefArrayAttr(&getContext()));
                      aggregationOp.setOperand(newProj);
                      projectionOp.replaceAllUsesWith(arg);
                      projectionOp->remove();

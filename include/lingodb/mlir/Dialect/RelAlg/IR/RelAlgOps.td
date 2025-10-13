@@ -104,8 +104,6 @@ def RelAlg_SortSpec : I64EnumAttr<"SortSpec", "sort order",
     let cppNamespace = "::mlir::relalg";
 }
 
-// SortSpecPtrAttr removed - using UI64Attr instead for simplicity
-
 def RelAlg_AggrFunc_Sum   : I64EnumAttrCase<"sum", 0>;
 def RelAlg_AggrFunc_Min   : I64EnumAttrCase<"min", 1>;
 def RelAlg_AggrFunc_Max   : I64EnumAttrCase<"max", 2>;
@@ -357,9 +355,7 @@ def MarkJoinOp : RelAlg_JoinOp<"markjoin"> {
 
 // Set Operations
 def ProjectionOp : RelAlg_Op<"projection",[Pure,Operator,UnaryOperator]> {
-    let summary = "projection operation";
-
-    let arguments = (ins RelAlg_SetSemantic:$set_semantic,RelAlg_TupleStream:$rel, ArrayAttr:$cols, OptionalAttr<I64Attr>:$hashtable_spec);
+    let arguments = (ins RelAlg_SetSemantic:$set_semantic,RelAlg_TupleStream:$rel, ArrayAttr:$cols);
     let results = (outs RelAlg_TupleStream:$result);
     let assemblyFormat = [{ $set_semantic custom<CustRefArr>($cols) $rel attr-dict }];
 
