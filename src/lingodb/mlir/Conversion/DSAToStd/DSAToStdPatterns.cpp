@@ -20,6 +20,7 @@ extern "C" {
 #include "postgres.h"
 #include "catalog/pg_type.h"
 #include "utils/memutils.h"
+#include "catalog/pg_collation.h"
 }
 
 using namespace mlir;
@@ -102,6 +103,120 @@ static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type 
     return spec;
 }
 
+static runtime::SortSpecification* createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr) {
+    auto tuple = tupleType.dyn_cast<mlir::TupleType>();
+    if (!tuple || !sortKeysAttr) {
+        return nullptr;
+    }
+
+    const int32_t numColumns = tuple.getTypes().size();
+    const int32_t numSortKeys = sortKeysAttr.size();
+
+    if (numColumns == 0 || numSortKeys == 0) {
+        return nullptr;
+    }
+
+    MemoryContext oldContext = MemoryContextSwitchTo(CurTransactionContext);
+    auto* colInfos = static_cast<runtime::SortColumnInfo*>(
+        MemoryContextAlloc(CurTransactionContext, numColumns * sizeof(runtime::SortColumnInfo))
+    );
+
+    for (int32_t i = 0; i < numColumns; i++) {
+        mlir::Type fieldType = tuple.getTypes()[i];
+
+        bool is_nullable = false;
+        mlir::Type baseType = fieldType;
+
+        if (auto nullableType = fieldType.dyn_cast<mlir::db::NullableType>()) {
+            is_nullable = true;
+            baseType = nullableType.getType();
+        } else if (auto tupleTy = fieldType.dyn_cast<mlir::TupleType>()) {
+            if (tupleTy.getTypes().size() == 2 && tupleTy.getTypes()[0].isInteger(1)) {
+                is_nullable = true;
+                baseType = tupleTy.getTypes()[1];
+            }
+        }
+
+        uint32_t pg_type_oid = INT4OID;  // Default fallback (23)
+        int32_t typmod = -1;
+
+        if (baseType.isInteger(32)) {
+            pg_type_oid = INT4OID;  // 23
+        } else if (baseType.isInteger(64)) {
+            pg_type_oid = INT8OID;  // 20
+        } else if (baseType.isInteger(128)) {
+            pg_type_oid = NUMERICOID;  // 1700 - DecimalType becomes i128 after DB lowering
+        } else if (auto varlenType = baseType.dyn_cast<mlir::util::VarLen32Type>()) {
+            pg_type_oid = TEXTOID;  // 25
+        }
+        // TODO: Add more type mappings as needed (float32, float64, etc.)
+
+        colInfos[i].table_name = pstrdup("unknown");
+        colInfos[i].column_name = pstrdup("col");
+        colInfos[i].type_oid = pg_type_oid;
+        colInfos[i].typmod = typmod;
+        colInfos[i].is_nullable = is_nullable;
+    }
+
+    auto* sortKeyIdxs = static_cast<int32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(int32_t)));
+    auto* sortOps = static_cast<uint32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(uint32_t)));
+    auto* collations = static_cast<uint32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(uint32_t)));
+    auto* nullsFirst = static_cast<bool*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(bool)));
+
+    for (int32_t i = 0; i < numSortKeys; i++) {
+        auto keyAttr = sortKeysAttr[i].cast<mlir::ArrayAttr>();
+        auto indexAttr = keyAttr[0].cast<mlir::IntegerAttr>();
+        auto directionAttr = keyAttr[1].cast<mlir::IntegerAttr>();
+
+        int32_t colIndex = indexAttr.getInt();
+        bool isAscending = (directionAttr.getInt() == 0);
+
+        sortKeyIdxs[i] = colIndex;
+
+        // Determine sort operator and collation based on column type
+        uint32_t pg_type_oid = colInfos[colIndex].type_oid;
+
+        // Set collation: text types need DEFAULT_COLLATION_OID, others use InvalidOid
+        if (pg_type_oid == TEXTOID || pg_type_oid == VARCHAROID || pg_type_oid == BPCHAROID) {
+            collations[i] = DEFAULT_COLLATION_OID;  // 100
+        } else {
+            collations[i] = InvalidOid;
+        }
+
+        nullsFirst[i] = !isAscending;  // DESC sorts nulls first by default
+
+        // Determine sort operator based on direction
+        uint32_t operatorOid = InvalidOid;
+
+        if (pg_type_oid == INT4OID) {
+            operatorOid = isAscending ? 97 : 521;  // int4 < (97), int4 > (521)
+        } else if (pg_type_oid == INT8OID) {
+            operatorOid = isAscending ? 412 : 413;  // int8 < (412), int8 > (413)
+        } else if (pg_type_oid == NUMERICOID) {
+            operatorOid = isAscending ? 1754 : 1756;  // numeric < (1754), numeric > (1756)
+        } else if (pg_type_oid == TEXTOID) {
+            operatorOid = isAscending ? 664 : 666;  // text < (664), text > (666)
+        }
+
+        sortOps[i] = operatorOid;
+    }
+
+    auto* spec = static_cast<runtime::SortSpecification*>(
+        MemoryContextAlloc(CurTransactionContext, sizeof(runtime::SortSpecification))
+    );
+    spec->columns = colInfos;
+    spec->num_columns = numColumns;
+    spec->sort_key_indices = sortKeyIdxs;
+    spec->sort_operators = sortOps;
+    spec->collations = collations;
+    spec->nulls_first = nullsFirst;
+    spec->num_sort_keys = numSortKeys;
+
+    MemoryContextSwitchTo(oldContext);
+
+    return spec;
+}
+
 static Type getHashtableType(MLIRContext* context, Type keyType, Type aggrType) {
    auto idxType = IndexType::get(context);
    auto entryType = getHashtableEntryType(context, keyType, aggrType);
@@ -119,27 +234,36 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
       auto loc = createOp->getLoc();
       if (auto genericType = createOp.getDs().getType().dyn_cast<mlir::dsa::GenericIterableType>()) {
          if (genericType.getIteratorName() == "pgsort_iterator") {
-            // Create PgSortState - extract spec pointer from attribute
             auto elementType = typeConverter->convertType(genericType.getElementType());
             auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
 
-            // Extract SortSpecification pointer from InitialCapacity attribute
             mlir::Value specPtrValue;
-            if (auto specAttr = createOp.getInitAttr()) {
-               // specAttr is an IntegerAttr with the spec pointer value (already signless)
-               if (auto intAttr = specAttr->dyn_cast<mlir::IntegerAttr>()) {
-                  specPtrValue = rewriter.create<mlir::arith::ConstantOp>(loc, intAttr);
-               } else {
-                  // Unexpected attribute type - pass 0
-                  specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
-                     loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
-                  );
-               }
+            if (createOp.getInitAttr()) {
+                if (auto sortKeysAttr = createOp.getInitAttr()->dyn_cast<mlir::ArrayAttr>()) {
+                    auto* spec = createSortSpecFromType(genericType.getElementType(), sortKeysAttr);
+                    if (spec) {
+                        PGX_LOG(RUNTIME, DEBUG, "Created SortSpecification: %d columns, %d sort keys",
+                                spec->num_columns, spec->num_sort_keys);
+                        specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                            loc, rewriter.getIntegerAttr(rewriter.getI64Type(), reinterpret_cast<uint64_t>(spec))
+                        );
+                    } else {
+                        PGX_LOG(RUNTIME, DEBUG, "Failed to create SortSpecification");
+                        specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                            loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
+                        );
+                    }
+                } else {
+                    PGX_LOG(RUNTIME, DEBUG, "init_attr is not ArrayAttr");
+                    specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                        loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
+                    );
+                }
             } else {
-               // No spec provided - pass 0
-               specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
-                  loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
-               );
+                PGX_LOG(RUNTIME, DEBUG, "No init_attr for pgsort_iterator");
+                specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
+                    loc, rewriter.getIntegerAttr(rewriter.getI64Type(), 0)
+                );
             }
 
             auto ptr = rt::PgSortState::create(rewriter, loc)({typeSize, specPtrValue})[0];

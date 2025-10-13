@@ -261,9 +261,9 @@ def AggregationOp : RelAlg_Op<"aggregation", [Pure,Operator,UnaryOperator]> {
 def SortOp : RelAlg_Op<"sort", [Pure,Operator,UnaryOperator]> {
     let summary = "sort operation";
 
-    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$sortspecs, OptionalAttr<I64Attr>:$spec_ptr);
+    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$sortspecs);
     let results = (outs RelAlg_TupleStream:$result);
-    let assemblyFormat = [{ $rel custom<SortSpecs>($sortspecs) (`spec` $spec_ptr^)? attr-dict}];
+    let assemblyFormat = [{ $rel custom<SortSpecs>($sortspecs) attr-dict}];
     let extraClassDeclaration = [{
         ColumnSet getUsedColumns();
     }];

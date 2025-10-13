@@ -37,6 +37,7 @@ struct SortColumnInfo {
     const char* column_name;
     uint32_t type_oid;
     int32_t typmod;
+    bool is_nullable;
 };
 
 struct SortSpecification {

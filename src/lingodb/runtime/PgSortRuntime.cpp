@@ -85,15 +85,20 @@ void PgSortState::compute_column_layouts() {
         layout.pg_type_oid = spec->columns[i].type_oid;
         layout.phys_type = get_physical_type(layout.pg_type_oid);
         layout.value_size = get_physical_size(layout.pg_type_oid);
-        layout.is_nullable = true;
-
+        layout.is_nullable = spec->columns[i].is_nullable;
 
         layout.tuple_offset = current_offset;
-        layout.null_flag_offset = current_offset;
-        current_offset += 1;
 
-        layout.value_offset = current_offset;
-        current_offset += layout.value_size;
+        if (layout.is_nullable) {
+            layout.null_flag_offset = current_offset;
+            current_offset += 1;
+            layout.value_offset = current_offset;
+            current_offset += layout.value_size;
+        } else {
+            layout.null_flag_offset = 0;
+            layout.value_offset = current_offset;
+            current_offset += layout.value_size;
+        }
 
         column_layouts_.push_back(layout);
 
@@ -184,13 +189,17 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
     for (size_t i = 0; i < column_layouts_.size(); i++) {
         const auto& layout = column_layouts_[i];
 
-        const uint8_t null_flag = mlir_tuple[layout.null_flag_offset];
-        isnull[i] = (null_flag != 0);
+        if (layout.is_nullable) {
+            const uint8_t null_flag = mlir_tuple[layout.null_flag_offset];
+            isnull[i] = (null_flag != 0);
 
-        if (isnull[i]) {
-            values[i] = static_cast<Datum>(0);
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu]: NULL", i);
-            continue;
+            if (isnull[i]) {
+                values[i] = static_cast<Datum>(0);
+                PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu]: NULL", i);
+                continue;
+            }
+        } else {
+            isnull[i] = false;
         }
 
         switch (layout.phys_type) {
@@ -298,11 +307,19 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
     memset(mlir_tuple, 0, tupleSize);
     for (size_t i = 0; i < column_layouts_.size(); i++) {
         const auto& layout = column_layouts_[i];
-        mlir_tuple[layout.null_flag_offset] = isnull[i] ? 1 : 0;
 
-        if (isnull[i]) {
-            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu]: NULL", i);
-            continue;
+        if (layout.is_nullable) {
+            mlir_tuple[layout.null_flag_offset] = isnull[i] ? 1 : 0;
+
+            if (isnull[i]) {
+                PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu]: NULL", i);
+                continue;
+            }
+        } else {
+            if (isnull[i]) {
+                PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu]: ERROR - NULL value for non-nullable column", i);
+                continue;
+            }
         }
 
         switch (layout.phys_type) {
@@ -481,8 +498,12 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
     for (size_t i = 0; i < column_layouts_.size(); i++) {
         const auto& layout = column_layouts_[i];
         if (layout.phys_type == PhysicalType::VARLEN32) {
-            const uint8_t null_flag = tupleData[layout.null_flag_offset];
-            if (null_flag == 0) { // Not null
+            bool is_null = false;
+            if (layout.is_nullable) {
+                const uint8_t null_flag = tupleData[layout.null_flag_offset];
+                is_null = (null_flag != 0);
+            }
+            if (!is_null) {
                 // VarLen32 layout: len at offset+0, pointer at offset+8
                 const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(&tupleData[layout.value_offset]);
                 const size_t len = len_with_flag & ~0x80000000;
@@ -507,13 +528,17 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
     for (size_t i = 0; i < column_layouts_.size(); i++) {
         const auto& layout = column_layouts_[i];
 
-        const uint8_t null_flag = tupleData[layout.null_flag_offset];
-        isnull[i] = (null_flag != 0);
+        if (layout.is_nullable) {
+            const uint8_t null_flag = tupleData[layout.null_flag_offset];
+            isnull[i] = (null_flag != 0);
 
-        if (isnull[i]) {
-            values[i] = static_cast<Datum>(0);
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu]: NULL", i);
-            continue;
+            if (isnull[i]) {
+                values[i] = static_cast<Datum>(0);
+                PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu]: NULL", i);
+                continue;
+            }
+        } else {
+            isnull[i] = false;
         }
 
         switch (layout.phys_type) {
