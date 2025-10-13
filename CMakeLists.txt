@@ -125,6 +125,7 @@ add_subdirectory(src/lingodb/mlir)
 add_subdirectory(src/lingodb/mlir-support)
 
 add_subdirectory(src/lingodb/runtime)
+add_subdirectory(src/lingodb/utility)
 
 # Add the main extension
 add_subdirectory(extension)

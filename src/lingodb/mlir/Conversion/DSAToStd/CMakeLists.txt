@@ -32,4 +32,5 @@ add_mlir_conversion_library(MLIRDSAToStd
         MLIRUtilToLLVM
         MLIRLLVMDialect
         MLIRSCFTransforms
+        lingodb_utility
         )

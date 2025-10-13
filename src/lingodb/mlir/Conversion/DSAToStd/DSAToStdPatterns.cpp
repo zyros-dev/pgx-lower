@@ -14,6 +14,7 @@
 #include "runtime-defs/TableBuilder.h"
 #include "runtime-defs/Vector.h"
 #include "lingodb/runtime/RuntimeSpecifications.h"
+#include "lingodb/utility/mlir_to_postgres.h"
 #include "pgx-lower/utility/logging.h"
 
 extern "C" {
@@ -49,16 +50,10 @@ static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type 
                     baseType = nullableType.getType();
                 }
 
-                // Map MLIR type to PostgreSQL OID
-                uint32_t oid = INT4OID; // default
-                if (baseType.isInteger(32)) {
-                    oid = INT4OID;
-                } else if (baseType.isInteger(64)) {
-                    oid = INT8OID;
-                } else if (auto stringType = baseType.dyn_cast<mlir::db::StringType>()) {
-                    oid = TEXTOID;
-                } else if (auto decimalType = baseType.dyn_cast<mlir::db::DecimalType>()) {
-                    oid = NUMERICOID;
+                uint32_t oid = lingodb::utility::mlir_type_to_pg_oid(fieldType);
+                if (!OidIsValid(oid)) {
+                    PGX_ERROR("Hashtable column type mapping failed: unsupported MLIR type");
+                    return columns;
                 }
 
                 columns.push_back({oid, nullable});
@@ -137,19 +132,13 @@ static runtime::SortSpecification* createSortSpecFromType(mlir::Type tupleType, 
             }
         }
 
-        uint32_t pg_type_oid = INT4OID;  // Default fallback (23)
+        uint32_t pg_type_oid = lingodb::utility::mlir_type_to_pg_oid(fieldType);
         int32_t typmod = -1;
-
-        if (baseType.isInteger(32)) {
-            pg_type_oid = INT4OID;  // 23
-        } else if (baseType.isInteger(64)) {
-            pg_type_oid = INT8OID;  // 20
-        } else if (baseType.isInteger(128)) {
-            pg_type_oid = NUMERICOID;  // 1700 - DecimalType becomes i128 after DB lowering
-        } else if (auto varlenType = baseType.dyn_cast<mlir::util::VarLen32Type>()) {
-            pg_type_oid = TEXTOID;  // 25
+        if (!OidIsValid(pg_type_oid)) {
+            PGX_ERROR("Column %d type mapping failed: unsupported MLIR type", i);
+            MemoryContextSwitchTo(oldContext);
+            return nullptr;
         }
-        // TODO: Add more type mappings as needed (float32, float64, etc.)
 
         colInfos[i].table_name = pstrdup("unknown");
         colInfos[i].column_name = pstrdup("col");
@@ -173,32 +162,18 @@ static runtime::SortSpecification* createSortSpecFromType(mlir::Type tupleType, 
 
         sortKeyIdxs[i] = colIndex;
 
-        // Determine sort operator and collation based on column type
         uint32_t pg_type_oid = colInfos[colIndex].type_oid;
+        nullsFirst[i] = !isAscending;
 
-        // Set collation: text types need DEFAULT_COLLATION_OID, others use InvalidOid
-        if (pg_type_oid == TEXTOID || pg_type_oid == VARCHAROID || pg_type_oid == BPCHAROID) {
-            collations[i] = DEFAULT_COLLATION_OID;  // 100
-        } else {
-            collations[i] = InvalidOid;
+        const auto spec = lingodb::utility::get_sort_operator(pg_type_oid, isAscending);
+        if (!OidIsValid(spec.comparison_op)) {
+            PGX_ERROR("Sort key %d operator lookup failed: no btree operator for type OID %u",
+                      i, pg_type_oid);
+            MemoryContextSwitchTo(oldContext);
+            return nullptr;
         }
-
-        nullsFirst[i] = !isAscending;  // DESC sorts nulls first by default
-
-        // Determine sort operator based on direction
-        uint32_t operatorOid = InvalidOid;
-
-        if (pg_type_oid == INT4OID) {
-            operatorOid = isAscending ? 97 : 521;  // int4 < (97), int4 > (521)
-        } else if (pg_type_oid == INT8OID) {
-            operatorOid = isAscending ? 412 : 413;  // int8 < (412), int8 > (413)
-        } else if (pg_type_oid == NUMERICOID) {
-            operatorOid = isAscending ? 1754 : 1756;  // numeric < (1754), numeric > (1756)
-        } else if (pg_type_oid == TEXTOID) {
-            operatorOid = isAscending ? 664 : 666;  // text < (664), text > (666)
-        }
-
-        sortOps[i] = operatorOid;
+        sortOps[i] = spec.comparison_op;
+        collations[i] = spec.collation;
     }
 
     auto* spec = static_cast<runtime::SortSpecification*>(
