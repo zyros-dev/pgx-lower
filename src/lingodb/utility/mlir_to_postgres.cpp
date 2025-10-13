@@ -1,6 +1,7 @@
 #include "lingodb/utility/mlir_to_postgres.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "pgx-lower/utility/logging.h"
 
 extern "C" {
 #include "postgres.h"
@@ -41,6 +42,12 @@ uint32_t mlir_type_to_pg_oid(mlir::Type type) {
     if (mlir::isa<mlir::util::VarLen32Type>(baseType)) {
         return TEXTOID;
     }
+
+    std::string baseTypeStr;
+    llvm::raw_string_ostream os2(baseTypeStr);
+    baseType.print(os2);
+    os2.flush();
+    PGX_WARNING("mlir_type_to_pg_oid: Unsupported MLIR type: %s", baseTypeStr.c_str());
 
     return InvalidOid;
 }

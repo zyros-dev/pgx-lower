@@ -38,6 +38,12 @@ static TupleType getHashtableEntryType(MLIRContext* context, Type keyType, Type 
    return mlir::TupleType::get(context, {i8PtrType, IndexType::get(context), getHashtableKVType(context, keyType, aggrType)});
 }
 static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType) {
+    PGX_IO(DB_LOWER);
+
+    PGX_LOG(DB_LOWER, DEBUG, "createHashtableSpecFromTypes called:");
+    PGX_LOG(DB_LOWER, DEBUG, "  keyType: %s", pgx_lower::log::type_to_string(keyType).c_str());
+    PGX_LOG(DB_LOWER, DEBUG, "  valType: %s", pgx_lower::log::type_to_string(valType).c_str());
+
     auto extractColumns = [](mlir::Type tupleType) -> std::vector<std::pair<uint32_t, bool>> {
         std::vector<std::pair<uint32_t, bool>> columns;
         if (auto tuple = tupleType.dyn_cast<mlir::TupleType>()) {
@@ -49,8 +55,15 @@ static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type 
                     nullable = true;
                     baseType = nullableType.getType();
                 }
+                else if (auto nestedTuple = fieldType.dyn_cast<mlir::TupleType>()) {
+                    auto types = nestedTuple.getTypes();
+                    if (types.size() == 2 && types[0].isInteger(1)) {
+                        nullable = true;
+                        baseType = types[1];
+                    }
+                }
 
-                uint32_t oid = lingodb::utility::mlir_type_to_pg_oid(fieldType);
+                uint32_t oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
                 if (!OidIsValid(oid)) {
                     PGX_ERROR("Hashtable column type mapping failed: unsupported MLIR type");
                     return columns;
@@ -86,14 +99,23 @@ static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type 
     for (size_t i = 0; i < keyColumns.size(); i++) {
         spec->key_columns[i].type_oid = keyColumns[i].first;
         spec->key_columns[i].is_nullable = keyColumns[i].second;
+        PGX_LOG(DB_LOWER, DEBUG, "DSA: Created hashtable key_column[%zu]: type_oid=%u, nullable=%d",
+                    i, spec->key_columns[i].type_oid, spec->key_columns[i].is_nullable);
     }
 
     for (size_t i = 0; i < valColumns.size(); i++) {
         spec->value_columns[i].type_oid = valColumns[i].first;
         spec->value_columns[i].is_nullable = valColumns[i].second;
+        PGX_LOG(DB_LOWER, DEBUG, "DSA: Created hashtable value_column[%zu]: type_oid=%u, nullable=%d",
+                    i, spec->value_columns[i].type_oid, spec->value_columns[i].is_nullable);
     }
 
+    PGX_LOG(DB_LOWER, DEBUG, "DSA: Created HashtableSpec at %p: num_keys=%d, num_vals=%d",
+                spec, spec->num_key_columns, spec->num_value_columns);
+
     MemoryContextSwitchTo(oldContext);
+
+    PGX_LOG(DB_LOWER, DEBUG, "createHashtableSpecFromTypes returning spec at %p", spec);
 
     return spec;
 }
@@ -294,12 +316,12 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
             Value specPtrValue;
             if (auto specAttr = createOp->getAttrOfType<mlir::IntegerAttr>("spec_ptr")) {
                uint64_t ptrVal = specAttr.getValue().getZExtValue();
-               // Create ConstantOp with I64 type (not ConstantIndexOp!)
+               PGX_LOG(DB_LOWER, DEBUG, "Found spec_ptr attribute: %p", reinterpret_cast<void*>(ptrVal));
                specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
                   loc, rewriter.getIntegerAttr(rewriter.getI64Type(), ptrVal)
                );
             } else {
-               // PGX-LOWER: Create spec from AggregationHashtableType's key/value types
+               PGX_LOG(DB_LOWER, DEBUG, "No spec_ptr attribute, calling createHashtableSpecFromTypes");
                auto* spec = createHashtableSpecFromTypes(keyType, aggrType);
                if (spec) {
                   specPtrValue = rewriter.create<mlir::arith::ConstantOp>(

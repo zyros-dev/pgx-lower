@@ -116,16 +116,19 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
 
     // Deep copy strings if present
     if (meta.spec && meta.hashtable_context) {
+        PGX_LOG(RUNTIME, DEBUG, "RUNTIME: Using HashtableSpec at %p: num_keys=%d, num_vals=%d",
+                    meta.spec, meta.spec->num_key_columns, meta.spec->num_value_columns);
         MemoryContext oldContext = MemoryContextSwitchTo(static_cast<MemoryContext>(meta.hashtable_context));
 
         size_t offset = 0;
         for (int32_t i = 0; i < meta.spec->num_key_columns; i++) {
             const auto& col = meta.spec->key_columns[i];
             const uint32_t type_oid = col.type_oid;
+            PGX_LOG(RUNTIME, DEBUG, "RUNTIME: Reading hashtable key_column[%d]: type_oid=%u, nullable=%d",
+                        i, type_oid, col.is_nullable);
             const size_t col_size = get_physical_size(type_oid);
 
-            // VARCHAR=1043, TEXT=25
-            if (type_oid == 1043 || type_oid == 25) {
+            if (type_oid == VARCHAROID || type_oid == TEXTOID) {
                 // Column layout depends on is_nullable:
                 // - Nullable: [nullable:1][i128:16]
                 // - Non-nullable: [i128:16]
@@ -159,6 +162,8 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
         for (int32_t i = 0; i < meta.spec->num_value_columns; i++) {
             const auto& col = meta.spec->value_columns[i];
             const uint32_t type_oid = col.type_oid;
+            PGX_LOG(RUNTIME, DEBUG, "RUNTIME: Reading hashtable value_column[%d]: type_oid=%u, nullable=%d",
+                        i, type_oid, col.is_nullable);
             const size_t col_size = get_physical_size(type_oid);
 
             if (type_oid == 1043 || type_oid == 25) {

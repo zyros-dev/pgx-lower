@@ -269,6 +269,13 @@ auto createHashtableSpecification(
                 }
             }
 
+            if (type_oid == UNKNOWNOID) {
+                PGX_ERROR("GROUP BY column %s.%s not found in child result columns",
+                          tableName.c_str(), columnName.c_str());
+                MemoryContextSwitchTo(oldContext);
+                throw std::runtime_error("Failed to find type oid");
+            }
+
             spec->key_columns[i].table_name = pstrdup(tableName.c_str());
             spec->key_columns[i].column_name = pstrdup(columnName.c_str());
             spec->key_columns[i].type_oid = type_oid;
@@ -285,18 +292,39 @@ auto createHashtableSpecification(
         spec->value_columns = static_cast<runtime::HashtableColumnInfo*>(
             palloc0(num_value_columns * sizeof(runtime::HashtableColumnInfo)));
 
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "Populating value columns: expected %d columns, targetlist has %d entries",
+                num_value_columns, list_length(targetlist));
+
         // Populate value columns from aggregates
         int32_t idx = 0;
         ListCell* lc;
+        int32_t te_count = 0;
         foreach (lc, targetlist) {
+            te_count++;
             auto* te = static_cast<TargetEntry*>(lfirst(lc));
+
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "Checking targetlist entry %d: te=%p, te->expr=%p, IsAggref=%d",
+                    te_count, te, te ? te->expr : nullptr,
+                    (te && te->expr && IsA(te->expr, Aggref)) ? 1 : 0);
+
             if (!te || !te->expr || !IsA(te->expr, Aggref))
                 continue;
 
             auto* aggref = reinterpret_cast<Aggref*>(te->expr);
+
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "Found Aggref with aggno=%d, checking aggregateMappings (size=%zu)",
+                    aggref->aggno, aggregateMappings.size());
+
             auto it = aggregateMappings.find(aggref->aggno);
-            if (it == aggregateMappings.end())
+            if (it == aggregateMappings.end()) {
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "Aggref aggno=%d not found in aggregateMappings, skipping",
+                        aggref->aggno);
                 continue;
+            }
 
             const auto& [scopeName, columnName] = it->second;
             uint32_t type_oid = aggref->aggtype;
@@ -341,6 +369,17 @@ auto createHashtableSpecification(
 
                 idx++;
             }
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "Finished populating value columns: idx=%d, expected num_value_columns=%d",
+                idx, num_value_columns);
+
+        if (idx != num_value_columns) {
+            PGX_ERROR("Value column population mismatch: populated %d columns but expected %d",
+                      idx, num_value_columns);
+            MemoryContextSwitchTo(oldContext);
+            return nullptr;
         }
     }
 
@@ -642,8 +681,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     }
 
     // Section 3.5: Create HashtableSpecification for deep copy support - - - - - - - - - - - - - - - - - - - - - - - - -
-    runtime::HashtableSpecification* spec = createHashtableSpecification(
-        groupByAttrs, childResult, aggregateMappings, aggregateTypes, aggregateFunctions, agg->plan.targetlist);
+    // TODO: DISABLED - Let DSA layer create spec from types instead
+    // runtime::HashtableSpecification* spec = createHashtableSpecification(
+    //     groupByAttrs, childResult, aggregateMappings, aggregateTypes, aggregateFunctions, agg->plan.targetlist);
+    runtime::HashtableSpecification* spec = nullptr;
 
     // Create attribute with pointer to spec (following SortOp pattern)
     // Use signless i64 type required by MLIR
@@ -652,12 +693,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         reinterpret_cast<uint64_t>(spec)
     );
 
-    if (spec) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created HashtableSpecification pointer 0x%lx",
-                reinterpret_cast<uint64_t>(spec));
-    } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "No HashtableSpecification created (spec is nullptr)");
-    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Disabled AST HashtableSpec creation - DSA will create from types");
+    // if (spec) {
+    //     PGX_LOG(AST_TRANSLATE, DEBUG, "Created HashtableSpecification pointer 0x%lx",
+    //             reinterpret_cast<uint64_t>(spec));
+    // } else {
+    //     PGX_LOG(AST_TRANSLATE, DEBUG, "No HashtableSpecification created (spec is nullptr)");
+    // }
 
     aggr_builder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), createdValues);
     auto aggOp = ctx.builder.create<mlir::relalg::AggregationOp>(ctx.builder.getUnknownLoc(), tupleStreamType,
