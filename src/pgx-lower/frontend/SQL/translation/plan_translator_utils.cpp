@@ -590,7 +590,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Set first HAVING predicate");
                         } else {
                             predicateResult = predicate_builder.create<mlir::db::AndOp>(
-                                predicate_builder.getUnknownLoc(), predicate_builder.getI1Type(),
+                                predicate_builder.getUnknownLoc(),
                                 mlir::ValueRange{predicateResult, condValue});
                             PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed HAVING predicate %d", i);
                         }
