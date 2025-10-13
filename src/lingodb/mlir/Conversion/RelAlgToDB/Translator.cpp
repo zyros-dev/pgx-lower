@@ -32,16 +32,6 @@ std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir
    std::vector<std::pair<::mlir::Operation*, ::mlir::Operation*>> toReplace;
    for (auto& operation : dest->getOperations()) {
       if (auto inferOp = mlir::dyn_cast<mlir::InferTypeOpInterface>(&operation)) {
-         PGX_LOG(RELALG_LOWER, DEBUG, "Checking InferTypeOpInterface operation: %s with %d operands",
-            operation.getName().getStringRef().str().c_str(),
-            (int)operation.getNumOperands());
-
-         // Log operand types
-         for (unsigned i = 0; i < operation.getNumOperands(); ++i) {
-            bool isNullable = operation.getOperand(i).getType().isa<mlir::db::NullableType>();
-            PGX_LOG(RELALG_LOWER, DEBUG, "  Operand %d: %s", i, isNullable ? "nullable" : "non-nullable");
-         }
-
          llvm::SmallVector<mlir::Type, 4> inferredTypes;
          if (mlir::succeeded(inferOp.inferReturnTypes(
                operation.getContext(), operation.getLoc(), operation.getOperands(),
@@ -53,71 +43,26 @@ std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir
             if (inferredTypes.size() == results.size()) {
                for (size_t i = 0; i < inferredTypes.size(); ++i) {
                   if (inferredTypes[i] != results[i].getType()) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "  Result %zu: type mismatch detected", i);
                      needsRecreate = true;
                      break;
                   }
                }
             }
 
-            if (!needsRecreate) {
-               PGX_LOG(RELALG_LOWER, DEBUG, "  Types match, no recreation needed");
-            }
-
             if (needsRecreate) {
-               PGX_LOG(RELALG_LOWER, DEBUG, "needsRecreate for %s - type mismatch",
-                  operation.getName().getStringRef().str().c_str());
-
                mlir::OpBuilder builder(dest, mlir::Block::iterator(&operation));
-
-               // Use TypeSwitch to handle operations with InferTypeOpInterface using typed builders
-               mlir::Operation* newOp = llvm::TypeSwitch<mlir::Operation*, mlir::Operation*>(&operation)
-                  .Case<mlir::db::AndOp>([&](auto op) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "Using typed builder for db.and");
-                     return builder.create<mlir::db::AndOp>(op.getLoc(), op.getVals()).getOperation();
-                  })
-                  .Case<mlir::db::OrOp>([&](auto op) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "Using typed builder for db.or");
-                     return builder.create<mlir::db::OrOp>(op.getLoc(), op.getVals()).getOperation();
-                  })
-                  .Case<mlir::db::CmpOp>([&](auto op) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "Using typed builder for db.compare");
-                     return builder.create<mlir::db::CmpOp>(
-                        op.getLoc(), op.getPredicateAttr(), op.getLeft(), op.getRight()).getOperation();
-                  })
-                  .Case<mlir::db::BetweenOp>([&](auto op) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "Using typed builder for db.between");
-                     return builder.create<mlir::db::BetweenOp>(
-                        op.getLoc(), op.getVal(), op.getLower(), op.getUpper(),
-                        op.getLowerInclusiveAttr(), op.getUpperInclusiveAttr()).getOperation();
-                  })
-                  .Case<mlir::db::OneOfOp>([&](auto op) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "Using typed builder for db.oneof");
-                     return builder.create<mlir::db::OneOfOp>(
-                        op.getLoc(), op.getVal(), op.getVals()).getOperation();
-                  })
-                  .Default([&](mlir::Operation* op) {
-                     PGX_LOG(RELALG_LOWER, DEBUG, "Using OperationState for %s",
-                        op->getName().getStringRef().str().c_str());
-                     // Fallback: Use OperationState for operations without InferTypeOpInterface
-                     mlir::OperationState state(op->getLoc(), op->getName());
-                     state.addOperands(op->getOperands());
-                     state.addTypes(inferredTypes);
-                     // Convert DictionaryAttr to ArrayRef<NamedAttribute>
-                     llvm::SmallVector<mlir::NamedAttribute, 4> attrs;
-                     for (auto attr : op->getAttrDictionary())
-                        attrs.push_back(attr);
-                     state.addAttributes(attrs);
-                     for (auto& region : op->getRegions()) {
-                        auto* newRegion = state.addRegion();
-                        newRegion->takeBody(region);
-                     }
-                     return builder.create(state);
-                  });
-
-               PGX_LOG(RELALG_LOWER, DEBUG, "Created new operation: %s",
-                  newOp->getName().getStringRef().str().c_str());
-
+               mlir::OperationState state(operation.getLoc(), operation.getName());
+               state.addOperands(operation.getOperands());
+               state.addTypes(inferredTypes);
+               llvm::SmallVector<mlir::NamedAttribute, 4> attrs;
+               for (auto attr : operation.getAttrDictionary())
+                  attrs.push_back(attr);
+               state.addAttributes(attrs);
+               for (auto& region : operation.getRegions()) {
+                  auto* newRegion = state.addRegion();
+                  newRegion->takeBody(region);
+               }
+               auto* newOp = builder.create(state);
                toReplace.push_back({&operation, newOp});
             }
          }

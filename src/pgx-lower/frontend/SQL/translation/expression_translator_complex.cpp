@@ -100,7 +100,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                             result = argValue;
                         } else {
                             result = ctx.builder.create<mlir::db::AndOp>(
-                                ctx.builder.getUnknownLoc(), mlir::ValueRange{result, argValue});
+                                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), mlir::ValueRange{result, argValue});
                         }
                     }
                 }
@@ -135,7 +135,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                             result = argValue;
                         } else {
                             result = ctx.builder.create<mlir::db::OrOp>(
-                                ctx.builder.getUnknownLoc(), mlir::ValueRange{result, argValue});
+                                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), mlir::ValueRange{result, argValue});
                         }
                     }
                 }
@@ -604,10 +604,10 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             result = cmp;
         } else {
             if (scalar_array_op->useOr) {
-                result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(),
+                result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
                                                             mlir::ValueRange{result, cmp});
             } else {
-                result = ctx.builder.create<mlir::db::AndOp>(ctx.builder.getUnknownLoc(),
+                result = ctx.builder.create<mlir::db::AndOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
                                                              mlir::ValueRange{result, cmp});
             }
         }
