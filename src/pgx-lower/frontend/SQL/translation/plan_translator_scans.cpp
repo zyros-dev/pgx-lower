@@ -693,6 +693,10 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
         output_attno++;
     }
 
+    if (!newColumns.empty()) {
+        result.columns = newColumns;
+    }
+
     if (needs_projection && !projectionColumns.empty()) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Creating projection with %zu aliased columns for CTE '%s'",
                 projectionColumns.size(), cte_alias.c_str());
@@ -704,7 +708,6 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
             result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns));
 
         result.op = projectionOp.getOperation();
-        result.columns = newColumns;
         result.current_scope = cte_alias;
     }
 
