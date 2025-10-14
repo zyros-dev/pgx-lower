@@ -80,10 +80,7 @@ struct PostgreSQLTuplePassthrough {
 
     ~PostgreSQLTuplePassthrough() {
 #ifdef POSTGRESQL_EXTENSION
-        if (originalTuple) {
-            heap_freetuple(originalTuple);
-            originalTuple = nullptr;
-        }
+        originalTuple = nullptr;
 #endif
     }
 
