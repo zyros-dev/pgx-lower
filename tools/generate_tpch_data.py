@@ -182,24 +182,29 @@ def format_value(value, col_type):
         return f"'{value}'"
 
 
-def generate_insert_statements(table_name, rows, schema):
+def generate_insert_statements(table_name, rows, schema, chunk_size=5000):
     if not rows:
         return ""
 
     col_names = [col[0] for col in schema['columns']]
     col_types = [col[1] for col in schema['columns']]
 
-    lines = [f"INSERT INTO {table_name}({', '.join(col_names)})"]
-    lines.append("VALUES ")
+    chunks = []
+    for chunk_start in range(0, len(rows), chunk_size):
+        chunk_rows = rows[chunk_start:chunk_start + chunk_size]
 
-    value_lines = []
-    for row in rows:
-        formatted_values = [format_value(row[i], col_types[i]) for i in range(len(col_names))]
-        value_lines.append(f"       ({', '.join(formatted_values)})")
+        lines = [f"INSERT INTO {table_name}({', '.join(col_names)})"]
+        lines.append("VALUES ")
 
-    lines.append(',\n'.join(value_lines) + ';')
+        value_lines = []
+        for row in chunk_rows:
+            formatted_values = [format_value(row[i], col_types[i]) for i in range(len(col_names))]
+            value_lines.append(f"       ({', '.join(formatted_values)})")
 
-    return '\n'.join(lines)
+        lines.append(',\n'.join(value_lines) + ';')
+        chunks.append('\n'.join(lines))
+
+    return '\n'.join(chunks)
 
 
 def generate_sql(tmpdir, output_path):
