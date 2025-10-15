@@ -10,6 +10,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/Module.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -142,6 +143,32 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     } catch (...) {
         PGX_ERROR("Unknown exception in dumpModuleWithStats");
     }
+}
+
+void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase) {
+    if (!module) {
+        PGX_WARNING("dumpLLVMIR: Module is null for title: %s", title.c_str());
+        return;
+    }
+
+    auto PHASE_LOG = [&](const char* fmt, auto... args) {
+        ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::IR, __FILE__, __LINE__, fmt, args...);
+    };
+
+    PHASE_LOG("=== %s ===", title.c_str());
+
+    for (auto& func : *module) {
+        if (func.getName() == "main") {
+            std::string funcStr;
+            llvm::raw_string_ostream funcStream(funcStr);
+            func.print(funcStream, nullptr);
+            funcStream.flush();
+            PHASE_LOG("%s", funcStr.c_str());
+            return;
+        }
+    }
+
+    PGX_WARNING("dumpLLVMIR: main() function not found in module");
 }
 
 class ModuleDumpPass : public mlir::PassWrapper<ModuleDumpPass, mlir::OperationPass<mlir::ModuleOp>> {

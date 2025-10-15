@@ -173,16 +173,30 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 #endif
 }
 
+static thread_local int scope_logger_depth = 0;
+static constexpr int MAX_SCOPE_LOGGER_DEPTH = 3000;
+
 ScopeLogger::ScopeLogger(Category cat, const char* file, int line, const char* function_name)
     : category_(cat)
     , file_(file)
     , line_(line)
-    , function_name_(function_name) {
+    , function_name_(function_name)
+    , should_log_(false) {
+
+    if (scope_logger_depth >= MAX_SCOPE_LOGGER_DEPTH) {
+        return;
+    }
+
+    should_log_ = true;
+    scope_logger_depth++;
     log(category_, Level::IO, file_, line_, "---> %s IN", function_name);
 }
 
 ScopeLogger::~ScopeLogger() {
-    log(category_, Level::IO, file_, line_, "---> %s OUT", function_name_.c_str());
+    if (should_log_) {
+        log(category_, Level::IO, file_, line_, "---> %s OUT", function_name_.c_str());
+        scope_logger_depth--;
+    }
 }
 
 }} // namespace pgx_lower::log

@@ -8,6 +8,7 @@
 #include <execinfo.h>
 #include <cxxabi.h>
 #include <memory>
+#include <optional>
 
 #ifndef POSTGRESQL_EXTENSION
 #include <iostream>
@@ -157,6 +158,7 @@ private:
     const char* file_;
     int line_;
     std::string function_name_;
+    bool should_log_;
 };
 
 } // namespace log
@@ -204,8 +206,7 @@ private:
 #endif
 
 #define PGX_IO(category) \
-    ::pgx_lower::log::ScopeLogger _pgx_io_logger( \
-        ::pgx_lower::log::Category::category, \
-        __FILE__, __LINE__, \
-        __func__)
+    [[maybe_unused]] std::optional<::pgx_lower::log::ScopeLogger> _pgx_io_logger; \
+    if (::pgx_lower::log::should_log(::pgx_lower::log::Category::category, ::pgx_lower::log::Level::IO)) \
+        _pgx_io_logger.emplace(::pgx_lower::log::Category::category, __FILE__, __LINE__, __func__)
 

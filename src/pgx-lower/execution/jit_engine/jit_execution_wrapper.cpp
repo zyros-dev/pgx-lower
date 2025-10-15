@@ -4,6 +4,7 @@
 #include "pgx-lower/execution/jit_execution_engine.h"
 #include "pgx-lower/utility/logging.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/Support/CodeGen.h"
 #include <memory>
 #include <string>
 
@@ -38,6 +39,7 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
         auto exec_handle = new ExecutionHandle();
         exec_handle->module = module_handle->module;
 
+        exec_handle->engine->setOptimizationLevel(llvm::CodeGenOptLevel::Default);
         if (!exec_handle->engine->initialize(module_handle->module)) {
             last_error_message = "Failed to initialize JIT execution engine";
             PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());

@@ -22,6 +22,7 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -29,6 +30,7 @@
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Utils.h"
 
 // PostgreSQL headers for runtime function declarations
 #ifdef POSTGRESQL_EXTENSION
@@ -45,6 +47,11 @@ void* rt_get_execution_context();
 bool add_tuple_to_result(int64_t value);
 void mark_results_ready_for_streaming();
 void prepare_computed_results(int32_t numColumns);
+}
+
+namespace llvm { class Module; }
+namespace mlir_runner {
+    extern void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
 }
 
 namespace pgx_lower { namespace execution {
@@ -156,12 +163,16 @@ class WrappedExecutionEngine {
     }
 
     static auto createOptimizationLambda(llvm::CodeGenOptLevel optLevel) {
+        PGX_LOG(JIT, DEBUG, "Creating optimization lambda!");
         return [optLevel](llvm::Module* module) -> llvm::Error {
+        PGX_LOG(JIT, DEBUG, "Running optimization lambda!");
             if (optLevel == llvm::CodeGenOptLevel::None) {
                 return llvm::Error::success();
             }
 
             llvm::legacy::FunctionPassManager funcPM(module);
+            funcPM.add(llvm::createLICMPass());
+            funcPM.add(llvm::createPromoteMemoryToRegisterPass());
             funcPM.add(llvm::createInstructionCombiningPass());
             funcPM.add(llvm::createReassociatePass());
             funcPM.add(llvm::createGVNPass());
@@ -175,14 +186,20 @@ class WrappedExecutionEngine {
             }
             funcPM.doFinalization();
 
+            mlir_runner::dumpLLVMIR(module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
+
             return llvm::Error::success();
         };
     }
 
     void initializeEngineWithOptions(mlir::ModuleOp module, llvm::CodeGenOptLevel optLevel) {
+        PGX_LOG(JIT, DEBUG, "running initializeEngineWithOptions");
+        auto moduleBuilder = createModuleTranslationLambda();
+        auto transformer = createOptimizationLambda(optLevel);
+
         mlir::ExecutionEngineOptions engineOptions;
-        engineOptions.llvmModuleBuilder = createModuleTranslationLambda();
-        engineOptions.transformer = createOptimizationLambda(optLevel);
+        engineOptions.llvmModuleBuilder = moduleBuilder;
+        engineOptions.transformer = transformer;
         engineOptions.jitCodeGenOptLevel = optLevel;
         engineOptions.enableObjectDump = true; // Enable for debugging
 
@@ -224,6 +241,7 @@ class WrappedExecutionEngine {
     : mainFuncPtr(nullptr)
     , setContextPtr(nullptr)
     , useStaticLinking(forceStatic) {
+        PGX_LOG(JIT, DEBUG, "init wrapped execution ending");
         auto start = std::chrono::high_resolution_clock::now();
         initializeEngineWithOptions(module, optLevel);
 

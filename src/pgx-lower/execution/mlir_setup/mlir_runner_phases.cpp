@@ -24,9 +24,12 @@
 
 class Phase3bMemoryGuard;
 
+namespace llvm { class Module; }
+
 namespace mlir_runner {
 
 extern void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase);
+extern void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
 extern bool validateModuleState(::mlir::ModuleOp module, const std::string& phase);
 
 bool runPhase3a(::mlir::ModuleOp module) {
