@@ -21,8 +21,10 @@ docker exec pgx-lower-dev bash -c "
     mkdir -p ${BUILD_DIR} && \
     cd ${BUILD_DIR} && \
     rm -f CMakeCache.txt && \
-    cmake -G Ninja \
+    CC=clang CXX=clang++ cmake -G Ninja \
         -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_C_COMPILER=clang \
+        -DCMAKE_CXX_COMPILER=clang++ \
         -DMLIR_DIR=/usr/lib/llvm-20/lib/cmake/mlir \
         -DLLVM_DIR=/usr/lib/llvm-20/lib/cmake/llvm \
         -DPostgreSQL_CONFIG_EXECUTABLE=/usr/local/pgsql/bin/pg_config \

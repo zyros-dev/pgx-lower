@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libicu-dev \
     pkg-config \
+    libgtest-dev \
+    libzstd-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://apt.llvm.org/llvm.sh && \
@@ -32,7 +34,9 @@ RUN wget https://apt.llvm.org/llvm.sh && \
     ./llvm.sh ${LLVM_VERSION} all && \
     rm llvm.sh && \
     update-alternatives --install /usr/bin/clang clang /usr/lib/llvm-${LLVM_VERSION}/bin/clang 100 && \
-    update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-${LLVM_VERSION}/bin/clang++ 100
+    update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-${LLVM_VERSION}/bin/clang++ 100 && \
+    update-alternatives --install /usr/bin/cc cc /usr/lib/llvm-${LLVM_VERSION}/bin/clang 100 && \
+    update-alternatives --install /usr/bin/c++ c++ /usr/lib/llvm-${LLVM_VERSION}/bin/clang++ 100
 
 RUN apt-get update && apt-get install -y \
         libmlir-${LLVM_VERSION}-dev \
