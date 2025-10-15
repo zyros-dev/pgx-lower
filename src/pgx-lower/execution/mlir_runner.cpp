@@ -26,27 +26,29 @@ extern "C" {
 #undef restrict
 #endif
 
+#ifdef InvalidPid
+#define PG_INVALID_PID_SAVED InvalidPid
+#undef InvalidPid
 #endif
 
-// Include MLIR diagnostic infrastructure
+#endif
 
-#include "pgx-lower/execution/jit_execution_interface.h"
+#include "pgx-lower/execution/jit_execution_engine.h"
 
 #include <mlir/InitAllPasses.h>
 #include <chrono>
 
-// Restore PostgreSQL's restrict macro after MLIR includes
 #ifndef BUILDING_UNIT_TESTS
 #ifdef PG_RESTRICT_SAVED
 #define restrict PG_RESTRICT_SAVED
 #undef PG_RESTRICT_SAVED
 #endif
-#endif
 
-extern "C" {
-struct ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr);
-void pgx_jit_destroy_module_handle(struct ModuleHandle* handle);
-}
+#ifdef PG_INVALID_PID_SAVED
+#define InvalidPid PG_INVALID_PID_SAVED
+#undef PG_INVALID_PID_SAVED
+#endif
+#endif
 
 namespace mlir_runner {
 
@@ -162,5 +164,21 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
     }
 }
 #endif
+
+bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
+    pgx_lower::execution::JITEngine engine(llvm::CodeGenOptLevel::Default);
+
+    if (!engine.compile(module)) {
+        PGX_ERROR("JIT compilation failed");
+        return false;
+    }
+
+    if (!engine.execute(estate, dest)) {
+        PGX_ERROR("JIT execution failed");
+        return false;
+    }
+
+    return true;
+}
 
 } // namespace mlir_runner

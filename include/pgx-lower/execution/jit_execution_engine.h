@@ -1,40 +1,56 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <chrono>
+#include <functional>
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/IR/Module.h"
+#include "llvm/Support/CodeGen.h"
 
-namespace pgx_lower {
-namespace execution {
+namespace llvm {
+class Module;
+class LLVMContext;
+class Error;
+} // namespace llvm
 
-class WrappedExecutionEngine;
+namespace mlir {
+class Operation;
+}
 
-class PostgreSQLJITExecutionEngine {
-public:
-    PostgreSQLJITExecutionEngine();
-    ~PostgreSQLJITExecutionEngine();
-    
-    PostgreSQLJITExecutionEngine(const PostgreSQLJITExecutionEngine&) = delete;
-    PostgreSQLJITExecutionEngine& operator=(const PostgreSQLJITExecutionEngine&) = delete;
-    PostgreSQLJITExecutionEngine(PostgreSQLJITExecutionEngine&&) = default;
-    PostgreSQLJITExecutionEngine& operator=(PostgreSQLJITExecutionEngine&&) = default;
-    
-    bool initialize(::mlir::ModuleOp module);
-    bool setupJITOptimizationPipeline();
-    bool compileToLLVMIR(::mlir::ModuleOp module);
-    bool isInitialized() const;
-    void setOptimizationLevel(llvm::CodeGenOptLevel level);
-    bool setupMemoryContexts();
-    bool executeCompiledQuery(void* estate, void* dest);
-    
-private:
-    // Implementation details hidden in .cpp file using anonymous namespaces
-    class Impl;
-    std::unique_ptr<Impl> pImpl;
+namespace pgx_lower::execution {
+
+class JITEngine {
+   public:
+    explicit JITEngine(llvm::CodeGenOptLevel opt_level = llvm::CodeGenOptLevel::Default);
+    ~JITEngine() = default;
+
+    JITEngine(const JITEngine&) = delete;
+    JITEngine& operator=(const JITEngine&) = delete;
+    JITEngine(JITEngine&&) = default;
+    JITEngine& operator=(JITEngine&&) = default;
+
+    bool compile(mlir::ModuleOp module);
+    bool execute(void* estate, void* dest) const;
+
+   private:
+    std::unique_ptr<mlir::ExecutionEngine> engine_;
+    void* main_fn_{nullptr};
+    void* set_context_fn_{nullptr};
+    llvm::CodeGenOptLevel opt_level_;
+    bool compiled_{false};
+
+    static void setup_llvm_target();
+    static void register_dialects(mlir::ModuleOp module);
+    static std::function<std::unique_ptr<llvm::Module>(mlir::Operation*, llvm::LLVMContext&)>
+    create_mlir_to_llvm_translator();
+    std::function<llvm::Error(llvm::Module*)> create_llvm_optimizer() const;
+
+    bool lookup_functions();
+    bool link_static();
+
+    bool dump_object_file(const std::string& path) const;
+    static bool compile_to_shared_library(const std::string& obj_path, const std::string& so_path);
+    static void* load_shared_library(const std::string& path);
+    bool lookup_symbols_from_library(void* handle);
 };
 
-} // namespace execution
-} // namespace pgx_lower
+} // namespace pgx_lower::execution
