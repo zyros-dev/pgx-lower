@@ -42,11 +42,10 @@ TEST_F(MLIRLoweringPipelineTest, MapOpPrintCrashTest) {
     std::cerr << "Creating BaseTableOp..." << std::endl;
     auto baseTableMLIR = R"(
         module {
-          func.func @main() -> !relalg.tuplestream {
-            %0 = relalg.basetable {column_order = ["id"], table_identifier = "test|oid:123"} columns: {
-              id => @test::@id({type = i32})
-            }
-            return %0 : !relalg.tuplestream
+          func.func @main() -> !dsa.table {
+            %0 = relalg.basetable  {column_order = ["id"], table_identifier = "test|oid:32970940"} columns: {id => @test::@id({type = i32})}
+            %1 = relalg.materialize %0 [@test::@id] => ["id"] : !dsa.table
+            return %1 : !dsa.table
           }
         }
     )";

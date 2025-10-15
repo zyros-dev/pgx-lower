@@ -25,14 +25,18 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
 #include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Utils.h"
+#include "llvm/Transforms/Scalar/LICM.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
 
-// PostgreSQL headers for runtime function declarations
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
 #include "postgres.h"
@@ -165,30 +169,87 @@ class WrappedExecutionEngine {
     static auto createOptimizationLambda(llvm::CodeGenOptLevel optLevel) {
         PGX_LOG(JIT, DEBUG, "Creating optimization lambda!");
         return [optLevel](llvm::Module* module) -> llvm::Error {
-        PGX_LOG(JIT, DEBUG, "Running optimization lambda!");
+            PGX_LOG(JIT, DEBUG, "Running optimization lambda!");
             if (optLevel == llvm::CodeGenOptLevel::None) {
                 return llvm::Error::success();
             }
 
-            llvm::legacy::FunctionPassManager funcPM(module);
-            funcPM.add(llvm::createLICMPass());
-            funcPM.add(llvm::createPromoteMemoryToRegisterPass());
-            funcPM.add(llvm::createInstructionCombiningPass());
-            funcPM.add(llvm::createReassociatePass());
-            funcPM.add(llvm::createGVNPass());
-            funcPM.add(llvm::createCFGSimplificationPass());
+            try {
+                PGX_LOG(JIT, DEBUG, "Creating PassBuilder and analysis managers");
 
-            funcPM.doInitialization();
-            for (auto& func : *module) {
-                if (!func.hasOptNone()) {
-                    funcPM.run(func);
+                PGX_LOG(JIT, DEBUG, "Skipping LLVM optimization passes (modern PM needs debugging)");
+                mlir_runner::dumpLLVMIR(module, "LLVM IR WITHOUT OPTIMIZATION PASSES", log::Category::JIT);
+                return llvm::Error::success();
+
+                // TODO: Fix modern pass manager crash
+                // Modern pass manager setup with default tuning options
+                llvm::PipelineTuningOptions PTO;
+                PTO.LoopUnrolling = false;
+                PTO.LoopVectorization = false;
+                PTO.SLPVectorization = false;
+
+                llvm::PassBuilder PB(nullptr, PTO);
+                llvm::LoopAnalysisManager LAM;
+                llvm::FunctionAnalysisManager FAM;
+                llvm::CGSCCAnalysisManager CGAM;
+                llvm::ModuleAnalysisManager MAM;
+
+                PGX_LOG(JIT, DEBUG, "Registering loop analyses");
+                PB.registerLoopAnalyses(LAM);
+
+                PGX_LOG(JIT, DEBUG, "Registering function analyses");
+                PB.registerFunctionAnalyses(FAM);
+
+                PGX_LOG(JIT, DEBUG, "Registering CGSCC analyses");
+                PB.registerCGSCCAnalyses(CGAM);
+
+                PGX_LOG(JIT, DEBUG, "Registering module analyses");
+                PB.registerModuleAnalyses(MAM);
+
+                PGX_LOG(JIT, DEBUG, "Cross-registering proxies");
+                PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+                PGX_LOG(JIT, DEBUG, "Building function pass pipeline");
+                // Build function pass pipeline
+                // Key ordering: InstCombine before PromotePass enables better alloca hoisting
+                llvm::FunctionPassManager FPM;
+                FPM.addPass(llvm::InstCombinePass());
+                FPM.addPass(llvm::PromotePass());  // mem2reg in modern PM
+                FPM.addPass(llvm::InstCombinePass());
+                FPM.addPass(llvm::createFunctionToLoopPassAdaptor(llvm::LICMPass(llvm::LICMOptions())));
+                FPM.addPass(llvm::ReassociatePass());
+                FPM.addPass(llvm::GVNPass());
+                FPM.addPass(llvm::SimplifyCFGPass());
+
+                PGX_LOG(JIT, DEBUG, "Running passes on %zu functions", module->size());
+                for (auto& func : *module) {
+                    if (func.isDeclaration()) {
+                        PGX_LOG(JIT, DEBUG, "Skipping external function: %s", func.getName().str().c_str());
+                        continue;
+                    }
+                    if (!func.hasOptNone()) {
+                        PGX_LOG(JIT, DEBUG, "Running passes on function: %s", func.getName().str().c_str());
+                        FPM.run(func, FAM);
+                    }
                 }
+
+                PGX_LOG(JIT, DEBUG, "Optimization passes completed successfully");
+                mlir_runner::dumpLLVMIR(module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
+
+                return llvm::Error::success();
+            } catch (const std::exception& e) {
+                PGX_ERROR("Exception in optimization lambda: %s", e.what());
+                return llvm::make_error<llvm::StringError>(
+                    "Optimization failed: " + std::string(e.what()),
+                    llvm::inconvertibleErrorCode()
+                );
+            } catch (...) {
+                PGX_ERROR("Unknown exception in optimization lambda");
+                return llvm::make_error<llvm::StringError>(
+                    "Optimization failed with unknown exception",
+                    llvm::inconvertibleErrorCode()
+                );
             }
-            funcPM.doFinalization();
-
-            mlir_runner::dumpLLVMIR(module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
-
-            return llvm::Error::success();
         };
     }
 
@@ -201,7 +262,7 @@ class WrappedExecutionEngine {
         engineOptions.llvmModuleBuilder = moduleBuilder;
         engineOptions.transformer = transformer;
         engineOptions.jitCodeGenOptLevel = optLevel;
-        engineOptions.enableObjectDump = true; // Enable for debugging
+        engineOptions.enableObjectDump = true;
 
         auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
         if (!maybeEngine) {
