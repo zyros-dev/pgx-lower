@@ -1,0 +1,40 @@
+# Build directories
+build/
+build-ptest/
+build-utest/
+build-*/
+
+# Git
+.git/
+.gitignore
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+compile_commands.json
+
+# Test outputs
+*.out
+*.log
+*.diff
+
+# Temporary files
+*.tmp
+.DS_Store
+/tmp/

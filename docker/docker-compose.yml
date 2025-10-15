@@ -1,0 +1,25 @@
+services:
+  dev:
+    build:
+      context: ./dev
+      dockerfile: Dockerfile
+    image: pgx-lower:dev
+    container_name: pgx-lower-dev
+    volumes:
+      - ..:/workspace
+      - postgres-data:/var/lib/postgresql/data
+      - build-cache:/workspace/build
+      - build-cache-ptest:/workspace/build-ptest
+      - build-cache-utest:/workspace/build-utest
+    ports:
+      - "54320:5432"
+    working_dir: /workspace
+    command: tail -f /dev/null
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres-data:
+  build-cache:
+  build-cache-ptest:
+  build-cache-utest:
