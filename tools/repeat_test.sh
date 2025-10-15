@@ -24,13 +24,22 @@ run_test_batch() {
     for i in $(seq 1 $batch_iters); do
         echo "=== iteration $i/$batch_iters (SF=$current_sf) ==="
 
+        start_time=$(date +%s)
         tmpfile=$(mktemp)
         make ptest > $tmpfile 2>&1
+        end_time=$(date +%s)
 
         # check for "All X tables match" in the last few lines
         if tail -10 $tmpfile | grep -qE "All [0-9]+ tables match"; then
             match=$(tail -10 $tmpfile | grep -oE "All [0-9]+ tables match")
             echo "ok: $match"
+
+            # Calculate elapsed time
+            elapsed=$((end_time - start_time))
+            minutes=$((elapsed / 60))
+            seconds=$((elapsed % 60))
+            echo "took $minutes minutes and $seconds seconds"
+
             rm $tmpfile
         else
             echo "FAILED - validation message not found"
