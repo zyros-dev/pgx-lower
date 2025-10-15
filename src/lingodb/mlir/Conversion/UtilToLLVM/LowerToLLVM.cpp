@@ -147,30 +147,49 @@ class AllocaOpLowering : public OpConversionPattern<mlir::util::AllocaOp> {
    LogicalResult matchAndRewrite(mlir::util::AllocaOp allocOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = allocOp->getLoc();
       auto genericMemrefType = llvm::cast<mlir::util::RefType>(allocOp.getRef().getType());
-      Value entries;
-      if (allocOp.getSize()) {
-         entries = allocOp.getSize();
-      } else {
-         int64_t staticSize = 1;
-         entries = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(staticSize));
-      }
+
       DataLayout defaultLayout;
       const DataLayout* layout = &defaultLayout;
       Type elemType = typeConverter->convertType(genericMemrefType.getElementType());
       size_t typeSize = layout->getTypeSize(elemType);
-      auto bytesPerEntry = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
-      
-      Value entriesI64;
-      if (entries.getType() == rewriter.getIndexType()) {
-         entriesI64 = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getI64Type(), entries);
-      } else {
-         entriesI64 = entries;
-      }
-      
-      Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entriesI64, bytesPerEntry);
 
-      auto elemPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
-      ::mlir::Value allocatedElementPtr = rewriter.create<LLVM::AllocaOp>(loc, elemPtrType, rewriter.getI8Type(), sizeInBytes, 0);
+      bool canHoist = !allocOp.getSize();
+
+      auto parentFunc = allocOp->getParentOfType<mlir::LLVM::LLVMFuncOp>();
+      if (!parentFunc || !canHoist) {
+         if (!canHoist) {
+            Value entries = allocOp.getSize();
+            auto bytesPerEntry = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
+
+            Value entriesI64;
+            if (entries.getType() == rewriter.getIndexType()) {
+               entriesI64 = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getI64Type(), entries);
+            } else {
+               entriesI64 = entries;
+            }
+
+            Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entriesI64, bytesPerEntry);
+            auto elemPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+            ::mlir::Value allocatedElementPtr = rewriter.create<LLVM::AllocaOp>(loc, elemPtrType, rewriter.getI8Type(), sizeInBytes, 0);
+            rewriter.replaceOp(allocOp, allocatedElementPtr);
+            return success();
+         }
+         return failure();
+      }
+
+      Block& entryBlock = parentFunc.getBody().front();
+
+      auto savedInsertionPoint = rewriter.saveInsertionPoint();
+      rewriter.setInsertionPointToStart(&entryBlock);
+
+      int64_t staticSize = 1;
+      Value entries = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(staticSize));
+      auto bytesPerEntry = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
+
+      Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entries, bytesPerEntry);
+      Value allocatedElementPtr = rewriter.create<LLVM::AllocaOp>(loc, elemPtrType, rewriter.getI8Type(), sizeInBytes, 0);
+
+      rewriter.restoreInsertionPoint(savedInsertionPoint);
       rewriter.replaceOp(allocOp, allocatedElementPtr);
 
       return success();

@@ -35,6 +35,7 @@
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/MemorySSA.h"
 #include "llvm/Transforms/Utils/Mem2Reg.h"
+#include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Scalar/Reassociate.h"
 #include "llvm/Transforms/Scalar/GVN.h"
@@ -322,11 +323,16 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
 
             PGX_LOG(JIT, DEBUG, "Building function pass pipeline");
             llvm::FunctionPassManager FPM;
+
+            FPM.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
             FPM.addPass(llvm::InstCombinePass());
+
             FPM.addPass(llvm::PromotePass());
             FPM.addPass(llvm::InstCombinePass());
+
             FPM.addPass(llvm::createFunctionToLoopPassAdaptor(llvm::LICMPass(llvm::LICMOptions()),
                                                               /*UseMemorySSA=*/true));
+
             FPM.addPass(llvm::ReassociatePass());
             FPM.addPass(llvm::GVNPass());
             FPM.addPass(llvm::SimplifyCFGPass());
