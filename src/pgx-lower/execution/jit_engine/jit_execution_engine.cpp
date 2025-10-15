@@ -23,13 +23,17 @@
 
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/MemorySSA.h"
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Scalar/Reassociate.h"
@@ -177,46 +181,68 @@ class WrappedExecutionEngine {
             try {
                 PGX_LOG(JIT, DEBUG, "Creating PassBuilder and analysis managers");
 
-                PGX_LOG(JIT, DEBUG, "Skipping LLVM optimization passes (modern PM needs debugging)");
-                mlir_runner::dumpLLVMIR(module, "LLVM IR WITHOUT OPTIMIZATION PASSES", log::Category::JIT);
-                return llvm::Error::success();
+                static bool handlerInstalled = false;
+                if (!handlerInstalled) {
+                    llvm::install_fatal_error_handler([](void* user_data, const char* reason, bool gen_crash_diag) {
+                        PGX_ERROR("LLVM FATAL ERROR: %s (gen_crash_diag=%d)", reason, gen_crash_diag);
+                    });
+                    handlerInstalled = true;
+                }
 
-                // TODO: Fix modern pass manager crash
+                llvm::TargetMachine* TM = nullptr;
+                std::string triple = module->getTargetTriple();
+                if (triple.empty()) {
+                    triple = llvm::sys::getDefaultTargetTriple();
+                    module->setTargetTriple(triple);
+                }
+
+                std::string error;
+                const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, error);
+                if (target) {
+                    llvm::TargetOptions targetOptions;
+                    TM = target->createTargetMachine(
+                        triple,
+                        llvm::sys::getHostCPUName(),
+                        "",  // Features
+                        targetOptions,
+                        llvm::Reloc::PIC_
+                    );
+                    PGX_LOG(JIT, DEBUG, "Created TargetMachine for triple: %s", triple.c_str());
+                } else {
+                    PGX_LOG(JIT, DEBUG, "Failed to create TargetMachine: %s", error.c_str());
+                }
+
                 // Modern pass manager setup with default tuning options
                 llvm::PipelineTuningOptions PTO;
                 PTO.LoopUnrolling = false;
                 PTO.LoopVectorization = false;
                 PTO.SLPVectorization = false;
 
-                llvm::PassBuilder PB(nullptr, PTO);
+                llvm::PassBuilder PB(TM, PTO);
                 llvm::LoopAnalysisManager LAM;
                 llvm::FunctionAnalysisManager FAM;
                 llvm::CGSCCAnalysisManager CGAM;
                 llvm::ModuleAnalysisManager MAM;
 
-                PGX_LOG(JIT, DEBUG, "Registering loop analyses");
-                PB.registerLoopAnalyses(LAM);
-
-                PGX_LOG(JIT, DEBUG, "Registering function analyses");
-                PB.registerFunctionAnalyses(FAM);
-
-                PGX_LOG(JIT, DEBUG, "Registering CGSCC analyses");
-                PB.registerCGSCCAnalyses(CGAM);
-
-                PGX_LOG(JIT, DEBUG, "Registering module analyses");
+                PGX_LOG(JIT, DEBUG, "Registering all default analyses");
                 PB.registerModuleAnalyses(MAM);
-
-                PGX_LOG(JIT, DEBUG, "Cross-registering proxies");
+                PB.registerCGSCCAnalyses(CGAM);
+                PB.registerFunctionAnalyses(FAM);
+                PB.registerLoopAnalyses(LAM);
                 PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
                 PGX_LOG(JIT, DEBUG, "Building function pass pipeline");
-                // Build function pass pipeline
                 // Key ordering: InstCombine before PromotePass enables better alloca hoisting
                 llvm::FunctionPassManager FPM;
                 FPM.addPass(llvm::InstCombinePass());
                 FPM.addPass(llvm::PromotePass());  // mem2reg in modern PM
                 FPM.addPass(llvm::InstCombinePass());
-                FPM.addPass(llvm::createFunctionToLoopPassAdaptor(llvm::LICMPass(llvm::LICMOptions())));
+
+                FPM.addPass(llvm::createFunctionToLoopPassAdaptor(
+                    llvm::LICMPass(llvm::LICMOptions()),
+                    /*UseMemorySSA=*/true
+                ));
+
                 FPM.addPass(llvm::ReassociatePass());
                 FPM.addPass(llvm::GVNPass());
                 FPM.addPass(llvm::SimplifyCFGPass());
