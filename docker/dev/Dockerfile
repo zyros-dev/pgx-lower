@@ -6,7 +6,6 @@ ENV PG_VERSION=17.5
 
 RUN apt-get update && apt-get install -y \
     build-essential \
-    cmake \
     ninja-build \
     git \
     wget \
@@ -29,6 +28,18 @@ RUN apt-get update && apt-get install -y \
     libzstd-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-x86_64.sh && \
+    chmod +x cmake-3.31.6-linux-x86_64.sh && \
+    ./cmake-3.31.6-linux-x86_64.sh --skip-license --prefix=/usr/local && \
+    rm cmake-3.31.6-linux-x86_64.sh
+
+RUN add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
+    apt-get update && \
+    apt-get install -y gcc-14 g++-14 libstdc++-14-dev && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100 && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN wget https://apt.llvm.org/llvm.sh && \
     chmod +x llvm.sh && \
     ./llvm.sh ${LLVM_VERSION} all && \
@@ -42,16 +53,20 @@ RUN apt-get update && apt-get install -y \
         libmlir-${LLVM_VERSION}-dev \
         mlir-${LLVM_VERSION}-tools \
         llvm-${LLVM_VERSION}-dev \
-    && rm -rf /var/lib/apt/lists/*
+        libc++-${LLVM_VERSION}-dev \
+        libc++abi-${LLVM_VERSION}-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && mv /usr/lib/llvm-${LLVM_VERSION}/include/cxxabi.h /usr/lib/llvm-${LLVM_VERSION}/include/cxxabi.h.bak
 
 RUN wget https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz && \
     tar -xzf postgresql-${PG_VERSION}.tar.gz && \
     cd postgresql-${PG_VERSION} && \
-    ./configure --prefix=/usr/local/pgsql --with-openssl --with-icu && \
+    CC=clang CXX=clang++ ./configure --prefix=/usr/local/pgsql --with-openssl --with-icu && \
     make -j$(nproc) && \
     make install && \
     cd / && \
     rm -rf postgresql-${PG_VERSION} postgresql-${PG_VERSION}.tar.gz
+
 
 RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \
     mkdir -p /var/lib/postgresql/data && \
