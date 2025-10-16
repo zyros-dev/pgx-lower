@@ -83,8 +83,6 @@ if(NOT BUILDING_UNIT_TESTS)
             tpch
 )
 
-# MLIR dialect libraries for TypeID resolution  
-# These are required for extension loading to resolve MLIR dialect TypeIDs
 target_link_libraries(pgx_lower PRIVATE
     -Wl,--no-as-needed
     -Wl,--whole-archive
