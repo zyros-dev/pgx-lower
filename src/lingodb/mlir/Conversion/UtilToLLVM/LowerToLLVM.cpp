@@ -187,6 +187,7 @@ class AllocaOpLowering : public OpConversionPattern<mlir::util::AllocaOp> {
       auto bytesPerEntry = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
 
       Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entries, bytesPerEntry);
+      auto elemPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
       Value allocatedElementPtr = rewriter.create<LLVM::AllocaOp>(loc, elemPtrType, rewriter.getI8Type(), sizeInBytes, 0);
 
       rewriter.restoreInsertionPoint(savedInsertionPoint);
