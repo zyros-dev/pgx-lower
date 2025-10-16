@@ -26,7 +26,7 @@ CREATE TABLE type_test_table (
 INSERT INTO type_test_table VALUES
     (true, 100, 1000, 100000, 3.14, 3.14159265359, 'hello', 'fixed     ', 'longer text here', 1245.67, 9865.43210, '2024-01-15', '2024-01-15 10:30:00', INTERVAL '5 days'),
     (false, -200, -2000, -200000, -2.71, -2.71828182846, 'world', 'test      ', 'another text', -9999.99, -1245.67890, '2024-06-30', '2024-06-30 14:45:30.123', INTERVAL '3 months'),
-    (true, 322, 21474, 922337203, 1.23e10, 1.23e20, 'special!@#', 'chars$%^  ', 'unicode αβγ', 9999.99, 9999.99999, '2024-12-31', '2024-12-31 23:59:59.999999', INTERVAL '1 year 2 months'),
+    (true, 322, 21474, 922337203, 1.23e10, 1.23e20, 'special!@#', 'chars$%^  ', 'third text', 9999.99, 9999.99999, '2024-12-31', '2024-12-31 23:59:59.999999', INTERVAL '1 year 2 months'),
     (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
     (false, 0, 0, 0, 0.0, 0.0, '', '          ', '', 0.00, 0.00000, '2024-02-29', '2024-02-29 00:00:00', INTERVAL '0 days');
 

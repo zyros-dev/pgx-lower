@@ -2,7 +2,9 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LLVM_VERSION=20
-ENV PG_VERSION=17.5
+ENV PG_VERSION=17.6
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -26,7 +28,10 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libgtest-dev \
     libzstd-dev \
-    && rm -rf /var/lib/apt/lists/*
+    locales \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8 \
+    && update-locale LANG=en_US.UTF-8
 
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-x86_64.sh && \
     chmod +x cmake-3.31.6-linux-x86_64.sh && \
