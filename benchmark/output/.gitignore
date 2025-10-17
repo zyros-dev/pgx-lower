@@ -1,0 +1,5 @@
+# Ignore all benchmark output files
+*.db
+*.csv
+*.tbl
+*.log

@@ -121,3 +121,4 @@ benchmark_results/
 .venv/
 build-docker-ptest
 agent_docs/tpch_debug.log
+benchmark_test.log
