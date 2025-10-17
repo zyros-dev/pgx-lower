@@ -125,3 +125,4 @@ benchmark_test.log
 benchmark/tpch/sqlite3
 
 benchmark/tpch_init.sql
+benchmark/output

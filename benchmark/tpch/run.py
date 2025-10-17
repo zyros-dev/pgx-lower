@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
+import argparse
 import hashlib
 import json
+import lz4.frame
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import os
 import signal
@@ -45,6 +49,15 @@ CREATE TABLE IF NOT EXISTS queries (
 CREATE INDEX IF NOT EXISTS idx_run_query ON queries(run_id, query_name);
 CREATE INDEX IF NOT EXISTS idx_jit ON queries(jit_enabled);
 CREATE INDEX IF NOT EXISTS idx_status ON queries(status);
+
+CREATE TABLE IF NOT EXISTS profiling_data (
+    profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id INTEGER NOT NULL,
+    profiler_type TEXT NOT NULL,
+    svg_path TEXT NOT NULL,
+    raw_data_compressed BLOB,
+    FOREIGN KEY (query_id) REFERENCES queries(query_id)
+);
 """
 
 def generate_tpch_data(scale_factor):
@@ -135,7 +148,7 @@ def normalize_value(val):
 
     return str(val).strip()
 
-def run_query_with_metrics(conn, query_file, jit_enabled, iteration):
+def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_enabled=False, fg_dir=None, output_dir=None, db_conn=None):
     query_name = query_file.stem
 
     with open(query_file, 'r') as f:
@@ -158,6 +171,8 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration):
     detailed_metrics = {}
     timeseries = []
     sampling_active = True
+    perf_proc = None
+    perf_file = None
 
     def sample_metrics():
         start = time.time()
@@ -193,6 +208,26 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration):
             cur.execute("LOAD 'pgx_lower.so'")
             cur.execute(f"SET pgx_lower.enabled = {'true' if jit_enabled else 'false'}")
 
+            # Get backend PID for profiling
+            backend_pid = None
+            if profile_enabled:
+                cur.execute("SELECT pg_backend_pid()")
+                backend_pid = cur.fetchone()[0]
+
+                # Create perf file in output directory
+                jit_str = 'on' if jit_enabled else 'off'
+                perf_file = str(output_dir / 'perf' / f'{query_name}_jit_{jit_str}.data')
+                perf_proc = subprocess.Popen([
+                    'sudo', 'perf', 'record',
+                    '-p', str(backend_pid),
+                    '-F', '99',
+                    '-g',
+                    '-o', perf_file
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                # Give perf time to attach
+                time.sleep(0.1)
+
             start_time = time.time()
             cur.execute(query_sql)
 
@@ -213,12 +248,39 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration):
             result['row_count'] = row_count
             result['result_hash'] = hasher.hexdigest()
 
+            # Stop perf profiling after query execution completes
+            if perf_proc is not None:
+                try:
+                    perf_proc.send_signal(signal.SIGINT)
+                    perf_proc.wait(timeout=5)
+
+                    # Fix permissions so CLion can read the file
+                    # Get current user from environment
+                    username = os.environ.get('USER') or os.environ.get('LOGNAME')
+                    if username and os.path.exists(perf_file):
+                        subprocess.run(['sudo', 'chown', username, perf_file],
+                                     stderr=subprocess.DEVNULL, check=False)
+                        subprocess.run(['sudo', 'chmod', '644', perf_file],
+                                     stderr=subprocess.DEVNULL, check=False)
+                except:
+                    try:
+                        perf_proc.kill()
+                    except:
+                        pass
+
         conn.commit()
 
     except Exception as e:
         result['status'] = 'ERROR'
         result['error_message'] = str(e)
         conn.rollback()
+
+        # Ensure perf is stopped on error
+        if perf_proc is not None:
+            try:
+                perf_proc.kill()
+            except:
+                pass
 
     finally:
         sampling_active = False
@@ -247,6 +309,7 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration):
 
     result['metrics_json'] = json.dumps(detailed_metrics)
     result['timeseries_metrics'] = json.dumps(timeseries)
+    result['perf_file'] = perf_file
 
     return result
 
@@ -271,6 +334,71 @@ def insert_metrics(db_conn, run_id, result):
         result.get('result_hash')
     ))
     db_conn.commit()
+    return cursor.lastrowid
+
+def ensure_flamegraph_tools(script_dir):
+    """Ensure FlameGraph tools are available."""
+    fg_dir = script_dir / 'tools' / 'FlameGraph'
+    if not fg_dir.exists():
+        print("Cloning FlameGraph tools...")
+        fg_dir.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run([
+            'git', 'clone',
+            'https://github.com/brendangregg/FlameGraph',
+            str(fg_dir)
+        ], check=True, capture_output=True)
+        print("FlameGraph tools ready")
+    return fg_dir
+
+def process_profiles(perf_file, query_id, query_name, jit, fg_dir, output_dir, db_conn):
+    """Process perf data into flame graph SVG and store compressed data in database."""
+    try:
+        # Generate SVG filename
+        jit_str = 'on' if jit else 'off'
+        svg_name = f"{query_name}_jit_{jit_str}.svg"
+        svg_path = output_dir / 'profiles_latest' / svg_name
+
+        # perf script | stackcollapse-perf.pl | flamegraph.pl > svg
+        with open(svg_path, 'w') as svg_file:
+            perf_script = subprocess.Popen(
+                ['sudo', 'perf', 'script', '-i', perf_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
+            stackcollapse = subprocess.Popen(
+                [str(fg_dir / 'stackcollapse-perf.pl')],
+                stdin=perf_script.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
+            perf_script.stdout.close()
+
+            title = f"{query_name} JIT={'ON' if jit else 'OFF'}"
+            subprocess.run(
+                [str(fg_dir / 'flamegraph.pl'), '--title', title],
+                stdin=stackcollapse.stdout,
+                stdout=svg_file,
+                stderr=subprocess.DEVNULL
+            )
+            stackcollapse.stdout.close()
+
+        # Read and compress perf.data file (sudo cat since file is owned by root)
+        result = subprocess.run(['sudo', 'cat', perf_file], capture_output=True, check=True)
+        perf_data = result.stdout
+        compressed_data = lz4.frame.compress(perf_data, compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
+
+        # Store in database
+        cursor = db_conn.cursor()
+        svg_relative = str(svg_path.relative_to(output_dir.parent))
+        cursor.execute("""
+            INSERT INTO profiling_data (query_id, profiler_type, svg_path, raw_data_compressed)
+            VALUES (?, 'cpu', ?, ?)
+        """, (query_id, svg_relative, compressed_data))
+        db_conn.commit()
+
+    except Exception as e:
+        # Don't fail the benchmark if profile processing fails
+        print(f"[profile error: {e}]", end=' ')
 
 def timeout_handler():
     print("Starting timeout")
@@ -280,11 +408,39 @@ def timeout_handler():
 def main():
     threading.Thread(target=timeout_handler, daemon=True).start()
 
-    sf = float(sys.argv[1]) if len(sys.argv) > 1 else 0.01
+    parser = argparse.ArgumentParser(description='Run TPC-H benchmarks for pgx-lower')
+    parser.add_argument('scale_factor', type=float, nargs='?', default=0.01,
+                       help='TPC-H scale factor (default: 0.01)')
+    parser.add_argument('--profile', action='store_true',
+                       help='Enable CPU profiling with perf and flame graphs')
+    args = parser.parse_args()
+
+    sf = args.scale_factor
+    profile_enabled = args.profile
 
     script_dir = Path(__file__).parent
     output_dir = script_dir.parent / 'output'
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup profiling if requested
+    fg_dir = None
+    if profile_enabled:
+        fg_dir = ensure_flamegraph_tools(script_dir)
+        profiles_dir = output_dir / 'profiles_latest'
+        perf_dir = output_dir / 'perf'
+        gperftools_dir = output_dir / 'gperftools'
+
+        if profiles_dir.exists():
+            shutil.rmtree(profiles_dir)
+        profiles_dir.mkdir()
+
+        if perf_dir.exists():
+            shutil.rmtree(perf_dir)
+        perf_dir.mkdir()
+
+        if gperftools_dir.exists():
+            shutil.rmtree(gperftools_dir)
+        gperftools_dir.mkdir()
 
     run_id = f"pgx_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sf{int(sf * 100):03d}"
     db_file = output_dir / 'benchmark.db'
@@ -321,8 +477,29 @@ def main():
             current += 1
             print(f"[{current}/{total}] {qf.stem}...", end=' ', flush=True)
 
-            metrics = run_query_with_metrics(pg_conn, qf, jit, 1)
-            insert_metrics(db_conn, run_id, metrics)
+            metrics = run_query_with_metrics(
+                pg_conn, qf, jit, 1,
+                profile_enabled=profile_enabled,
+                fg_dir=fg_dir,
+                output_dir=output_dir,
+                db_conn=db_conn
+            )
+            query_id = insert_metrics(db_conn, run_id, metrics)
+
+            # Process profiling data if enabled
+            if profile_enabled and metrics.get('perf_file') and metrics['status'] == 'SUCCESS':
+                try:
+                    process_profiles(
+                        metrics['perf_file'],
+                        query_id,
+                        metrics['query_name'],
+                        jit,
+                        fg_dir,
+                        output_dir,
+                        db_conn
+                    )
+                except Exception as e:
+                    print(f"Profile processing failed: {e}", end=' ')
 
             if metrics['status'] == 'SUCCESS':
                 hash_short = metrics['result_hash'][:8]
