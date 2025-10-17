@@ -50,12 +50,11 @@ CREATE INDEX IF NOT EXISTS idx_run_query ON queries(run_id, query_name);
 CREATE INDEX IF NOT EXISTS idx_jit ON queries(jit_enabled);
 CREATE INDEX IF NOT EXISTS idx_status ON queries(status);
 
-CREATE TABLE IF NOT EXISTS profiling_data (
+CREATE TABLE IF NOT EXISTS profiling (
     profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
     query_id INTEGER NOT NULL,
-    profiler_type TEXT NOT NULL,
-    svg_path TEXT NOT NULL,
-    raw_data_compressed BLOB,
+    cpu_data_lz4 BLOB,
+    heap_data_lz4 BLOB,
     FOREIGN KEY (query_id) REFERENCES queries(query_id)
 );
 """
@@ -173,6 +172,8 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
     sampling_active = True
     perf_proc = None
     perf_file = None
+    heap_proc = None
+    heap_file = None
 
     def sample_metrics():
         start = time.time()
@@ -225,8 +226,16 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
                     '-o', perf_file
                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-                # Give perf time to attach
-                time.sleep(0.1)
+                # Create heaptrack file in output directory
+                heap_file = str(output_dir / 'heap' / f'{query_name}_jit_{jit_str}.zst')
+                heap_proc = subprocess.Popen([
+                    'heaptrack',
+                    '-p', str(backend_pid),
+                    '-o', heap_file
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                # Give profilers time to attach
+                time.sleep(0.2)
 
             start_time = time.time()
             cur.execute(query_sql)
@@ -248,7 +257,7 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
             result['row_count'] = row_count
             result['result_hash'] = hasher.hexdigest()
 
-            # Stop perf profiling after query execution completes
+            # Stop profilers after query execution completes
             if perf_proc is not None:
                 try:
                     perf_proc.send_signal(signal.SIGINT)
@@ -268,6 +277,16 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
                     except:
                         pass
 
+            if heap_proc is not None:
+                try:
+                    heap_proc.send_signal(signal.SIGINT)
+                    heap_proc.wait(timeout=5)
+                except:
+                    try:
+                        heap_proc.kill()
+                    except:
+                        pass
+
         conn.commit()
 
     except Exception as e:
@@ -275,10 +294,15 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
         result['error_message'] = str(e)
         conn.rollback()
 
-        # Ensure perf is stopped on error
+        # Ensure profilers are stopped on error
         if perf_proc is not None:
             try:
                 perf_proc.kill()
+            except:
+                pass
+        if heap_proc is not None:
+            try:
+                heap_proc.kill()
             except:
                 pass
 
@@ -310,6 +334,7 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
     result['metrics_json'] = json.dumps(detailed_metrics)
     result['timeseries_metrics'] = json.dumps(timeseries)
     result['perf_file'] = perf_file
+    result['heap_file'] = heap_file
 
     return result
 
@@ -350,18 +375,18 @@ def ensure_flamegraph_tools(script_dir):
         print("FlameGraph tools ready")
     return fg_dir
 
-def process_profiles(perf_file, query_id, query_name, jit, fg_dir, output_dir, db_conn):
-    """Process perf data into flame graph SVG and store compressed data in database."""
+def process_profiles(perf_file, query_name, jit, fg_dir, output_dir):
+    """Process perf data into flame graph SVG and return compressed data."""
     try:
         # Generate SVG filename
         jit_str = 'on' if jit else 'off'
         svg_name = f"{query_name}_jit_{jit_str}.svg"
-        svg_path = output_dir / 'profiles_latest' / svg_name
+        svg_path = output_dir / 'profiles_cpu_latest' / svg_name
 
         # perf script | stackcollapse-perf.pl | flamegraph.pl > svg
         with open(svg_path, 'w') as svg_file:
             perf_script = subprocess.Popen(
-                ['sudo', 'perf', 'script', '-i', perf_file],
+                ['sudo', 'perf', 'script', '-f', '-i', perf_file],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL
             )
@@ -373,7 +398,7 @@ def process_profiles(perf_file, query_id, query_name, jit, fg_dir, output_dir, d
             )
             perf_script.stdout.close()
 
-            title = f"{query_name} JIT={'ON' if jit else 'OFF'}"
+            title = f"{query_name} CPU JIT={'ON' if jit else 'OFF'}"
             subprocess.run(
                 [str(fg_dir / 'flamegraph.pl'), '--title', title],
                 stdin=stackcollapse.stdout,
@@ -387,18 +412,49 @@ def process_profiles(perf_file, query_id, query_name, jit, fg_dir, output_dir, d
         perf_data = result.stdout
         compressed_data = lz4.frame.compress(perf_data, compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
 
-        # Store in database
-        cursor = db_conn.cursor()
-        svg_relative = str(svg_path.relative_to(output_dir.parent))
-        cursor.execute("""
-            INSERT INTO profiling_data (query_id, profiler_type, svg_path, raw_data_compressed)
-            VALUES (?, 'cpu', ?, ?)
-        """, (query_id, svg_relative, compressed_data))
-        db_conn.commit()
+        return compressed_data
 
     except Exception as e:
         # Don't fail the benchmark if profile processing fails
-        print(f"[profile error: {e}]", end=' ')
+        print(f"[cpu profile error: {e}]", end=' ')
+        return None
+
+def process_heap_profiles(heap_file, query_name, jit, fg_dir, output_dir):
+    """Process heaptrack data into flame graph SVG and return compressed data."""
+    try:
+        # Generate SVG filename
+        jit_str = 'on' if jit else 'off'
+        svg_name = f"{query_name}_jit_{jit_str}_heap.svg"
+        svg_path = output_dir / 'profiles_heap_latest' / svg_name
+
+        # heaptrack_print | flamegraph.pl > svg
+        with open(svg_path, 'w') as svg_file:
+            heaptrack_print = subprocess.Popen(
+                ['heaptrack_print', '-M', heap_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
+
+            title = f"{query_name} Heap JIT={'ON' if jit else 'OFF'}"
+            subprocess.run(
+                [str(fg_dir / 'flamegraph.pl'), '--title', title, '--colors', 'mem'],
+                stdin=heaptrack_print.stdout,
+                stdout=svg_file,
+                stderr=subprocess.DEVNULL
+            )
+            heaptrack_print.stdout.close()
+
+        # Read and compress heaptrack .zst file
+        with open(heap_file, 'rb') as f:
+            heap_data = f.read()
+        compressed_data = lz4.frame.compress(heap_data, compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
+
+        return compressed_data
+
+    except Exception as e:
+        # Don't fail the benchmark if profile processing fails
+        print(f"[heap profile error: {e}]", end=' ')
+        return None
 
 def timeout_handler():
     print("Starting timeout")
@@ -426,21 +482,26 @@ def main():
     fg_dir = None
     if profile_enabled:
         fg_dir = ensure_flamegraph_tools(script_dir)
-        profiles_dir = output_dir / 'profiles_latest'
+        profiles_cpu_dir = output_dir / 'profiles_cpu_latest'
+        profiles_heap_dir = output_dir / 'profiles_heap_latest'
         perf_dir = output_dir / 'perf'
-        gperftools_dir = output_dir / 'gperftools'
+        heap_dir = output_dir / 'heap'
 
-        if profiles_dir.exists():
-            shutil.rmtree(profiles_dir)
-        profiles_dir.mkdir()
+        if profiles_cpu_dir.exists():
+            shutil.rmtree(profiles_cpu_dir)
+        profiles_cpu_dir.mkdir()
+
+        if profiles_heap_dir.exists():
+            shutil.rmtree(profiles_heap_dir)
+        profiles_heap_dir.mkdir()
 
         if perf_dir.exists():
             shutil.rmtree(perf_dir)
         perf_dir.mkdir()
 
-        if gperftools_dir.exists():
-            shutil.rmtree(gperftools_dir)
-        gperftools_dir.mkdir()
+        if heap_dir.exists():
+            shutil.rmtree(heap_dir)
+        heap_dir.mkdir()
 
     run_id = f"pgx_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sf{int(sf * 100):03d}"
     db_file = output_dir / 'benchmark.db'
@@ -487,19 +548,36 @@ def main():
             query_id = insert_metrics(db_conn, run_id, metrics)
 
             # Process profiling data if enabled
-            if profile_enabled and metrics.get('perf_file') and metrics['status'] == 'SUCCESS':
-                try:
-                    process_profiles(
+            if profile_enabled and metrics['status'] == 'SUCCESS':
+                cpu_blob = None
+                heap_blob = None
+
+                if metrics.get('perf_file'):
+                    cpu_blob = process_profiles(
                         metrics['perf_file'],
-                        query_id,
                         metrics['query_name'],
                         jit,
                         fg_dir,
-                        output_dir,
-                        db_conn
+                        output_dir
                     )
-                except Exception as e:
-                    print(f"Profile processing failed: {e}", end=' ')
+
+                if metrics.get('heap_file'):
+                    heap_blob = process_heap_profiles(
+                        metrics['heap_file'],
+                        metrics['query_name'],
+                        jit,
+                        fg_dir,
+                        output_dir
+                    )
+
+                # Insert profiling row if we got any data
+                if cpu_blob is not None or heap_blob is not None:
+                    cursor = db_conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO profiling (query_id, cpu_data_lz4, heap_data_lz4)
+                        VALUES (?, ?, ?)
+                    """, (query_id, cpu_blob, heap_blob))
+                    db_conn.commit()
 
             if metrics['status'] == 'SUCCESS':
                 hash_short = metrics['result_hash'][:8]
