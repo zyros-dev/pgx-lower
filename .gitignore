@@ -122,3 +122,6 @@ benchmark_results/
 build-docker-ptest
 agent_docs/tpch_debug.log
 benchmark_test.log
+benchmark/tpch/sqlite3
+
+benchmark/tpch_init.sql
