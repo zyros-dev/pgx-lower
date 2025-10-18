@@ -100,7 +100,7 @@ ptest: install-ptest
 	@echo "PostgreSQL regression tests completed!"
 
 ptest-release: install-ptest-release
-	@echo "Running PostgreSQL regression tests (Release -O3 build)..."
+	@echo "Running PostgreSQL regression tests (Release build)..."
 	-cd $(BUILD_DIR_PTEST_RELEASE) && ctest --output-on-failure && cd -
 	@if [ -f .venv/bin/python3 ]; then \
 		.venv/bin/python3 tools/validate_tpch.py $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch.out $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch_no_lower.out; \
