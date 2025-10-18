@@ -39,6 +39,7 @@ const api = {
 document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     setupEventListeners();
+    updateRunSelectState();
     renderDashboard();
 });
 
@@ -69,14 +70,30 @@ function populateScaleSelector() {
         .join('');
 }
 
+function updateRunSelectState() {
+    const viewSelect = document.getElementById('view-select');
+    const runSelect = document.getElementById('run-select');
+    const isAggregate = viewSelect.value === 'aggregate';
+
+    runSelect.disabled = isAggregate;
+    if (isAggregate) {
+        runSelect.style.opacity = '0.5';
+        runSelect.style.cursor = 'not-allowed';
+    } else {
+        runSelect.style.opacity = '1';
+        runSelect.style.cursor = 'pointer';
+    }
+}
+
 function setupEventListeners() {
-    document.getElementById('scale-select').addEventListener('change', async (e) => {
-        state.currentScale = parseFloat(e.target.value);
-        await loadData();
+    document.getElementById('view-select').addEventListener('change', () => {
+        updateRunSelectState();
         renderDashboard();
     });
 
-    document.getElementById('view-select').addEventListener('change', () => {
+    document.getElementById('scale-select').addEventListener('change', async (e) => {
+        state.currentScale = parseFloat(e.target.value);
+        await loadData();
         renderDashboard();
     });
 
@@ -178,23 +195,47 @@ function renderQueryComparison() {
     }
 
     state.charts.queryComparison.setOption({
-        tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}},
-        legend: {data: ['PGX', 'Native']},
-        grid: {left: '8%', right: '5%', bottom: '10%', containLabel: true},
-        xAxis: {type: 'category', data: data.map(d => d.name)},
-        yAxis: {type: 'value', name: 'Execution Time (ms)'},
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {type: 'shadow'},
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderColor: '#e5e7eb',
+            textStyle: {color: '#1f2937'}
+        },
+        legend: {
+            data: ['PGX', 'Native'],
+            textStyle: {color: '#6b7280'},
+            top: 10
+        },
+        grid: {left: '8%', right: '5%', bottom: '10%', top: '15%', containLabel: true},
+        xAxis: {
+            type: 'category',
+            data: data.map(d => d.name),
+            axisLine: {lineStyle: {color: '#e5e7eb'}},
+            axisLabel: {color: '#6b7280'},
+            splitLine: {show: false}
+        },
+        yAxis: {
+            type: 'value',
+            name: 'Execution Time (ms)',
+            nameTextStyle: {color: '#6b7280'},
+            axisLine: {lineStyle: {color: '#e5e7eb'}},
+            axisLabel: {color: '#6b7280'},
+            splitLine: {lineStyle: {color: '#f3f4f6', type: 'solid'}}
+        },
         series: [
             {
                 name: 'PGX',
                 type: 'bar',
                 data: data.map(d => d.pgx),
-                itemStyle: {color: '#2ecc71'}
+                itemStyle: {color: '#f97316', borderRadius: [2, 2, 0, 0]}
             },
             {
                 name: 'Native',
                 type: 'bar',
                 data: data.map(d => d.native),
-                itemStyle: {color: '#3498db'}
+                itemStyle: {color: '#3b82f6', borderRadius: [2, 2, 0, 0]}
             }
         ]
     });
@@ -235,7 +276,10 @@ async function renderScalingAnalysis() {
             type: 'line',
             data: pgxData,
             smooth: true,
-            itemStyle: {color: '#2ecc71'}
+            itemStyle: {color: '#f97316'},
+            lineStyle: {width: 2},
+            symbol: 'circle',
+            symbolSize: 6
         });
     }
     if (showNative) {
@@ -244,26 +288,47 @@ async function renderScalingAnalysis() {
             type: 'line',
             data: nativeData,
             smooth: true,
-            itemStyle: {color: '#3498db'}
+            itemStyle: {color: '#3b82f6'},
+            lineStyle: {width: 2},
+            symbol: 'circle',
+            symbolSize: 6
         });
     }
 
     state.charts.scaling.setOption({
-        tooltip: {trigger: 'axis'},
-        legend: {data: series.map(s => s.name), top: 0},
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderColor: '#e5e7eb',
+            textStyle: {color: '#1f2937'}
+        },
+        legend: {
+            data: series.map(s => s.name),
+            textStyle: {color: '#6b7280'},
+            top: 10
+        },
         grid: {left: '8%', right: '5%', bottom: '10%', top: '15%', containLabel: true},
         xAxis: {
             type: 'category',
             data: scaleFactors,
             name: 'Scale Factor',
             nameLocation: 'middle',
-            nameGap: 30
+            nameGap: 30,
+            nameTextStyle: {color: '#6b7280'},
+            axisLine: {lineStyle: {color: '#e5e7eb'}},
+            axisLabel: {color: '#6b7280'},
+            splitLine: {show: false}
         },
         yAxis: {
             type: 'value',
             name: 'Execution Time (ms)',
             nameLocation: 'middle',
-            nameGap: 50
+            nameGap: 50,
+            nameTextStyle: {color: '#6b7280'},
+            axisLine: {lineStyle: {color: '#e5e7eb'}},
+            axisLabel: {color: '#6b7280'},
+            splitLine: {lineStyle: {color: '#f3f4f6', type: 'solid'}}
         },
         series
     });

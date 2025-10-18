@@ -29,6 +29,14 @@
         <section class="control-bar">
             <div class="controls">
                 <div class="control-group">
+                    <label for="view-select">View:</label>
+                    <select id="view-select">
+                        <option value="aggregate">Aggregate</option>
+                        <option value="raw">Raw Data</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
                     <label for="scale-select">Scale Factor:</label>
                     <select id="scale-select">
                         <option value="">Loading...</option>
@@ -39,14 +47,6 @@
                     <label for="run-select">Run:</label>
                     <select id="run-select">
                         <option value="latest">Latest</option>
-                    </select>
-                </div>
-
-                <div class="control-group">
-                    <label for="view-select">View:</label>
-                    <select id="view-select">
-                        <option value="aggregate">Aggregate</option>
-                        <option value="raw">Raw Data</option>
                     </select>
                 </div>
             </div>

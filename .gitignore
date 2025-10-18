@@ -128,3 +128,5 @@ benchmark/tpch_init.sql
 benchmark/output
 build-docker-release
 build-ptest-release
+build-docker-ptest-release
+build-ptest-reldebug

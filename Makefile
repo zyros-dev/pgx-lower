@@ -2,7 +2,7 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release utest fcheck ffix rebuild help build-ptest build-ptest-release build-utest clean-ptest clean-ptest-release clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release ptest-reldebug utest fcheck ffix rebuild help build-ptest build-ptest-release build-ptest-reldebug build-utest clean-ptest clean-ptest-release clean-ptest-reldebug clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg
 
 export CC = clang
 export CXX = clang++
@@ -11,10 +11,12 @@ export CXX = clang++
 BUILD_DIR = build
 BUILD_DIR_PTEST = build-ptest
 BUILD_DIR_PTEST_RELEASE = build-ptest-release
+BUILD_DIR_PTEST_RELDEBUG = build-ptest-reldebug
 BUILD_DIR_UTEST = build-utest
 CMAKE_GENERATOR = Ninja
 CMAKE_BUILD_TYPE_DEBUG = Debug
 CMAKE_BUILD_TYPE_RELEASE = Release
+CMAKE_BUILD_TYPE_RELWITHDEBINFO = RelWithDebInfo
 
 all: test
 
@@ -28,14 +30,21 @@ build-ptest:
 	@echo "Building PostgreSQL extension for regression tests (Debug)..."
 	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_DEBUG) -DBUILD_ONLY_EXTENSION=ON
-	cmake --build $(BUILD_DIR_PTEST)
+	ASAN_OPTIONS=detect_leaks=0 cmake --build $(BUILD_DIR_PTEST)
 	@echo "PostgreSQL extension build completed!"
 
 build-ptest-release:
 	@echo "Building PostgreSQL extension for regression tests (Release)..."
 	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST_RELEASE) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_RELEASE) -DBUILD_ONLY_EXTENSION=ON
-	cmake --build $(BUILD_DIR_PTEST_RELEASE)
+	ASAN_OPTIONS=detect_leaks=0 cmake --build $(BUILD_DIR_PTEST_RELEASE)
+	@echo "PostgreSQL extension build completed!"
+
+build-ptest-reldebug:
+	@echo "Building PostgreSQL extension for regression tests (RelWithDebInfo: -O2 -g)..."
+	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
+	cmake -S . -B $(BUILD_DIR_PTEST_RELDEBUG) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_RELWITHDEBINFO) -DBUILD_ONLY_EXTENSION=ON
+	ASAN_OPTIONS=detect_leaks=0 cmake --build $(BUILD_DIR_PTEST_RELDEBUG)
 	@echo "PostgreSQL extension build completed!"
 
 build-utest:
@@ -46,7 +55,7 @@ build-utest:
 
 clean: clean-root
 	@echo "Cleaning all build directories..."
-	rm -rf $(BUILD_DIR) $(BUILD_DIR_PTEST) $(BUILD_DIR_PTEST_RELEASE) $(BUILD_DIR_UTEST)
+	rm -rf $(BUILD_DIR) $(BUILD_DIR_PTEST) $(BUILD_DIR_PTEST_RELEASE) $(BUILD_DIR_PTEST_RELDEBUG) $(BUILD_DIR_UTEST)
 	@echo "Clean completed!"
 
 clean-root:
@@ -67,6 +76,11 @@ clean-ptest-release:
 	rm -rf $(BUILD_DIR_PTEST_RELEASE)
 	@echo "PostgreSQL release test clean completed!"
 
+clean-ptest-reldebug:
+	@echo "Cleaning PostgreSQL reldebug test build directory..."
+	rm -rf $(BUILD_DIR_PTEST_RELDEBUG)
+	@echo "PostgreSQL reldebug test clean completed!"
+
 clean-utest:
 	@echo "Cleaning unit test build directory..."
 	rm -rf $(BUILD_DIR_UTEST)
@@ -86,6 +100,11 @@ install-ptest-release: build-ptest-release
 	@echo "Installing PostgreSQL test build (Release)..."
 	sudo cmake --install $(BUILD_DIR_PTEST_RELEASE)
 	@echo "PostgreSQL release test install completed!"
+
+install-ptest-reldebug: build-ptest-reldebug
+	@echo "Installing PostgreSQL test build (RelWithDebInfo: -O2 -g)..."
+	sudo cmake --install $(BUILD_DIR_PTEST_RELDEBUG)
+	@echo "PostgreSQL reldebug test install completed!"
 
 ptest: install-ptest
 	@echo "Running PostgreSQL regression tests (Debug build)..."
@@ -108,6 +127,17 @@ ptest-release: install-ptest-release
 		python3 tools/validate_tpch.py $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch.out $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch_no_lower.out; \
 	fi
 	@echo "PostgreSQL release regression tests completed!"
+
+ptest-reldebug: install-ptest-reldebug
+	@echo "Running PostgreSQL regression tests (RelWithDebInfo build: -O2 -g)..."
+	-cd $(BUILD_DIR_PTEST_RELDEBUG) && ctest --output-on-failure && cd -
+	@if [ -f .venv/bin/python3 ]; then \
+		.venv/bin/python3 tools/validate_tpch.py $(BUILD_DIR_PTEST_RELDEBUG)/extension/results/tpch.out $(BUILD_DIR_PTEST_RELDEBUG)/extension/results/tpch_no_lower.out; \
+	else \
+		echo "Warning: .venv not found, using system python3"; \
+		python3 tools/validate_tpch.py $(BUILD_DIR_PTEST_RELDEBUG)/extension/results/tpch.out $(BUILD_DIR_PTEST_RELDEBUG)/extension/results/tpch_no_lower.out; \
+	fi
+	@echo "PostgreSQL reldebug regression tests completed!"
 
 psql-start:
 	@echo "Starting PostgreSQL for debugging..."
