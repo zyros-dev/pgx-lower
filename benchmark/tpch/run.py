@@ -29,7 +29,8 @@ SCHEMA_SQL = """
                  iterations       INTEGER NOT NULL,
                  postgres_version TEXT,
                  pgx_version      TEXT,
-                 hostname         TEXT
+                 hostname         TEXT,
+                 run_timestamp    TEXT
              );
 
              CREATE TABLE IF NOT EXISTS queries
@@ -38,7 +39,7 @@ SCHEMA_SQL = """
                  run_id             TEXT    NOT NULL,
                  query_name         TEXT    NOT NULL,
                  iteration          INTEGER NOT NULL,
-                 jit_enabled        BOOLEAN NOT NULL,
+                 pgx_enabled        BOOLEAN NOT NULL,
                  status             TEXT    NOT NULL,
                  duration_ms        REAL,
                  row_count          INTEGER,
@@ -47,20 +48,82 @@ SCHEMA_SQL = """
                  postgres_metrics   TEXT,
                  timeseries_metrics TEXT,
                  result_hash        TEXT,
-                 hash_valid         BOOLEAN
+                 hash_valid         BOOLEAN,
+                 run_timestamp      TEXT,
+                 pgx_version        TEXT,
+                 postgres_version   TEXT,
+                 scale_factor       REAL
              );
 
              CREATE INDEX IF NOT EXISTS idx_run_query ON queries (run_id, query_name);
-             CREATE INDEX IF NOT EXISTS idx_jit ON queries (jit_enabled);
+             CREATE INDEX IF NOT EXISTS idx_pgx ON queries (pgx_enabled);
              CREATE INDEX IF NOT EXISTS idx_status ON queries (status);
 
              CREATE TABLE IF NOT EXISTS profiling
              (
-                 profile_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                 query_id      INTEGER NOT NULL,
-                 cpu_data_lz4  BLOB,
-                 heap_data_lz4 BLOB,
+                 profile_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                 query_id                INTEGER NOT NULL,
+                 cpu_data_lz4            BLOB,
+                 heap_data_lz4           BLOB,
+                 cpu_raw_size_kb         REAL,
+                 cpu_compressed_size_kb  REAL,
+                 heap_raw_size_kb        REAL,
+                 heap_compressed_size_kb REAL,
+                 run_timestamp           TEXT,
+                 pgx_enabled             BOOLEAN,
                  FOREIGN KEY (query_id) REFERENCES queries (query_id)
+             );
+
+             CREATE TABLE IF NOT EXISTS aggregate_benchmarks
+             (
+                 id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+                 pgx_version              TEXT NOT NULL,
+                 postgres_version         TEXT NOT NULL,
+                 scale_factor             REAL NOT NULL,
+                 pgx_enabled              BOOLEAN NOT NULL,
+                 run_timestamp            TEXT NOT NULL,
+                 total_queries            INTEGER,
+                 successful_queries       INTEGER,
+                 failed_queries           INTEGER,
+                 total_execution_time_ms  REAL,
+                 avg_execution_time_ms    REAL,
+                 median_execution_time_ms REAL,
+                 p95_execution_time_ms    REAL,
+                 p99_execution_time_ms    REAL,
+                 min_execution_time_ms    REAL,
+                 max_execution_time_ms    REAL,
+                 avg_planning_time_ms     REAL,
+                 total_planning_time_ms   REAL,
+                 avg_cache_hit_ratio      REAL,
+                 total_disk_read_blocks   INTEGER,
+                 total_disk_write_blocks  INTEGER,
+                 total_spilled_mb         REAL,
+                 queries_with_native_jit  INTEGER,
+                 avg_native_jit_time_ms   REAL,
+                 avg_peak_memory_mb       REAL,
+                 max_peak_memory_mb       REAL,
+                 UNIQUE(pgx_version, postgres_version, scale_factor, pgx_enabled)
+             );
+
+             CREATE TABLE IF NOT EXISTS aggregate_profiles
+             (
+                 id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+                 pgx_version                     TEXT NOT NULL,
+                 postgres_version                TEXT NOT NULL,
+                 scale_factor                    REAL NOT NULL,
+                 pgx_enabled                     BOOLEAN NOT NULL,
+                 run_timestamp                   TEXT NOT NULL,
+                 cpu_profiles_count              INTEGER,
+                 heap_profiles_count             INTEGER,
+                 total_cpu_profile_raw_kb        REAL,
+                 total_cpu_profile_compressed_kb REAL,
+                 avg_cpu_compression_ratio       REAL,
+                 total_heap_profile_raw_kb       REAL,
+                 total_heap_profile_compressed_kb REAL,
+                 avg_heap_compression_ratio      REAL,
+                 total_storage_kb                REAL,
+                 storage_per_query_kb            REAL,
+                 UNIQUE(pgx_version, postgres_version, scale_factor, pgx_enabled)
              ); \
              """
 
@@ -156,7 +219,7 @@ def normalize_value(val):
     return str(val).strip()
 
 
-def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_enabled=False, heap_enabled=False,
+def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_enabled=False, heap_enabled=False,
                            fg_dir=None, output_dir=None, db_conn=None):
     query_name = query_file.stem
 
@@ -170,7 +233,7 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
     result = {
         'query_name': query_name,
         'iteration': iteration,
-        'jit_enabled': jit_enabled,
+        'pgx_enabled': pgx_enabled,
         'status': 'SUCCESS',
         'error_message': None,
         'duration_ms': 0,
@@ -217,7 +280,7 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
     try:
         with conn.cursor() as cur:
             cur.execute("LOAD 'pgx_lower.so'")
-            cur.execute(f"SET pgx_lower.enabled = {'true' if jit_enabled else 'false'}")
+            cur.execute(f"SET pgx_lower.enabled = {'true' if pgx_enabled else 'false'}")
 
             # Get backend PID for profiling
             backend_pid = None
@@ -226,8 +289,8 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
                 backend_pid = cur.fetchone()[0]
 
             if profile_enabled and backend_pid:
-                jit_str = 'on' if jit_enabled else 'off'
-                perf_file = str(output_dir / 'perf' / f'{query_name}_jit_{jit_str}.data')
+                pgx_str = 'on' if pgx_enabled else 'off'
+                perf_file = str(output_dir / 'perf' / f'{query_name}_pgx_{pgx_str}.data')
                 perf_proc = subprocess.Popen([
                     'sudo', 'perf', 'record',
                     '-p', str(backend_pid),
@@ -239,8 +302,8 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
                 time.sleep(0.2)
 
             if heap_enabled and backend_pid:
-                jit_str = 'on' if jit_enabled else 'off'
-                massif_file = str(output_dir / 'heap' / f'{query_name}_jit_{jit_str}.data')
+                pgx_str = 'on' if pgx_enabled else 'off'
+                massif_file = str(output_dir / 'heap' / f'{query_name}_pgx_{pgx_str}.data')
                 massif_proc = subprocess.Popen([
                     'sudo', 'perf', 'record',
                     '-e', 'syscalls:sys_enter_mmap,syscalls:sys_enter_brk,page-faults',
@@ -367,18 +430,18 @@ def run_query_with_metrics(conn, query_file, jit_enabled, iteration, profile_ena
     return result
 
 
-def insert_metrics(db_conn, run_id, result):
+def insert_metrics(db_conn, run_id, result, run_timestamp, pgx_version, postgres_version, scale_factor):
     cursor = db_conn.cursor()
     cursor.execute("""
-                   INSERT INTO queries (run_id, query_name, iteration, jit_enabled,
+                   INSERT INTO queries (run_id, query_name, iteration, pgx_enabled,
                                         status, duration_ms, row_count, error_message, metrics_json, postgres_metrics,
-                                        timeseries_metrics, result_hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        timeseries_metrics, result_hash, run_timestamp, pgx_version, postgres_version, scale_factor)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    """, (
                        run_id,
                        result['query_name'],
                        result['iteration'],
-                       result['jit_enabled'],
+                       result['pgx_enabled'],
                        result['status'],
                        result['duration_ms'],
                        result['row_count'],
@@ -386,7 +449,11 @@ def insert_metrics(db_conn, run_id, result):
                        result['metrics_json'],
                        result.get('postgres_metrics'),
                        result['timeseries_metrics'],
-                       result.get('result_hash')
+                       result.get('result_hash'),
+                       run_timestamp,
+                       pgx_version,
+                       postgres_version,
+                       scale_factor
                    ))
     db_conn.commit()
     return cursor.lastrowid
@@ -513,7 +580,7 @@ def setup_profiling_dirs(output_dir, script_dir, heap_enabled=False):
     return fg_dir
 
 
-def init_databases(sf, run_id, output_dir):
+def init_databases(sf, run_id, output_dir, run_timestamp):
     db_file = output_dir / 'benchmark.db'
     db_conn = sqlite3.connect(db_file)
     db_conn.executescript(SCHEMA_SQL)
@@ -523,9 +590,9 @@ def init_databases(sf, run_id, output_dir):
 
     cursor = db_conn.cursor()
     cursor.execute(
-        "INSERT INTO runs (run_id, timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (run_id, timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, int(time.time()), sf, 1, get_postgres_version(pg_conn), get_pgx_version(),
-         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()))
+         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_timestamp))
     db_conn.commit()
 
     return db_conn, pg_conn, db_file
@@ -537,8 +604,8 @@ def validate_results(db_conn, run_id):
 
     cursor.execute("""
         SELECT query_name,
-               MAX(CASE WHEN jit_enabled = 0 THEN result_hash END) AS postgres_hash,
-               MAX(CASE WHEN jit_enabled = 1 THEN result_hash END) AS pgx_hash
+               MAX(CASE WHEN pgx_enabled = 0 THEN result_hash END) AS postgres_hash,
+               MAX(CASE WHEN pgx_enabled = 1 THEN result_hash END) AS pgx_hash
         FROM queries
         WHERE run_id = ?
           AND status = 'SUCCESS'
@@ -568,58 +635,69 @@ def validate_results(db_conn, run_id):
         print(f"\nAll query results validated!")
 
 
-def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir):
+def _process_profile(profile_file, process_func, query_name, pgx_enabled, fg_dir, output_dir):
+    """Process a profile file and return (blob, raw_kb, compressed_kb)."""
+    if not profile_file:
+        return None, None, None
+
+    profile_path = Path(profile_file)
+    raw_kb = profile_path.stat().st_size / 1024 if profile_path.exists() else None
+    blob = process_func(profile_file, query_name, pgx_enabled, fg_dir, output_dir)
+    compressed_kb = len(blob) / 1024 if blob else None
+
+    return blob, raw_kb, compressed_kb
+
+
+def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir, run_timestamp, pgx_version, postgres_version, scale_factor, db_file):
     query_files = sorted((script_dir / 'queries').glob('q*.sql'))
     total = len(query_files) * 2
     current = 0
 
     print(f"\n{total} queries...")
 
-    for jit in [False, True]:
-        jit_mode = 'ON ' if jit else 'OFF'
-        print(f"\n{'pgx-lower' if jit else 'PostgreSQL'} (JIT {jit_mode}):")
+    for pgx_enabled in [False, True]:
+        pgx_mode = 'ON ' if pgx_enabled else 'OFF'
+        print(f"\n{'pgx-lower' if pgx_enabled else 'PostgreSQL'} (pgx-lower {pgx_mode}):")
 
         for qf in query_files:
             current += 1
             print(f"[{current}/{total}] {qf.stem}...", end=' ', flush=True)
 
             metrics = run_query_with_metrics(
-                pg_conn, qf, jit, 1,
+                pg_conn, qf, pgx_enabled, 1,
                 profile_enabled=profile_enabled,
                 heap_enabled=heap_enabled,
                 fg_dir=fg_dir,
                 output_dir=output_dir,
                 db_conn=db_conn
             )
-            query_id = insert_metrics(db_conn, run_id, metrics)
+            query_id = insert_metrics(db_conn, run_id, metrics, run_timestamp, pgx_version, postgres_version, scale_factor)
 
-            cpu_blob = None
-            heap_blob = None
+            cpu_blob, cpu_raw_kb, cpu_compressed_kb = (None, None, None)
+            heap_blob, heap_raw_kb, heap_compressed_kb = (None, None, None)
 
-            if profile_enabled and metrics['status'] == 'SUCCESS' and metrics.get('perf_file'):
-                cpu_blob = process_profiles(
-                    metrics['perf_file'],
-                    metrics['query_name'],
-                    jit,
-                    fg_dir,
-                    output_dir
+            if profile_enabled and metrics['status'] == 'SUCCESS':
+                cpu_blob, cpu_raw_kb, cpu_compressed_kb = _process_profile(
+                    metrics.get('perf_file'), process_profiles,
+                    metrics['query_name'], pgx_enabled, fg_dir, output_dir
                 )
 
-            if heap_enabled and metrics['status'] == 'SUCCESS' and metrics.get('massif_file'):
-                heap_blob = process_heap_profiles(
-                    metrics['massif_file'],
-                    metrics['query_name'],
-                    jit,
-                    fg_dir,
-                    output_dir
+            if heap_enabled and metrics['status'] == 'SUCCESS':
+                heap_blob, heap_raw_kb, heap_compressed_kb = _process_profile(
+                    metrics.get('massif_file'), process_heap_profiles,
+                    metrics['query_name'], pgx_enabled, fg_dir, output_dir
                 )
 
             if cpu_blob is not None or heap_blob is not None:
                 cursor = db_conn.cursor()
                 cursor.execute("""
-                    INSERT INTO profiling (query_id, cpu_data_lz4, heap_data_lz4)
-                    VALUES (?, ?, ?)
-                """, (query_id, cpu_blob, heap_blob))
+                    INSERT INTO profiling (query_id, cpu_data_lz4, heap_data_lz4,
+                                         cpu_raw_size_kb, cpu_compressed_size_kb,
+                                         heap_raw_size_kb, heap_compressed_size_kb,
+                                         run_timestamp, pgx_enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (query_id, cpu_blob, heap_blob, cpu_raw_kb, cpu_compressed_kb,
+                      heap_raw_kb, heap_compressed_kb, run_timestamp, pgx_enabled))
                 db_conn.commit()
 
             if metrics['status'] == 'SUCCESS':
@@ -627,6 +705,10 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
                 print(f"{metrics['duration_ms']:.1f}ms [{hash_short}]")
             else:
                 print(f"ERROR: {metrics['error_message']}")
+
+    print("\nComputing aggregate statistics...")
+    from aggregate import aggregate_latest_run
+    aggregate_latest_run(db_file, run_timestamp)
 
 
 def main():
@@ -653,10 +735,15 @@ def main():
     if profile_enabled or heap_enabled:
         fg_dir = setup_profiling_dirs(output_dir, script_dir, heap_enabled)
 
+    run_timestamp = datetime.now().isoformat()
     run_id = f"pgx_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sf{int(sf * 100):03d}"
     print(f"{run_id} (SF={sf})")
 
-    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir)
+    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp)
+
+    # Get version info
+    postgres_version = get_postgres_version(pg_conn)
+    pgx_version = get_pgx_version()
 
     if not generate_tpch_data(sf):
         sys.exit(1)
@@ -664,7 +751,7 @@ def main():
     if not load_tpch_database(pg_conn):
         sys.exit(1)
 
-    run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir)
+    run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir, run_timestamp, pgx_version, postgres_version, sf, db_file)
 
     pg_conn.close()
     validate_results(db_conn, run_id)
