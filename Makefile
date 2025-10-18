@@ -4,7 +4,6 @@
 
 .PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release utest fcheck ffix rebuild help build-ptest build-ptest-release build-utest clean-ptest clean-ptest-release clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg
 
-# Enforce Clang compiler (GCC 14.2.0 has -O3 optimizer bug causing infinite loop)
 export CC = clang
 export CXX = clang++
 
@@ -33,7 +32,7 @@ build-ptest:
 	@echo "PostgreSQL extension build completed!"
 
 build-ptest-release:
-	@echo "Building PostgreSQL extension for regression tests (Release -O3)..."
+	@echo "Building PostgreSQL extension for regression tests (Release)..."
 	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST_RELEASE) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_RELEASE) -DBUILD_ONLY_EXTENSION=ON
 	cmake --build $(BUILD_DIR_PTEST_RELEASE)
@@ -84,7 +83,7 @@ install-ptest: build-ptest
 	@echo "PostgreSQL test install completed!"
 
 install-ptest-release: build-ptest-release
-	@echo "Installing PostgreSQL test build (Release -O3)..."
+	@echo "Installing PostgreSQL test build (Release)..."
 	sudo cmake --install $(BUILD_DIR_PTEST_RELEASE)
 	@echo "PostgreSQL release test install completed!"
 
