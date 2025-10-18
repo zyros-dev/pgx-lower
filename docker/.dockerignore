@@ -7,6 +7,8 @@ build-*/
 # Git
 .git/
 .gitignore
+**/.git/
+lingo-db/
 
 # Python
 .venv/

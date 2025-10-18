@@ -18,8 +18,25 @@ services:
     stdin_open: true
     tty: true
 
+  benchmark:
+    build:
+      context: ..
+      dockerfile: docker/benchmark/Dockerfile
+    image: pgx-lower:benchmark
+    container_name: pgx-lower-benchmark
+    network_mode: host
+    volumes:
+      # Benchmark data and scripts
+      - ../benchmark:/workspace/benchmark
+      - benchmark-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    stdin_open: true
+    tty: true
+
 volumes:
   postgres-data:
   build-cache:
   build-cache-ptest:
   build-cache-utest:
+  benchmark-data:

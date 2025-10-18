@@ -591,8 +591,18 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
         memset(batch->string_lengths[col], 0, capacity * sizeof(int32_t));
         memset(batch->string_data_ptrs[col], 0, capacity * sizeof(uint8_t*));
 
-        batch->decimal_values[col] = static_cast<__int128*>(palloc(capacity * sizeof(__int128)));
+        // __int128 requires 16-byte alignment. palloc() only guarantees 8-byte (MAXALIGN).
+        const size_t alloc_size = capacity * sizeof(__int128) + 16;
+        void* raw_ptr = palloc(alloc_size);
+        const uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw_ptr);
+        const uintptr_t aligned_addr = (raw_addr + 15) & ~static_cast<uintptr_t>(15);
+        batch->decimal_values[col] = reinterpret_cast<__int128*>(aligned_addr);
         memset(batch->decimal_values[col], 0, capacity * sizeof(__int128));
+
+        if ((reinterpret_cast<uintptr_t>(batch->decimal_values[col]) & 15) != 0) {
+            ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+                            errmsg("decimal_values[%zu] alignment failed: %p", col, batch->decimal_values[col])));
+        }
     }
 
     MemoryContextSwitchTo(oldContext);

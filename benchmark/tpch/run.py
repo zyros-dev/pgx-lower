@@ -17,112 +17,238 @@ from pathlib import Path
 import lz4.frame
 import psutil
 import psycopg2
+from collections import defaultdict
+from typing import Dict
 
 from metrics_collector import collect_query_metrics
+
+
+# ============================================================================
+# Flamegraph JSON Generation (from perf data)
+# ============================================================================
+
+def parse_perf_script(perf_data: bytes) -> Dict:
+    """
+    Parse perf script output into hierarchical flame graph data.
+
+    Returns d3-flame-graph compatible JSON:
+    {
+        "name": "root",
+        "value": total_samples,
+        "children": [...]
+    }
+    """
+    lines = perf_data.decode('utf-8', errors='replace').strip().split('\n')
+
+    # Stack aggregation: path -> count
+    stacks = defaultdict(int)
+    current_stack = []
+
+    for line in lines:
+        line = line.rstrip()
+
+        if not line:
+            # Empty line marks end of stack trace
+            if current_stack:
+                # Reverse stack (perf outputs bottom-up, we want top-down)
+                stack_path = tuple(reversed(current_stack))
+                stacks[stack_path] += 1
+                current_stack = []
+            continue
+
+        # Skip event header lines
+        if not line.startswith('\t'):
+            continue
+
+        # Parse stack frame (remove leading tab and address)
+        frame = line.strip()
+
+        # Remove hex addresses like "7f1234567890"
+        if ' ' in frame:
+            frame = frame.split(' ', 1)[1]
+
+        # Clean up frame name
+        frame = frame.strip()
+        if frame and frame != '[unknown]':
+            current_stack.append(frame)
+
+    # Process last stack if exists
+    if current_stack:
+        stack_path = tuple(reversed(current_stack))
+        stacks[stack_path] += 1
+
+    # Build hierarchical tree
+    root = {"name": "all", "value": 0, "children": []}
+
+    for stack_path, count in stacks.items():
+        insert_stack(root, stack_path, count)
+
+    # Calculate values (sum of children)
+    calculate_values(root)
+
+    return root
+
+
+def insert_stack(node: Dict, stack_path: tuple, count: int):
+    """Insert a stack trace into the tree."""
+    if not stack_path:
+        return
+
+    frame_name = stack_path[0]
+    remaining = stack_path[1:]
+
+    # Find or create child node
+    child = None
+    for c in node.get("children", []):
+        if c["name"] == frame_name:
+            child = c
+            break
+
+    if child is None:
+        child = {"name": frame_name, "value": 0, "children": []}
+        if "children" not in node:
+            node["children"] = []
+        node["children"].append(child)
+
+    if remaining:
+        insert_stack(child, remaining, count)
+    else:
+        # Leaf node - add count
+        child["value"] += count
+
+
+def calculate_values(node: Dict) -> int:
+    """Calculate node values from children (post-order traversal)."""
+    if "children" not in node or not node["children"]:
+        return node.get("value", 0)
+
+    total = sum(calculate_values(child) for child in node["children"])
+    node["value"] = max(node.get("value", 0), total)
+
+    # Remove empty children
+    node["children"] = [c for c in node["children"] if c.get("value", 0) > 0]
+
+    return node["value"]
+
+
+def perf_data_to_flamegraph_json(perf_data_lz4: bytes) -> bytes:
+    """
+    Convert LZ4-compressed perf.data to flamegraph JSON (also LZ4-compressed).
+
+    Args:
+        perf_data_lz4: LZ4-compressed perf.data file content
+
+    Returns: LZ4-compressed flamegraph JSON
+    """
+    import tempfile
+
+    # Decompress perf data first
+    perf_data_blob = lz4.frame.decompress(perf_data_lz4)
+
+    # perf script doesn't work with stdin, need temp file
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        f.write(perf_data_blob)
+        temp_path = f.name
+
+    try:
+        result = subprocess.run(
+            ['sudo', 'perf', 'script', '-f', '-i', temp_path],
+            capture_output=True,
+            check=True,
+            timeout=30
+        )
+        script_output = result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"[perf script error: {e.stderr.decode().strip()}]", end=' ')
+        return None
+    except subprocess.TimeoutExpired:
+        print("[perf script timeout]", end=' ')
+        return None
+    finally:
+        os.unlink(temp_path)
+
+    # Parse into hierarchical structure
+    flame_data = parse_perf_script(script_output)
+    flame_json = json.dumps(flame_data, separators=(',', ':'))  # Compact JSON
+
+    # Compress
+    return lz4.frame.compress(flame_json.encode('utf-8'), compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
+
+
+# ============================================================================
+# Schema Definition
+# ============================================================================
 
 SCHEMA_SQL = """
              CREATE TABLE IF NOT EXISTS runs
              (
                  run_id           TEXT PRIMARY KEY,
-                 timestamp        INTEGER NOT NULL,
-                 scale_factor     REAL    NOT NULL,
+                 run_timestamp    TEXT NOT NULL,
+                 scale_factor     REAL NOT NULL,
                  iterations       INTEGER NOT NULL,
                  postgres_version TEXT,
                  pgx_version      TEXT,
                  hostname         TEXT,
-                 run_timestamp    TEXT
+                 run_args         TEXT
              );
 
              CREATE TABLE IF NOT EXISTS queries
              (
-                 query_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                 run_id             TEXT    NOT NULL,
-                 query_name         TEXT    NOT NULL,
-                 iteration          INTEGER NOT NULL,
-                 pgx_enabled        BOOLEAN NOT NULL,
-                 status             TEXT    NOT NULL,
-                 duration_ms        REAL,
-                 row_count          INTEGER,
-                 error_message      TEXT,
-                 metrics_json       TEXT,
-                 postgres_metrics   TEXT,
-                 timeseries_metrics TEXT,
-                 result_hash        TEXT,
-                 hash_valid         BOOLEAN,
-                 run_timestamp      TEXT,
-                 pgx_version        TEXT,
-                 postgres_version   TEXT,
-                 scale_factor       REAL
+                 query_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                 run_id               TEXT NOT NULL,
+                 query_name           TEXT NOT NULL,
+                 iteration            INTEGER NOT NULL,
+                 pgx_enabled          BOOLEAN NOT NULL,
+                 execution_metadata   TEXT,
+                 metrics_json         TEXT,
+                 postgres_metrics     TEXT,
+                 timeseries_metrics   TEXT,
+                 result_validation    TEXT,
+                 FOREIGN KEY (run_id) REFERENCES runs (run_id)
              );
 
              CREATE INDEX IF NOT EXISTS idx_run_query ON queries (run_id, query_name);
              CREATE INDEX IF NOT EXISTS idx_pgx ON queries (pgx_enabled);
-             CREATE INDEX IF NOT EXISTS idx_status ON queries (status);
 
              CREATE TABLE IF NOT EXISTS profiling
              (
-                 profile_id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                 query_id                INTEGER NOT NULL,
-                 cpu_data_lz4            BLOB,
-                 heap_data_lz4           BLOB,
-                 cpu_raw_size_kb         REAL,
-                 cpu_compressed_size_kb  REAL,
-                 heap_raw_size_kb        REAL,
-                 heap_compressed_size_kb REAL,
-                 run_timestamp           TEXT,
-                 pgx_enabled             BOOLEAN,
+                 profile_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                 query_id           INTEGER NOT NULL,
+                 cpu_data_lz4       BLOB,
+                 heap_data_lz4      BLOB,
+                 cpu_flamegraph_lz4 BLOB,
+                 heap_flamegraph_lz4 BLOB,
+                 profile_metadata   TEXT,
                  FOREIGN KEY (query_id) REFERENCES queries (query_id)
              );
 
              CREATE TABLE IF NOT EXISTS aggregate_benchmarks
              (
-                 id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-                 pgx_version              TEXT NOT NULL,
-                 postgres_version         TEXT NOT NULL,
-                 scale_factor             REAL NOT NULL,
-                 pgx_enabled              BOOLEAN NOT NULL,
-                 run_timestamp            TEXT NOT NULL,
-                 total_queries            INTEGER,
-                 successful_queries       INTEGER,
-                 failed_queries           INTEGER,
-                 total_execution_time_ms  REAL,
-                 avg_execution_time_ms    REAL,
-                 median_execution_time_ms REAL,
-                 p95_execution_time_ms    REAL,
-                 p99_execution_time_ms    REAL,
-                 min_execution_time_ms    REAL,
-                 max_execution_time_ms    REAL,
-                 avg_planning_time_ms     REAL,
-                 total_planning_time_ms   REAL,
-                 avg_cache_hit_ratio      REAL,
-                 total_disk_read_blocks   INTEGER,
-                 total_disk_write_blocks  INTEGER,
-                 total_spilled_mb         REAL,
-                 queries_with_native_jit  INTEGER,
-                 avg_native_jit_time_ms   REAL,
-                 avg_peak_memory_mb       REAL,
-                 max_peak_memory_mb       REAL,
+                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                 pgx_version          TEXT NOT NULL,
+                 postgres_version     TEXT NOT NULL,
+                 scale_factor         REAL NOT NULL,
+                 pgx_enabled          BOOLEAN NOT NULL,
+                 run_timestamp        TEXT NOT NULL,
+                 execution_metadata   TEXT,
+                 metrics_json         TEXT,
+                 postgres_metrics     TEXT,
                  UNIQUE(pgx_version, postgres_version, scale_factor, pgx_enabled)
              );
 
              CREATE TABLE IF NOT EXISTS aggregate_profiles
              (
-                 id                              INTEGER PRIMARY KEY AUTOINCREMENT,
-                 pgx_version                     TEXT NOT NULL,
-                 postgres_version                TEXT NOT NULL,
-                 scale_factor                    REAL NOT NULL,
-                 pgx_enabled                     BOOLEAN NOT NULL,
-                 run_timestamp                   TEXT NOT NULL,
-                 cpu_profiles_count              INTEGER,
-                 heap_profiles_count             INTEGER,
-                 total_cpu_profile_raw_kb        REAL,
-                 total_cpu_profile_compressed_kb REAL,
-                 avg_cpu_compression_ratio       REAL,
-                 total_heap_profile_raw_kb       REAL,
-                 total_heap_profile_compressed_kb REAL,
-                 avg_heap_compression_ratio      REAL,
-                 total_storage_kb                REAL,
-                 storage_per_query_kb            REAL,
+                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                 pgx_version          TEXT NOT NULL,
+                 postgres_version     TEXT NOT NULL,
+                 scale_factor         REAL NOT NULL,
+                 pgx_enabled          BOOLEAN NOT NULL,
+                 run_timestamp        TEXT NOT NULL,
+                 cpu_data_lz4         BLOB,
+                 heap_data_lz4        BLOB,
+                 cpu_flamegraph_lz4   BLOB,
+                 heap_flamegraph_lz4  BLOB,
+                 profile_metadata     TEXT,
                  UNIQUE(pgx_version, postgres_version, scale_factor, pgx_enabled)
              ); \
              """
@@ -171,6 +297,7 @@ def load_tpch_database(conn):
         return False
 
     print(f"Loading TPC-H database...")
+    load_start = time.time()
     try:
         with open(sql_file, 'r') as f:
             sql = f.read()
@@ -178,11 +305,12 @@ def load_tpch_database(conn):
         with conn.cursor() as cur:
             cur.execute(sql)
         conn.commit()
+        load_elapsed = time.time() - load_start
 
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM customer")
             count = cur.fetchone()[0]
-            print(f"Loaded {count} customers")
+            print(f"Loaded {count} customers in {load_elapsed:.2f}s")
 
         return True
 
@@ -279,10 +407,6 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
 
     try:
         with conn.cursor() as cur:
-            cur.execute("LOAD 'pgx_lower.so'")
-            cur.execute(f"SET pgx_lower.enabled = {'true' if pgx_enabled else 'false'}")
-
-            # Get backend PID for profiling
             backend_pid = None
             if profile_enabled or heap_enabled:
                 cur.execute("SELECT pg_backend_pid()")
@@ -432,28 +556,34 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
 
 def insert_metrics(db_conn, run_id, result, run_timestamp, pgx_version, postgres_version, scale_factor):
     cursor = db_conn.cursor()
+
+    execution_metadata = json.dumps({
+        'status': result['status'],
+        'duration_ms': result['duration_ms'],
+        'row_count': result['row_count'],
+        'error_message': result['error_message']
+    })
+
+    result_validation = json.dumps({
+        'hash': result.get('result_hash'),
+        'valid': result.get('hash_valid', None)
+    })
+
     cursor.execute("""
                    INSERT INTO queries (run_id, query_name, iteration, pgx_enabled,
-                                        status, duration_ms, row_count, error_message, metrics_json, postgres_metrics,
-                                        timeseries_metrics, result_hash, run_timestamp, pgx_version, postgres_version, scale_factor)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        execution_metadata, metrics_json, postgres_metrics,
+                                        timeseries_metrics, result_validation)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                    """, (
                        run_id,
                        result['query_name'],
                        result['iteration'],
                        result['pgx_enabled'],
-                       result['status'],
-                       result['duration_ms'],
-                       result['row_count'],
-                       result['error_message'],
+                       execution_metadata,
                        result['metrics_json'],
                        result.get('postgres_metrics'),
                        result['timeseries_metrics'],
-                       result.get('result_hash'),
-                       run_timestamp,
-                       pgx_version,
-                       postgres_version,
-                       scale_factor
+                       result_validation
                    ))
     db_conn.commit()
     return cursor.lastrowid
@@ -580,19 +710,61 @@ def setup_profiling_dirs(output_dir, script_dir, heap_enabled=False):
     return fg_dir
 
 
-def init_databases(sf, run_id, output_dir, run_timestamp):
+def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None):
     db_file = output_dir / 'benchmark.db'
     db_conn = sqlite3.connect(db_file)
     db_conn.executescript(SCHEMA_SQL)
 
-    pg_conn = psycopg2.connect(host='localhost', database='postgres', user='postgres')
+    # Kill all existing connections with OS-level kill and drop TPC-H tables
+    cleanup_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
+    cleanup_conn.autocommit = True
+    try:
+        with cleanup_conn.cursor() as cur:
+            # Get all client backend PIDs except our own
+            cur.execute("""
+                SELECT pid
+                FROM pg_stat_activity
+                WHERE pid != pg_backend_pid()
+                  AND backend_type = 'client backend'
+            """)
+            pids = [row[0] for row in cur.fetchall()]
+
+            # Force kill at OS level
+            if pids:
+                pid_list = ' '.join(str(p) for p in pids)
+                result = subprocess.run(
+                    ['docker', 'compose', '-f', 'docker/docker-compose.yml', 'exec', 'benchmark', 'bash', '-c', f'kill -9 {pid_list}'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                print(f"Cleaned up {len(pids)} stale connections")
+                time.sleep(0.5)
+
+            # Drop all TPC-H tables to ensure clean state
+            cur.execute("""
+                DROP TABLE IF EXISTS lineitem CASCADE;
+                DROP TABLE IF EXISTS orders CASCADE;
+                DROP TABLE IF EXISTS customer CASCADE;
+                DROP TABLE IF EXISTS partsupp CASCADE;
+                DROP TABLE IF EXISTS supplier CASCADE;
+                DROP TABLE IF EXISTS part CASCADE;
+                DROP TABLE IF EXISTS nation CASCADE;
+                DROP TABLE IF EXISTS region CASCADE;
+            """)
+    except Exception as e:
+        print(f"Warning: Failed to clean up: {e}")
+    finally:
+        cleanup_conn.close()
+
+    pg_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
     pg_conn.autocommit = False
 
     cursor = db_conn.cursor()
     cursor.execute(
-        "INSERT INTO runs (run_id, timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (run_id, int(time.time()), sf, 1, get_postgres_version(pg_conn), get_pgx_version(),
-         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_timestamp))
+        "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_id, run_timestamp, sf, 1, get_postgres_version(pg_conn), get_pgx_version(),
+         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_args))
     db_conn.commit()
 
     return db_conn, pg_conn, db_file
@@ -604,11 +776,11 @@ def validate_results(db_conn, run_id):
 
     cursor.execute("""
         SELECT query_name,
-               MAX(CASE WHEN pgx_enabled = 0 THEN result_hash END) AS postgres_hash,
-               MAX(CASE WHEN pgx_enabled = 1 THEN result_hash END) AS pgx_hash
+               MAX(CASE WHEN pgx_enabled = 0 THEN json_extract(result_validation, '$.hash') END) AS postgres_hash,
+               MAX(CASE WHEN pgx_enabled = 1 THEN json_extract(result_validation, '$.hash') END) AS pgx_hash
         FROM queries
         WHERE run_id = ?
-          AND status = 'SUCCESS'
+          AND json_extract(execution_metadata, '$.status') = 'SUCCESS'
         GROUP BY query_name
     """, (run_id,))
 
@@ -617,9 +789,10 @@ def validate_results(db_conn, run_id):
         query_name, postgres_hash, pgx_hash = row
         is_valid = (postgres_hash == pgx_hash) if (postgres_hash and pgx_hash) else None
 
+        # Update result_validation JSON with valid field
         cursor.execute("""
             UPDATE queries
-            SET hash_valid = ?
+            SET result_validation = json_set(result_validation, '$.valid', ?)
             WHERE run_id = ?
               AND query_name = ?
         """, (is_valid, run_id, query_name))
@@ -648,14 +821,31 @@ def _process_profile(profile_file, process_func, query_name, pgx_enabled, fg_dir
     return blob, raw_kb, compressed_kb
 
 
-def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir, run_timestamp, pgx_version, postgres_version, scale_factor, db_file):
+def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir, run_timestamp, pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None):
     query_files = sorted((script_dir / 'queries').glob('q*.sql'))
+
+    if query_filter:
+        query_files = [qf for qf in query_files if qf.stem == query_filter]
+        if not query_files:
+            print(f"Error: Query '{query_filter}' not found")
+            sys.exit(1)
+
     total = len(query_files) * 2
     current = 0
 
     print(f"\n{total} queries...")
 
     for pgx_enabled in [False, True]:
+        if pgx_enabled and pg_conn:
+            pg_conn.close()
+            pg_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
+            pg_conn.autocommit = False
+
+            with pg_conn.cursor() as cur:
+                cur.execute("LOAD 'pgx_lower.so'")
+                cur.execute("SET pgx_lower.enabled = true")
+            pg_conn.commit()
+
         pgx_mode = 'ON ' if pgx_enabled else 'OFF'
         print(f"\n{'pgx-lower' if pgx_enabled else 'PostgreSQL'} (pgx-lower {pgx_mode}):")
 
@@ -689,15 +879,38 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
                 )
 
             if cpu_blob is not None or heap_blob is not None:
+                # Generate flamegraph JSON from perf data (best effort - may fail on kernel mismatch)
+                cpu_flamegraph_lz4 = None
+                heap_flamegraph_lz4 = None
+
+                if cpu_blob:
+                    cpu_flamegraph_lz4 = perf_data_to_flamegraph_json(cpu_blob)
+
+                if heap_blob:
+                    heap_flamegraph_lz4 = perf_data_to_flamegraph_json(heap_blob)
+
+                # Build profile_metadata JSON
+                profile_metadata = json.dumps({
+                    'cpu': {
+                        'raw_kb': cpu_raw_kb,
+                        'compressed_kb': cpu_compressed_kb,
+                        'compression_ratio': cpu_raw_kb / cpu_compressed_kb if cpu_compressed_kb else None,
+                        'flamegraph_kb': len(cpu_flamegraph_lz4) / 1024 if cpu_flamegraph_lz4 else None
+                    },
+                    'heap': {
+                        'raw_kb': heap_raw_kb,
+                        'compressed_kb': heap_compressed_kb,
+                        'compression_ratio': heap_raw_kb / heap_compressed_kb if heap_compressed_kb else None,
+                        'flamegraph_kb': len(heap_flamegraph_lz4) / 1024 if heap_flamegraph_lz4 else None
+                    }
+                })
+
                 cursor = db_conn.cursor()
                 cursor.execute("""
                     INSERT INTO profiling (query_id, cpu_data_lz4, heap_data_lz4,
-                                         cpu_raw_size_kb, cpu_compressed_size_kb,
-                                         heap_raw_size_kb, heap_compressed_size_kb,
-                                         run_timestamp, pgx_enabled)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (query_id, cpu_blob, heap_blob, cpu_raw_kb, cpu_compressed_kb,
-                      heap_raw_kb, heap_compressed_kb, run_timestamp, pgx_enabled))
+                                         cpu_flamegraph_lz4, heap_flamegraph_lz4, profile_metadata)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (query_id, cpu_blob, heap_blob, cpu_flamegraph_lz4, heap_flamegraph_lz4, profile_metadata))
                 db_conn.commit()
 
             if metrics['status'] == 'SUCCESS':
@@ -721,11 +934,17 @@ def main():
                         help='Enable CPU profiling with perf and flame graphs')
     parser.add_argument('--heap', action='store_true',
                         help='Enable heap profiling with Valgrind massif')
+    parser.add_argument('--query', '-q', type=str,
+                        help='Run only a specific query (e.g., q01)')
+    parser.add_argument('--port', '-p', type=int, default=5432,
+                        help='PostgreSQL port (default: 5432)')
     args = parser.parse_args()
 
     sf = args.scale_factor
     profile_enabled = args.profile
     heap_enabled = args.heap
+    query_filter = args.query
+    pg_port = args.port
 
     script_dir = Path(__file__).parent
     output_dir = script_dir.parent / 'output'
@@ -739,7 +958,17 @@ def main():
     run_id = f"pgx_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sf{int(sf * 100):03d}"
     print(f"{run_id} (SF={sf})")
 
-    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp)
+    # Build run_args string from command-line arguments
+    run_args_parts = [f"SF={sf}"]
+    if profile_enabled:
+        run_args_parts.append("--profile")
+    if heap_enabled:
+        run_args_parts.append("--heap")
+    if query_filter:
+        run_args_parts.append(f"--query={query_filter}")
+    run_args = " ".join(run_args_parts)
+
+    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args)
 
     # Get version info
     postgres_version = get_postgres_version(pg_conn)
@@ -751,7 +980,7 @@ def main():
     if not load_tpch_database(pg_conn):
         sys.exit(1)
 
-    run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir, run_timestamp, pgx_version, postgres_version, sf, db_file)
+    run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, heap_enabled, fg_dir, output_dir, run_timestamp, pgx_version, postgres_version, sf, db_file, pg_port, query_filter)
 
     pg_conn.close()
     validate_results(db_conn, run_id)

@@ -1,9 +1,3 @@
-/*
- * pgx-lower Benchmark Dashboard Styles
- * Minimal, clean design with focus on data visualization
- */
-
-/* ===== CSS Variables (PRD Color Palette) ===== */
 :root {
     /* Primary colors */
     --color-pgx: #2ecc71;
@@ -296,11 +290,6 @@ body {
     font-style: italic;
 }
 
-/* ===== Profiling Stats ===== */
-.profiling-stats {
-    padding: var(--spacing-md);
-}
-
 .profiling-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -344,19 +333,96 @@ body {
     font-weight: 500;
 }
 
-/* ===== Data Table ===== */
-#data-table {
-    margin-top: var(--spacing-md);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
+    background-color: var(--color-border) !important;
 }
 
-#table-search {
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--color-border-dark);
-    border-radius: var(--radius-sm);
+/* ===== Flame Chart ===== */
+#flame-chart-container {
+    position: relative;
+    min-height: 400px;
+    overflow: visible;
+    background: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+}
+
+#flame-chart-container .placeholder {
+    margin: var(--spacing-xl) 0;
+}
+
+#flame-chart {
+    width: 100%;
+}
+
+/* ===== Heatmap ===== */
+#heatmap-container {
+    overflow-x: auto;
+    margin-top: var(--spacing-md);
+}
+
+.heatmap-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 0.9rem;
-    min-width: 200px;
+    background: var(--color-bg);
+}
+
+.heatmap-table thead {
+    background: var(--color-bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.heatmap-table th {
+    padding: var(--spacing-md);
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-text);
+    border-bottom: 2px solid var(--color-border-dark);
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+}
+
+.heatmap-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.heatmap-table tbody tr:hover {
+    background: var(--color-bg-secondary);
+}
+
+.query-cell {
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.mode-badge {
+    display: inline-block;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: var(--spacing-sm);
+}
+
+.mode-badge.pgx {
+    background: var(--color-pgx);
+    color: white;
+}
+
+.mode-badge.native {
+    background: var(--color-native);
+    color: white;
+}
+
+.heatmap-cell {
+    font-family: "SF Mono", "Monaco", "Consolas", monospace;
+    text-align: right;
+    color: var(--color-text);
 }
 
 /* ===== Footer ===== */
@@ -374,136 +440,4 @@ body {
 
 .footer a:hover {
     text-decoration: underline;
-}
-
-/* ===== Responsive Design ===== */
-@media (max-width: 768px) {
-    .container {
-        padding: var(--spacing-md);
-    }
-
-    .header h1 {
-        font-size: 1.5rem;
-    }
-
-    .control-bar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .controls {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .control-group {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .section-header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .section-controls {
-        flex-direction: column;
-        align-items: stretch;
-    }
-}
-
-/* ===== Heatmap Table ===== */
-.heatmap-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-}
-
-.heatmap-table th {
-    background-color: var(--color-bg-secondary);
-    padding: var(--spacing-sm) var(--spacing-md);
-    text-align: center;
-    font-weight: 600;
-    border: 1px solid var(--color-border);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-.heatmap-table td {
-    padding: var(--spacing-sm) var(--spacing-md);
-    text-align: center;
-    border: 1px solid var(--color-border);
-}
-
-.heatmap-table .query-cell {
-    text-align: left;
-    font-weight: 500;
-    white-space: nowrap;
-}
-
-.mode-badge {
-    display: inline-block;
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    margin-left: var(--spacing-xs);
-}
-
-.mode-badge.pgx {
-    background-color: var(--color-pgx);
-    color: white;
-}
-
-.mode-badge.native {
-    background-color: var(--color-native);
-    color: white;
-}
-
-.heatmap-cell {
-    cursor: pointer;
-    transition: all 0.2s;
-    font-weight: 500;
-}
-
-.heatmap-cell:hover:not(.empty) {
-    transform: scale(1.05);
-    box-shadow: var(--shadow-md);
-    z-index: 5;
-}
-
-.heatmap-cell.fast {
-    background-color: var(--color-fast);
-    color: white;
-}
-
-.heatmap-cell.medium {
-    background-color: var(--color-medium);
-    color: white;
-}
-
-.heatmap-cell.slow {
-    background-color: var(--color-slow);
-    color: white;
-}
-
-.heatmap-cell.empty {
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-muted);
-    cursor: default;
-}
-
-/* ===== Tabulator Overrides ===== */
-.tabulator {
-    font-size: 0.85rem;
-}
-
-.tabulator-row.tabulator-row-even {
-    background-color: var(--color-bg-secondary);
-}
-
-.tabulator-row:hover {
-    background-color: var(--color-border) !important;
 }
