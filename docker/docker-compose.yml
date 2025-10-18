@@ -24,11 +24,30 @@ services:
       dockerfile: docker/benchmark/Dockerfile
     image: pgx-lower:benchmark
     container_name: pgx-lower-benchmark
-    network_mode: host
+    ports:
+      - "54322:5432"
     volumes:
       - ..:/workspace
       - ../benchmark:/workspace/benchmark
       - benchmark-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    stdin_open: true
+    tty: true
+
+  profile:
+    build:
+      context: ..
+      dockerfile: docker/profile/Dockerfile
+    image: pgx-lower:profile
+    container_name: pgx-lower-profile
+    ports:
+      - "54321:5432"
+    volumes:
+      # Full workspace for build artifacts and postgres-debug
+      - ..:/workspace
+      # Persistent profile database
+      - profile-data:/var/lib/postgresql/data
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
     stdin_open: true
@@ -40,3 +59,4 @@ volumes:
   build-cache-ptest:
   build-cache-utest:
   benchmark-data:
+  profile-data:

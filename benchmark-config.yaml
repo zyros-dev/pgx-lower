@@ -1,0 +1,71 @@
+containers:
+  dev:
+    name: "pgx-lower-dev"
+    port: 54320
+
+  benchmark:
+    name: "pgx-lower-benchmark"
+    port: 54322
+
+  profile:
+    name: "pgx-lower-profile"
+    port: 54321
+
+profiles:
+  # Quick validation profile - fast sanity check
+  quick:
+    description: "Quick TPC-H validation on benchmark container"
+    runs:
+      - container: benchmark
+        scale_factor: 0.01
+        iterations: 1
+        profile: false
+        heap: false
+
+  full:
+    description: "Complete benchmark suite across all containers"
+    runs:
+      # Benchmark container: performance testing at multiple scales
+      - container: benchmark
+        scale_factor: 0.01
+        iterations: 3
+        profile: false
+        heap: false
+        description: "Benchmark: 3x runs at SF=0.01"
+
+      - container: benchmark
+        scale_factor: 0.1
+        iterations: 2
+        profile: false
+        heap: false
+        description: "Benchmark: 2x runs at SF=0.1"
+
+      - container: benchmark
+        scale_factor: 1.0
+        iterations: 1
+        profile: false
+        heap: false
+        description: "Benchmark: 1x run at SF=1.0"
+
+      # Profile container: CPU and heap profiling
+      - container: profile
+        scale_factor: 0.01
+        iterations: 3
+        profile: true
+        heap: true
+        description: "Profile: 3x runs with CPU+heap profiling at SF=0.01"
+
+      - container: profile
+        scale_factor: 0.1
+        iterations: 2
+        profile: true
+        heap: false
+        description: "Profile: 2x runs with CPU profiling at SF=0.1"
+
+environment:
+  PYTHONUNBUFFERED: "1"
+
+validation:
+  check_containers: true
+  check_postgres: true
+  check_python_deps: true

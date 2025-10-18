@@ -2,7 +2,7 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release ptest-reldebug utest fcheck ffix rebuild help build-ptest build-ptest-release build-ptest-reldebug build-utest clean-ptest clean-ptest-release clean-ptest-reldebug clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release ptest-reldebug utest fcheck ffix rebuild help build-ptest build-ptest-release build-ptest-reldebug build-utest clean-ptest clean-ptest-release clean-ptest-reldebug clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg dockers clean-dockers bench-dockers bench-list
 
 export CC = clang
 export CXX = clang++
@@ -283,6 +283,24 @@ run-relalg:
 	fi
 	@./tools/run-relalg.sh "$(COLS)" "$(MLIR)"
 
+dockers:
+	@echo "Setting up all Docker containers..."
+	@cd docker && $(MAKE) all
+	@echo "All Docker containers ready!"
+
+clean-dockers:
+	@echo "Completely cleaning Docker environment..."
+	@cd docker && $(MAKE) clean-dockers
+	@echo "Docker environment cleaned!"
+
+BENCH_PROFILE ?= quick
+bench-dockers:
+	@echo "Running benchmark profile: $(BENCH_PROFILE)"
+	@cd docker && $(MAKE) bench-dockers BENCH_PROFILE=$(BENCH_PROFILE)
+
+bench-list:
+	@cd docker && $(MAKE) bench-list
+
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the main project"
@@ -294,6 +312,10 @@ help:
 	@echo "  utest        - Build and run unit tests (excludes crashing tests)"
 	@echo "  utest-run    - Run unit tests without rebuild (excludes crashing tests)"
 	@echo "  utest-all    - Run ALL unit tests including potentially crashing ones"
+	@echo "  dockers      - Set up all Docker containers (dev:54320, profile:54321, benchmark:54322)"
+	@echo "  clean-dockers - Remove all Docker containers, images, volumes, and build artifacts"
+	@echo "  bench-dockers - Run TPC-H benchmarks (Usage: make bench-dockers [BENCH_PROFILE=quick|full|profile|dev])"
+	@echo "  bench-list   - List available benchmark profiles"
 	@echo "  venv         - Create Python virtual environment (Python 3.12.11)"
 	@echo "  tpch-data    - Generate TPC-H test data (Usage: make tpch-data [SF=<scale_factor>], default SF=0.01)"
 	@echo "  run-relalg   - Execute MLIR RelAlg against TPC-H database (Usage: make run-relalg COLS='types' MLIR='module {...}')"

@@ -130,3 +130,4 @@ build-docker-release
 build-ptest-release
 build-docker-ptest-release
 build-ptest-reldebug
+postgres-debug

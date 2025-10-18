@@ -1,14 +1,5 @@
-# Slim benchmark container using pre-built release extension
-#
-# Expects: build-docker-release/extension/pgx_lower.so in project root
-#          (Run: cd docker && make build-benchmark)
-#
-# Build context: Project root (../)
+# Profile container with PostgreSQL compiled with debug symbols + profiling tools
 
-# Stage 1: PostgreSQL binaries from dev image
-FROM pgx-lower:dev AS pgbuilder
-
-# Stage 2: Runtime - Slim image with PostgreSQL + extension
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,6 +8,7 @@ ENV LC_ALL=en_US.UTF-8
 ENV PG_VERSION=17.6
 ENV LLVM_VERSION=20
 
+# Install runtime dependencies + profiling tools
 RUN apt-get update && apt-get install -y \
     libssl3 \
     libreadline8 \
@@ -30,6 +22,9 @@ RUN apt-get update && apt-get install -y \
     # LLVM runtime libraries for JIT
     llvm-${LLVM_VERSION}-runtime \
     libmlir-${LLVM_VERSION} \
+    # Profiling tools
+    linux-tools-generic \
+    linux-tools-common \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8 \
     && update-locale LANG=en_US.UTF-8
@@ -39,12 +34,9 @@ RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \
     mkdir -p /var/lib/postgresql/data && \
     chown -R postgres:postgres /var/lib/postgresql
 
-COPY --from=pgbuilder /usr/local/pgsql /usr/local/pgsql
-
 # PostgreSQL and extension will be copied at runtime from /workspace
 # This allows updating without rebuilding the Docker image
 
-# Set up environment
 ENV PATH="/usr/local/pgsql/bin:/usr/lib/llvm-${LLVM_VERSION}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/pgsql/lib:/usr/lib/llvm-${LLVM_VERSION}/lib:${LD_LIBRARY_PATH}"
 
