@@ -2,14 +2,20 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release utest fcheck ffix rebuild help build-ptest build-ptest-release build-utest clean-ptest clean-ptest-release clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg
+
+# Enforce Clang compiler (GCC 14.2.0 has -O3 optimizer bug causing infinite loop)
+export CC = clang
+export CXX = clang++
 
 # Build directories for different test types
 BUILD_DIR = build
 BUILD_DIR_PTEST = build-ptest
+BUILD_DIR_PTEST_RELEASE = build-ptest-release
 BUILD_DIR_UTEST = build-utest
 CMAKE_GENERATOR = Ninja
-CMAKE_BUILD_TYPE = Debug
+CMAKE_BUILD_TYPE_DEBUG = Debug
+CMAKE_BUILD_TYPE_RELEASE = Release
 
 all: test
 
@@ -20,10 +26,17 @@ build:
 	@echo "Build completed!"
 
 build-ptest:
-	@echo "Building PostgreSQL extension for regression tests..."
+	@echo "Building PostgreSQL extension for regression tests (Debug)..."
 	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
-	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILD_ONLY_EXTENSION=ON
+	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_DEBUG) -DBUILD_ONLY_EXTENSION=ON
 	cmake --build $(BUILD_DIR_PTEST)
+	@echo "PostgreSQL extension build completed!"
+
+build-ptest-release:
+	@echo "Building PostgreSQL extension for regression tests (Release -O3)..."
+	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
+	cmake -S . -B $(BUILD_DIR_PTEST_RELEASE) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_RELEASE) -DBUILD_ONLY_EXTENSION=ON
+	cmake --build $(BUILD_DIR_PTEST_RELEASE)
 	@echo "PostgreSQL extension build completed!"
 
 build-utest:
@@ -34,7 +47,7 @@ build-utest:
 
 clean: clean-root
 	@echo "Cleaning all build directories..."
-	rm -rf $(BUILD_DIR) $(BUILD_DIR_PTEST) $(BUILD_DIR_UTEST)
+	rm -rf $(BUILD_DIR) $(BUILD_DIR_PTEST) $(BUILD_DIR_PTEST_RELEASE) $(BUILD_DIR_UTEST)
 	@echo "Clean completed!"
 
 clean-root:
@@ -50,6 +63,11 @@ clean-ptest:
 	rm -rf $(BUILD_DIR_PTEST)
 	@echo "PostgreSQL test clean completed!"
 
+clean-ptest-release:
+	@echo "Cleaning PostgreSQL release test build directory..."
+	rm -rf $(BUILD_DIR_PTEST_RELEASE)
+	@echo "PostgreSQL release test clean completed!"
+
 clean-utest:
 	@echo "Cleaning unit test build directory..."
 	rm -rf $(BUILD_DIR_UTEST)
@@ -61,12 +79,17 @@ install: build
 	@echo "Install completed!"
 
 install-ptest: build-ptest
-	@echo "Installing PostgreSQL test build..."
+	@echo "Installing PostgreSQL test build (Debug)..."
 	sudo cmake --install $(BUILD_DIR_PTEST)
 	@echo "PostgreSQL test install completed!"
 
+install-ptest-release: build-ptest-release
+	@echo "Installing PostgreSQL test build (Release -O3)..."
+	sudo cmake --install $(BUILD_DIR_PTEST_RELEASE)
+	@echo "PostgreSQL release test install completed!"
+
 ptest: install-ptest
-	@echo "Running PostgreSQL regression tests (Test 1: SELECT * FROM test)..."
+	@echo "Running PostgreSQL regression tests (Debug build)..."
 	-cd $(BUILD_DIR_PTEST) && ctest --output-on-failure && cd -
 	@if [ -f .venv/bin/python3 ]; then \
 		.venv/bin/python3 tools/validate_tpch.py $(BUILD_DIR_PTEST)/extension/results/tpch.out $(BUILD_DIR_PTEST)/extension/results/tpch_no_lower.out; \
@@ -75,6 +98,17 @@ ptest: install-ptest
 		python3 tools/validate_tpch.py $(BUILD_DIR_PTEST)/extension/results/tpch.out $(BUILD_DIR_PTEST)/extension/results/tpch_no_lower.out; \
 	fi
 	@echo "PostgreSQL regression tests completed!"
+
+ptest-release: install-ptest-release
+	@echo "Running PostgreSQL regression tests (Release -O3 build)..."
+	-cd $(BUILD_DIR_PTEST_RELEASE) && ctest --output-on-failure && cd -
+	@if [ -f .venv/bin/python3 ]; then \
+		.venv/bin/python3 tools/validate_tpch.py $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch.out $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch_no_lower.out; \
+	else \
+		echo "Warning: .venv not found, using system python3"; \
+		python3 tools/validate_tpch.py $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch.out $(BUILD_DIR_PTEST_RELEASE)/extension/results/tpch_no_lower.out; \
+	fi
+	@echo "PostgreSQL release regression tests completed!"
 
 psql-start:
 	@echo "Starting PostgreSQL for debugging..."

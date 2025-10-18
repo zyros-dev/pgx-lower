@@ -13,8 +13,26 @@
 # the License.
 
 cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
+
+# Enforce Clang compiler due to GCC 14.2.0 -O3 bug (infinite loop in mlir::reconcileUnrealizedCasts)
+# Set compilers before project() call if not already set
+if(NOT DEFINED ENV{CC})
+    set(ENV{CC} "clang")
+endif()
+if(NOT DEFINED ENV{CXX})
+    set(ENV{CXX} "clang++")
+endif()
+
 project(pgx_lower LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
+
+# Verify we got Clang after project() detects compiler
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR
+        "This project requires Clang due to GCC optimizer bugs at -O3.\n"
+        "Detected compiler: ${CMAKE_CXX_COMPILER_ID}\n"
+        "Please clean your build directory and run: CC=clang CXX=clang++ make ptest")
+endif()
 
 # Enable position-independent code globally for shared library compatibility
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -29,8 +47,11 @@ endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_C_FLAGS_DEBUG "-g -O0")
 
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -O2")
-set(CMAKE_C_FLAGS_RELWITHDEBINFO "-g -O2")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
+
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -O3")
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "-g -O3")
 
 # Coverage support
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
