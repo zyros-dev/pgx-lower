@@ -44,6 +44,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+set(ENV{ASAN_OPTIONS} "detect_leaks=0")
+
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_C_FLAGS_DEBUG "-g -O0")
 
