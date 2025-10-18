@@ -26,7 +26,7 @@ services:
     container_name: pgx-lower-benchmark
     network_mode: host
     volumes:
-      # Benchmark data and scripts
+      - ..:/workspace
       - ../benchmark:/workspace/benchmark
       - benchmark-data:/var/lib/postgresql/data
     environment:
