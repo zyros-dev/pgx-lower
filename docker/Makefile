@@ -318,9 +318,11 @@ install-host-profile: build-profile build-postgres-debug
 	@echo "Extracting postgres-debug (with -pg) from container..."
 	@docker exec pgx-lower-dev tar czf /workspace/postgres-debug.tar.gz -C /workspace postgres-debug
 	@docker exec pgx-lower-dev bash -c "cd /usr/lib/x86_64-linux-gnu && tar czf /workspace/icu74.tar.gz libicu*.so.74*"
+	@docker exec pgx-lower-dev bash -c "cd /usr/lib/llvm-20/lib && tar czf /workspace/mlir-libs.tar.gz libMLIR*.so* libLLVM*.so*"
 	@sudo tar xzf ../postgres-debug.tar.gz -C /opt/pgx-profile --strip-components=1
 	@sudo mkdir -p /opt/pgx-profile/lib/compat
 	@sudo tar xzf ../icu74.tar.gz -C /opt/pgx-profile/lib/compat
+	@sudo tar xzf ../mlir-libs.tar.gz -C /opt/pgx-profile/lib/compat
 	@sudo chown -R $$USER:$$USER /opt/pgx-profile
 	@echo "Installing pgx_lower extension (with -pg profiling)..."
 	@cp ../build-docker-ptest-profile/extension/pgx_lower.so /opt/pgx-profile/lib/

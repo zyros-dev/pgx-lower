@@ -37,7 +37,9 @@ RUN apt-get update && apt-get install -y \
 RUN wget -q https://github.com/janestreet/magic-trace/releases/latest/download/magic-trace -O /usr/local/bin/magic-trace && \
     chmod +x /usr/local/bin/magic-trace
 
-# Create postgres user
+RUN wget -q https://get.perfetto.dev/traceconv -O /usr/local/bin/traceconv && \
+    chmod +x /usr/local/bin/traceconv
+
 RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \
     mkdir -p /var/lib/postgresql/data && \
     chown -R postgres:postgres /var/lib/postgresql

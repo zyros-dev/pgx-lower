@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import select
 import shutil
 import signal
 import sqlite3
@@ -14,10 +15,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import lz4.frame
 import psutil
 import psycopg2
 
 from metrics_collector import collect_query_metrics
+from fxt_to_flamegraph import fxt_to_flamegraph_json
 
 
 def get_cpu_vendor() -> str:
@@ -212,8 +215,8 @@ def normalize_value(val):
     return str(val).strip()
 
 
-def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_enabled=False, heap_enabled=False,
-                           fg_dir=None, output_dir=None, db_conn=None, cpu_vendor=None, magic_trace_available=False):
+def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_enabled=False,
+                           output_dir=None, db_conn=None, cpu_vendor=None, magic_trace_available=False, scale_factor=0.01):
     query_name = query_file.stem
 
     with open(query_file, 'r') as f:
@@ -276,23 +279,51 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
                 backend_pid = cur.fetchone()[0]
 
                 pgx_str = 'on' if pgx_enabled else 'off'
-                magic_trace_file = str(output_dir / 'profiles_cpu_latest' / f'{query_name}_pgx_{pgx_str}.fxt')
+                trace_dir = output_dir / 'profiles_cpu_latest'
+                magic_trace_file = str(trace_dir / f'{query_name}_pgx_{pgx_str}.fxt')
+                magic_trace_log = str(trace_dir / f'{query_name}_pgx_{pgx_str}.log')
 
-                # Build magic-trace command based on CPU vendor
-                magic_trace_cmd = ['sudo', 'magic-trace', 'attach', str(backend_pid), '-o', magic_trace_file]
+                perf_data_dir = trace_dir / 'perf_data'
+                perf_data_dir.mkdir(exist_ok=True)
+                working_dir = str(perf_data_dir / f'{query_name}_pgx_{pgx_str}')
+
+                magic_trace_cmd = ['sudo', 'magic-trace', 'attach', '-pid', str(backend_pid),
+                                   '-output', magic_trace_file, '-working-directory', working_dir]
 
                 if cpu_vendor == 'amd':
-                    # Use sampling mode for AMD Ryzen
-                    magic_trace_cmd.extend(['--sample-rate', '1000'])  # 1000 Hz sampling
-                # Intel uses default Intel PT mode (no additional flags needed)
+                    magic_trace_cmd.extend(['-sampling', '-timer-resolution', 'High', '-callgraph-mode', 'fp'])
+                else:
+                    # Intel: Use LBR-based sampling for all queries (~0.2MB per query)
+                    # Uses Intel Last Branch Record hardware for stack traces
+                    # Much more practical than full Intel PT (which creates 500MB+ traces)
+                    magic_trace_cmd.extend(['-sampling', '-callgraph-mode', 'lbr', '-full-execution'])
 
+                magic_trace_log_file = open(magic_trace_log, 'w')
                 magic_trace_proc = subprocess.Popen(
                     magic_trace_cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stdout=magic_trace_log_file,
+                    stderr=subprocess.STDOUT
                 )
 
-                time.sleep(0.2)
+                attach_timeout = 5.0
+                start_wait = time.time()
+                attached = False
+                while time.time() - start_wait < attach_timeout:
+                    magic_trace_log_file.flush()
+                    try:
+                        with open(magic_trace_log, 'r') as check_log:
+                            log_content = check_log.read()
+                            if 'Attached' in log_content:
+                                attached = True
+                                break
+                    except:
+                        pass
+                    time.sleep(0.05)
+
+                if not attached:
+                    print(f"  Warning: magic-trace did not attach within {attach_timeout}s", end=' ')
+                else:
+                    time.sleep(0.2)
 
             start_time = time.time()
             cur.execute(query_sql)
@@ -324,8 +355,11 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
             # Stop magic-trace after query execution completes
             if magic_trace_proc is not None:
                 try:
+                    # Send SIGINT to stop recording (for full-execution mode)
+                    print(f"[query done, decoding trace...]", end=' ', flush=True)
                     magic_trace_proc.send_signal(signal.SIGINT)
-                    magic_trace_proc.wait(timeout=5)
+                    magic_trace_proc.wait(timeout=180)
+                    print(f"[decode done]", end=' ', flush=True)
 
                     username = os.environ.get('USER') or os.environ.get('LOGNAME')
                     if username and os.path.exists(magic_trace_file):
@@ -333,11 +367,21 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
                                        stderr=subprocess.DEVNULL, check=False)
                         subprocess.run(['sudo', 'chmod', '644', magic_trace_file],
                                        stderr=subprocess.DEVNULL, check=False)
-                except:
+                except subprocess.TimeoutExpired:
+                    print(f"  Warning: magic-trace decode timeout (180s), killing", end=' ')
                     try:
                         magic_trace_proc.kill()
                     except:
                         pass
+                except Exception as e:
+                    print(f"  Warning: magic-trace error: {e}", end=' ')
+                    try:
+                        magic_trace_proc.kill()
+                    except:
+                        pass
+                finally:
+                    if 'magic_trace_log_file' in locals():
+                        magic_trace_log_file.close()
 
         conn.commit()
 
@@ -426,14 +470,19 @@ def timeout_handler():
     os.kill(os.getpid(), signal.SIGKILL)
 
 
-def setup_profiling_dirs(output_dir, script_dir):
-    """Setup profiling directories for magic-trace .fxt files."""
-    dirpath = output_dir / 'profiles_cpu_latest'
-    if dirpath.exists():
-        shutil.rmtree(dirpath)
-    dirpath.mkdir()
+def setup_profiling_dirs(output_dir, run_timestamp, scale_factor):
+    ts_clean = run_timestamp.replace(':', '').replace('-', '').replace('T', '_').split('.')[0]
+    dirpath = output_dir / 'traces' / f'sf_{scale_factor}_{ts_clean}'
+    dirpath.mkdir(parents=True, exist_ok=True)
 
-    return None  # fg_dir no longer needed for magic-trace
+    latest_link = output_dir / 'profiles_cpu_latest'
+    if latest_link.is_symlink():
+        latest_link.unlink()
+    elif latest_link.exists():
+        shutil.rmtree(latest_link)
+    latest_link.symlink_to(dirpath.relative_to(output_dir))
+
+    return dirpath
 
 
 def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None):
@@ -537,7 +586,7 @@ def validate_results(db_conn, run_id):
         print(f"\nAll query results validated!")
 
 
-def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, fg_dir, output_dir, run_timestamp,
+def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
                           pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None):
     query_files = sorted((script_dir / 'queries').glob('q*.sql'))
 
@@ -584,36 +633,52 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
             metrics = run_query_with_metrics(
                 pg_conn, qf, pgx_enabled, 1,
                 profile_enabled=profile_enabled,
-                heap_enabled=False,  # heap profiling removed with magic-trace
-                fg_dir=None,
                 output_dir=output_dir,
                 db_conn=db_conn,
                 cpu_vendor=cpu_vendor,
-                magic_trace_available=magic_trace_available
+                magic_trace_available=magic_trace_available,
+                scale_factor=scale_factor
             )
             query_id = insert_metrics(db_conn, run_id, metrics, run_timestamp, pgx_version, postgres_version,
                                       scale_factor)
 
-            # Store magic-trace file path in profiling table
             if profile_enabled and metrics['status'] == 'SUCCESS' and metrics.get('magic_trace_file'):
                 trace_file = Path(metrics['magic_trace_file'])
-                trace_size_kb = trace_file.stat().st_size / 1024 if trace_file.exists() else None
 
-                profile_metadata = json.dumps({
-                    'magic_trace': {
-                        'file': str(trace_file),
-                        'size_kb': trace_size_kb,
-                        'cpu_vendor': cpu_vendor,
-                        'mode': 'intel_pt' if cpu_vendor == 'intel' else 'sampling' if cpu_vendor == 'amd' else 'unknown'
-                    }
-                })
+                if not trace_file.exists():
+                    print("[fxt file missing]", end=' ')
+                else:
+                    trace_size_kb = trace_file.stat().st_size / 1024
 
-                cursor = db_conn.cursor()
-                cursor.execute("""
-                               INSERT INTO profiling (query_id, profile_metadata)
-                               VALUES (?, ?)
-                               """, (query_id, profile_metadata))
-                db_conn.commit()
+                    flamegraph_blob = fxt_to_flamegraph_json(trace_file)
+                    flamegraph_size_kb = len(flamegraph_blob) / 1024 if flamegraph_blob else None
+
+                    with open(trace_file, 'rb') as f:
+                        fxt_data = f.read()
+                    fxt_compressed = lz4.frame.compress(fxt_data, compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
+                    fxt_compressed_kb = len(fxt_compressed) / 1024
+
+                    profile_metadata = json.dumps({
+                        'magic_trace': {
+                            'file': str(trace_file),
+                            'raw_kb': trace_size_kb,
+                            'compressed_kb': fxt_compressed_kb,
+                            'compression_ratio': trace_size_kb / fxt_compressed_kb if fxt_compressed_kb > 0 else None,
+                            'cpu_vendor': cpu_vendor,
+                            'mode': 'intel_pt' if cpu_vendor == 'intel' else 'sampling' if cpu_vendor == 'amd' else 'unknown'
+                        },
+                        'flamegraph': {
+                            'size_kb': flamegraph_size_kb,
+                            'available': flamegraph_blob is not None
+                        }
+                    })
+
+                    cursor = db_conn.cursor()
+                    cursor.execute("""
+                                   INSERT INTO profiling (query_id, cpu_data_lz4, cpu_flamegraph_lz4, profile_metadata)
+                                   VALUES (?, ?, ?, ?)
+                                   """, (query_id, fxt_compressed, flamegraph_blob, profile_metadata))
+                    db_conn.commit()
 
             if metrics['status'] == 'SUCCESS':
                 hash_short = metrics['result_hash'][:8]
@@ -634,6 +699,8 @@ def main():
                         help='TPC-H scale factor (default: 0.01)')
     parser.add_argument('--profile', action='store_true',
                         help='Enable profiling with magic-trace (auto-detects Intel PT or AMD sampling mode)')
+    parser.add_argument('--heap', action='store_true',
+                        help='Enable heap profiling (reserved for future use)')
     parser.add_argument('--query', '-q', type=str,
                         help='Run only a specific query (e.g., q01)')
     parser.add_argument('--port', '-p', type=int, default=5432,
@@ -652,12 +719,12 @@ def main():
     output_dir = script_dir.parent / 'output'
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fg_dir = None
-    if profile_enabled:
-        fg_dir = setup_profiling_dirs(output_dir, script_dir)
-
     run_timestamp = datetime.now().isoformat()
     run_id = f"pgx_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sf{int(sf * 100):03d}"
+
+    profiles_dir = None
+    if profile_enabled:
+        profiles_dir = setup_profiling_dirs(output_dir, run_timestamp, sf)
     print(f"{run_id} (SF={sf})")
 
     run_args_parts = [f"SF={sf}"]
@@ -678,7 +745,7 @@ def main():
     if not load_tpch_database(pg_conn):
         sys.exit(1)
 
-    run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, fg_dir, output_dir, run_timestamp,
+    run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
                           pgx_version, postgres_version, sf, db_file, pg_port, query_filter)
 
     pg_conn.close()

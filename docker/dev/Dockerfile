@@ -37,6 +37,9 @@ RUN apt-get update && apt-get install -y \
 RUN wget -q https://github.com/janestreet/magic-trace/releases/latest/download/magic-trace -O /usr/local/bin/magic-trace && \
     chmod +x /usr/local/bin/magic-trace
 
+RUN wget -q https://get.perfetto.dev/traceconv -O /usr/local/bin/traceconv && \
+    chmod +x /usr/local/bin/traceconv
+
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-x86_64.sh && \
     chmod +x cmake-3.31.6-linux-x86_64.sh && \
     ./cmake-3.31.6-linux-x86_64.sh --skip-license --prefix=/usr/local && \

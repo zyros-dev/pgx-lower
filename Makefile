@@ -2,7 +2,7 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release ptest-reldebug utest fcheck ffix rebuild help build-ptest build-ptest-release build-ptest-reldebug build-utest clean-ptest clean-ptest-release clean-ptest-reldebug clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg dockers clean-dockers bench-dockers bench-list
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest ptest-release ptest-reldebug utest fcheck ffix rebuild help build-ptest build-ptest-release build-ptest-reldebug build-utest clean-ptest clean-ptest-release clean-ptest-reldebug clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data run-relalg dockers clean-dockers bench-dockers bench-list website
 
 export CC = clang
 export CXX = clang++
@@ -21,37 +21,24 @@ CMAKE_BUILD_TYPE_RELWITHDEBINFO = RelWithDebInfo
 all: test
 
 build:
-	@echo "Building project..."
 	cmake -S . -B $(BUILD_DIR) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
 	cmake --build $(BUILD_DIR)
-	@echo "Build completed!"
 
 build-ptest:
-	@echo "Building PostgreSQL extension for regression tests (Debug)..."
-	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_DEBUG) -DBUILD_ONLY_EXTENSION=ON
 	ASAN_OPTIONS=detect_leaks=0 cmake --build $(BUILD_DIR_PTEST)
-	@echo "PostgreSQL extension build completed!"
 
 build-ptest-release:
-	@echo "Building PostgreSQL extension for regression tests (Release)..."
-	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST_RELEASE) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_RELEASE) -DBUILD_ONLY_EXTENSION=ON
 	ASAN_OPTIONS=detect_leaks=0 cmake --build $(BUILD_DIR_PTEST_RELEASE)
-	@echo "PostgreSQL extension build completed!"
 
 build-ptest-reldebug:
-	@echo "Building PostgreSQL extension for regression tests (RelWithDebInfo: -O2 -g)..."
-	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST_RELDEBUG) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE_RELWITHDEBINFO) -DBUILD_ONLY_EXTENSION=ON
 	ASAN_OPTIONS=detect_leaks=0 cmake --build $(BUILD_DIR_PTEST_RELDEBUG)
-	@echo "PostgreSQL extension build completed!"
 
 build-utest:
-	@echo "Building project for unit tests..."
 	cmake -S . -B $(BUILD_DIR_UTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILDING_UNIT_TESTS=ON
 	cmake --build $(BUILD_DIR_UTEST)
-	@echo "Unit test build completed!"
 
 clean: clean-root
 	@echo "Cleaning all build directories..."
@@ -228,6 +215,14 @@ gviz:
 	fi
 	@echo "CMake visualization completed!"
 
+website:
+	@echo "Restarting benchmark dashboard server..."
+	@-pkill -9 -f "python.*serve.py" 2>/dev/null
+	@sleep 0.5
+	@cd benchmark/website && nohup python3 serve.py > /tmp/dashboard.log 2>&1 &
+	@sleep 1
+	@echo "Dashboard available at: http://127.0.0.1:8000"
+
 venv:
 	@if [ ! -d .venv ]; then \
 		echo "Creating Python 3.12.11 virtual environment..."; \
@@ -329,3 +324,4 @@ help:
 	@echo "  fcheck       - Check code formatting"
 	@echo "  ffix         - Fix code formatting"
 	@echo "  gviz         - Generate CMake dependency visualization graphs"
+	@echo "  website      - Start benchmark dashboard server (http://127.0.0.1:8000)"
