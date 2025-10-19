@@ -27,12 +27,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     wget \
     gosu \
-    # LLVM runtime libraries for JIT
+    sudo \
     llvm-${LLVM_VERSION}-runtime \
     libmlir-${LLVM_VERSION} \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8 \
     && update-locale LANG=en_US.UTF-8
+
+RUN wget -q https://github.com/janestreet/magic-trace/releases/latest/download/magic-trace -O /usr/local/bin/magic-trace && \
+    chmod +x /usr/local/bin/magic-trace
 
 # Create postgres user
 RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \

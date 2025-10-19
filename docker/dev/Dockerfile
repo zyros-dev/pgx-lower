@@ -29,9 +29,13 @@ RUN apt-get update && apt-get install -y \
     libgtest-dev \
     libzstd-dev \
     locales \
+    sudo \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8 \
     && update-locale LANG=en_US.UTF-8
+
+RUN wget -q https://github.com/janestreet/magic-trace/releases/latest/download/magic-trace -O /usr/local/bin/magic-trace && \
+    chmod +x /usr/local/bin/magic-trace
 
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-x86_64.sh && \
     chmod +x cmake-3.31.6-linux-x86_64.sh && \
