@@ -224,8 +224,8 @@ release-container: build-release
 	@docker exec pgx-lower-benchmark bash -c " \
 		mkdir -p /usr/local/pgsql/lib /usr/local/pgsql/share/extension && \
 		cp -v /workspace/build-docker-ptest-release/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
-		cp -v /workspace/extension/pgx_lower.control /usr/local/pgsql/share/extension/ && \
-		cp -v /workspace/extension/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true && \
+		cp -v /workspace/extension/control/pgx_lower.control /usr/local/pgsql/share/extension/ && \
+		cp -v /workspace/extension/sql/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true && \
 		ls -lh /usr/local/pgsql/lib/pgx_lower.so /usr/local/pgsql/share/extension/pgx_lower.control \
 	"
 	@echo "Initializing database in benchmark container..."
@@ -246,8 +246,8 @@ deploy-profile-extension:
 	@docker exec pgx-lower-profile bash -c " \
 		mkdir -p /usr/local/pgsql/lib /usr/local/pgsql/share/extension && \
 		cp -v /workspace/build-docker-ptest-release/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
-		cp -v /workspace/extension/pgx_lower.control /usr/local/pgsql/share/extension/ && \
-		cp -v /workspace/extension/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true \
+		cp -v /workspace/extension/control/pgx_lower.control /usr/local/pgsql/share/extension/ && \
+		cp -v /workspace/extension/sql/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true \
 	"
 	@echo "Profile extension deployed!"
 
@@ -324,7 +324,7 @@ install-host-profile: build-profile build-postgres-debug
 	@sudo chown -R $$USER:$$USER /opt/pgx-profile
 	@echo "Installing pgx_lower extension (with -pg profiling)..."
 	@cp ../build-docker-ptest-profile/extension/pgx_lower.so /opt/pgx-profile/lib/
-	@cp ../extension/pgx_lower.control /opt/pgx-profile/share/extension/
+	@cp ../extension/control/pgx_lower.control /opt/pgx-profile/share/extension/
 	@cp ../extension/sql/pgx_lower--1.0.sql /opt/pgx-profile/share/extension/
 	@echo ""
 	@echo "PostgreSQL + pgx_lower with -pg instrumentation installed successfully!"
@@ -351,8 +351,8 @@ profile-container: build-postgres-debug build-release
 	@docker exec pgx-lower-profile bash -c " \
 		mkdir -p /usr/local/pgsql/lib /usr/local/pgsql/share/extension && \
 		cp -v /workspace/build-docker-ptest-release/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
-		cp -v /workspace/extension/pgx_lower.control /usr/local/pgsql/share/extension/ && \
-		cp -v /workspace/extension/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true && \
+		cp -v /workspace/extension/control/pgx_lower.control /usr/local/pgsql/share/extension/ && \
+		cp -v /workspace/extension/sql/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true && \
 		ls -lh /usr/local/pgsql/lib/pgx_lower.so /usr/local/pgsql/share/extension/pgx_lower.control \
 	"
 	@echo "Initializing database in profile container..."
@@ -406,11 +406,11 @@ BENCH_PROFILE ?= quick
 
 bench-dockers:
 	@echo "Benchmark Profile: $(BENCH_PROFILE)"
-	@echo "Step 1: Ensuring all containers are running..."
+	@echo "Step 1: Installing Python dependencies..."
+	@python3 -c "import yaml, psycopg2, psutil, lz4.frame" 2>/dev/null || \
+		sudo apt-get install -y python3-yaml python3-psycopg2 python3-psutil python3-lz4
+	@echo "Step 2: Ensuring all containers are running..."
 	@$(MAKE) all
-	@echo "Step 2: Installing Python dependencies..."
-	@pip3 install --quiet PyYAML psycopg2-binary psutil lz4 2>/dev/null || \
-		echo "Note: Some packages may already be installed"
 	@echo "Step 3: Running benchmark profile '$(BENCH_PROFILE)'..."
 	@python3 ../benchmark/run_benchmark_config.py $(BENCH_PROFILE) --config ../benchmark-config.yaml
 	@echo ""
