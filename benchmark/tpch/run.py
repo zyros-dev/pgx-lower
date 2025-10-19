@@ -293,10 +293,17 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
                 if cpu_vendor == 'amd':
                     magic_trace_cmd.extend(['-sampling', '-timer-resolution', 'High', '-callgraph-mode', 'fp'])
                 else:
-                    # Intel: Use LBR-based sampling for all queries (~0.2MB per query)
-                    # Uses Intel Last Branch Record hardware for stack traces
-                    # Much more practical than full Intel PT (which creates 500MB+ traces)
-                    magic_trace_cmd.extend(['-sampling', '-callgraph-mode', 'lbr', '-full-execution'])
+                    # Intel: Use LBR sampling with frequency adjusted by scale factor
+                    # LBR (Last Branch Record) provides hardware stack traces without frame pointers/DWARF
+                    # -timer-resolution controls sampling frequency: Low=1000/s, Normal=10000/s, High=max
+                    if scale_factor <= 0.01:
+                        # Small scale factor: High frequency for detailed profiling
+                        # Fast queries (~30-300ms): ~20-25 samples/ms, ~0.2-4MB files
+                        magic_trace_cmd.extend(['-sampling', '-callgraph-mode', 'lbr',
+                                              '-timer-resolution', 'High', '-full-execution'])
+                    else:
+                        magic_trace_cmd.extend(['-sampling', '-callgraph-mode', 'lbr',
+                                              '-timer-resolution', 'Low', '-full-execution'])
 
                 magic_trace_log_file = open(magic_trace_log, 'w')
                 magic_trace_proc = subprocess.Popen(
