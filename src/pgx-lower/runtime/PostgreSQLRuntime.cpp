@@ -108,6 +108,7 @@ struct DataSourceIterator {
 
     std::string table_name;
     std::vector<ColumnSpec> columns;
+    std::vector<int32_t> column_positions;
 
     BatchStorage* batch;
     size_t current_row_in_batch;
@@ -662,6 +663,13 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
         return reinterpret_cast<DataSourceIteration*>(iter);
     }
 
+    iter->column_positions.reserve(iter->columns.size());
+    for (const auto& col_spec : iter->columns) {
+        const int32_t pg_idx = get_column_position(iter->table_name, col_spec.name);
+        iter->column_positions.push_back(pg_idx);
+        PGX_LOG(RUNTIME, DEBUG, "Cached column '%s' at position %d", col_spec.name.c_str(), pg_idx);
+    }
+
     g_current_iterator = iter;
     return reinterpret_cast<DataSourceIteration*>(iter);
 }
@@ -723,7 +731,7 @@ bool DataSourceIteration::isValid() {
         for (size_t json_col_idx = 0; json_col_idx < iter->columns.size(); json_col_idx++) {
             // ReSharper disable once CppUseStructuredBinding
             const auto& col_spec = iter->columns[json_col_idx];
-            const int pg_col_idx = get_column_position(iter->table_name, col_spec.name);
+            const int pg_col_idx = iter->column_positions[json_col_idx];
 
             if (pg_col_idx < 0 || pg_col_idx >= tupleDesc->natts) {
                 PGX_ERROR("Column %s not found in table %s", col_spec.name.c_str(), iter->table_name.c_str());
