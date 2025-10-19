@@ -472,9 +472,7 @@ def insert_metrics(db_conn, run_id, result, run_timestamp, pgx_version, postgres
 
 
 def timeout_handler():
-    print("Starting timeout")
-    time.sleep(300)
-    os.kill(os.getpid(), signal.SIGKILL)
+    pass
 
 
 def setup_profiling_dirs(output_dir, run_timestamp, scale_factor):
