@@ -84,13 +84,13 @@ profiles:
 
       - container: host-profile
         scale_factor: 0.01
-        iterations: 10
+        iterations: 5
         profile: true
         heap: true
 
       - container: host-profile
-        scale_factor: 0.1
-        iterations: 3
+        scale_factor: 0.03
+        iterations: 1
         profile: true
         heap: false
 
