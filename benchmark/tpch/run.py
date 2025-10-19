@@ -189,7 +189,8 @@ SCHEMA_SQL = """
                  postgres_version TEXT,
                  pgx_version      TEXT,
                  hostname         TEXT,
-                 run_args         TEXT
+                 run_args         TEXT,
+                 container        TEXT
              );
 
              CREATE TABLE IF NOT EXISTS queries
@@ -710,7 +711,7 @@ def setup_profiling_dirs(output_dir, script_dir, heap_enabled=False):
     return fg_dir
 
 
-def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None):
+def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None):
     db_file = output_dir / 'benchmark.db'
     db_conn = sqlite3.connect(db_file)
     db_conn.executescript(SCHEMA_SQL)
@@ -762,9 +763,9 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
 
     cursor = db_conn.cursor()
     cursor.execute(
-        "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args, container) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, run_timestamp, sf, 1, get_postgres_version(pg_conn), get_pgx_version(),
-         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_args))
+         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_args, container))
     db_conn.commit()
 
     return db_conn, pg_conn, db_file
@@ -938,12 +939,15 @@ def main():
                         help='Run only a specific query (e.g., q01)')
     parser.add_argument('--port', '-p', type=int, default=5432,
                         help='PostgreSQL port (default: 5432)')
+    parser.add_argument('--container', type=str, default='unknown',
+                        help='Container name (for tracking which container this run came from)')
     args = parser.parse_args()
 
     sf = args.scale_factor
     profile_enabled = args.profile
     heap_enabled = args.heap
     query_filter = args.query
+    container_name = args.container
     pg_port = args.port
 
     script_dir = Path(__file__).parent
@@ -968,7 +972,7 @@ def main():
         run_args_parts.append(f"--query={query_filter}")
     run_args = " ".join(run_args_parts)
 
-    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args)
+    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name)
 
     # Get version info
     postgres_version = get_postgres_version(pg_conn)

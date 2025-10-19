@@ -7,60 +7,92 @@ containers:
     name: "pgx-lower-benchmark"
     port: 54322
 
-  profile:
-    name: "pgx-lower-profile"
-    port: 54321
+  host-profile:
+    name: "host-native-profile"
+    port: 54325
 
 profiles:
-  # Quick validation profile - fast sanity check
   quick:
-    description: "Quick TPC-H validation on benchmark container"
     runs:
       - container: benchmark
+        scale_factor: 0.01
+        iterations: 1
+        profile: false
+        heap: false
+
+      - container: host-profile
+        scale_factor: 0.01
+        iterations: 1
+        profile: true
+        heap: true
+
+      - container: dev
         scale_factor: 0.01
         iterations: 1
         profile: false
         heap: false
 
   full:
-    description: "Complete benchmark suite across all containers"
     runs:
-      # Benchmark container: performance testing at multiple scales
       - container: benchmark
         scale_factor: 0.01
+        iterations: 10
+        profile: false
+        heap: false
+
+      - container: benchmark
+        scale_factor: 0.02
         iterations: 3
         profile: false
         heap: false
-        description: "Benchmark: 3x runs at SF=0.01"
 
       - container: benchmark
-        scale_factor: 0.1
-        iterations: 2
+        scale_factor: 0.04
+        iterations: 3
         profile: false
         heap: false
-        description: "Benchmark: 2x runs at SF=0.1"
 
       - container: benchmark
-        scale_factor: 1.0
+        scale_factor: 0.08
+        iterations: 3
+        profile: false
+        heap: false
+
+      - container: benchmark
+        scale_factor: 0.16
+        iterations: 3
+        profile: false
+        heap: false
+
+      - container: benchmark
+        scale_factor: 0.32
+        iterations: 3
+        profile: false
+        heap: false
+
+      - container: benchmark
+        scale_factor: 0.64
         iterations: 1
         profile: false
         heap: false
-        description: "Benchmark: 1x run at SF=1.0"
 
-      # Profile container: CPU and heap profiling
-      - container: profile
+      - container: benchmark
+        scale_factor: 1
+        iterations: 1
+        profile: false
+        heap: false
+
+      - container: host-profile
         scale_factor: 0.01
-        iterations: 3
+        iterations: 10
         profile: true
         heap: true
-        description: "Profile: 3x runs with CPU+heap profiling at SF=0.01"
 
-      - container: profile
+      - container: host-profile
         scale_factor: 0.1
-        iterations: 2
+        iterations: 3
         profile: true
         heap: false
-        description: "Profile: 2x runs with CPU profiling at SF=0.1"
 
 environment:
   PYTHONUNBUFFERED: "1"

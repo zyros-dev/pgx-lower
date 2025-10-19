@@ -77,11 +77,6 @@ RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \
     mkdir -p /var/lib/postgresql/data && \
     chown -R postgres:postgres /var/lib/postgresql
 
-USER postgres
-RUN /usr/local/pgsql/bin/initdb -D /var/lib/postgresql/data
-
-USER root
-
 ENV PATH="/usr/local/pgsql/bin:/usr/lib/llvm-${LLVM_VERSION}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/pgsql/lib:/usr/lib/llvm-${LLVM_VERSION}/lib:${LD_LIBRARY_PATH}"
 ENV MLIR_DIR="/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/mlir"

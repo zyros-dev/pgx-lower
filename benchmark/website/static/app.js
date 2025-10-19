@@ -1,6 +1,7 @@
 const state = {
     currentScale: null,
     currentRun: null,
+    currentDb: null,  // Selected database (null = current)
     data: {
         meta: null,
         raw: null,
@@ -16,8 +17,9 @@ const api = {
         return response.json();
     },
 
-    getMeta() {
-        return this.get('/api/meta');
+    getMeta(params = {}) {
+        const query = new URLSearchParams(params).toString();
+        return this.get(`/api/meta${query ? '?' + query : ''}`);
     },
 
     getRaw(params = {}) {
@@ -44,23 +46,47 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadData() {
-    state.data.meta = await api.getMeta();
+    const metaParams = {};
+    if (state.currentDb) metaParams.db = state.currentDb;
+
+    state.data.meta = await api.getMeta(metaParams);
 
     if (state.data.meta.latest) {
         state.currentRun = state.data.meta.latest.run_timestamp;
         state.currentScale = state.data.meta.latest.scale_factor;
     }
 
+    populateDatabaseSelector();
     populateScaleSelector();
 
-    const params = {};
-    if (state.currentRun) params.run_timestamp = state.currentRun;
+    const params = {
+        container: 'pgx-lower-benchmark'  // Always filter performance data to benchmark container
+    };
+    if (state.currentDb) params.db = state.currentDb;
+    // Don't filter by run_timestamp when using container filter - let it show latest from that container
+    // if (state.currentRun) params.run_timestamp = state.currentRun;
     if (state.currentScale) params.scale_factor = state.currentScale;
 
     state.data.raw = await api.getRaw(params);
     state.data.aggregate = await api.getAggregate(params);
 
     updateTimestamp();
+}
+
+function populateDatabaseSelector() {
+    const select = document.getElementById('db-select');
+    const databases = state.data.meta.databases || [];
+
+    select.innerHTML = databases
+        .map(db => {
+            const label = db.is_current ?
+                `Current (${new Date(db.modified).toLocaleString()})` :
+                `${db.name.replace('benchmark_', '')} (${(db.size_mb).toFixed(1)}MB)`;
+            const value = db.is_current ? '' : db.name;
+            const selected = value === state.currentDb ? 'selected' : '';
+            return `<option value="${value}" ${selected}>${label}</option>`;
+        })
+        .join('');
 }
 
 function populateScaleSelector() {
@@ -86,6 +112,12 @@ function updateRunSelectState() {
 }
 
 function setupEventListeners() {
+    document.getElementById('db-select').addEventListener('change', async (e) => {
+        state.currentDb = e.target.value || null;
+        await loadData();
+        renderDashboard();
+    });
+
     document.getElementById('view-select').addEventListener('change', () => {
         updateRunSelectState();
         renderDashboard();

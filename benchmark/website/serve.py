@@ -5,6 +5,7 @@ import lz4.frame
 import sqlite3
 import base64
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +13,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 WEBSITE_DIR = Path(__file__).parent
-DB_PATH = WEBSITE_DIR.parent / "output" / "benchmark.db"
+OUTPUT_DIR = WEBSITE_DIR.parent / "output"
+ARCHIVE_DIR = OUTPUT_DIR / "archive"
+DEFAULT_DB_PATH = OUTPUT_DIR / "benchmark.db"
 STATIC_DIR = WEBSITE_DIR / "static"
 
 app = FastAPI(title="pgx-lower Benchmark Dashboard", version="2.0.0")
+
+# Global to track current database (can be changed via API)
+current_db_path = DEFAULT_DB_PATH
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,10 +32,25 @@ app.add_middleware(
 )
 
 
-def get_db():
-    if not DB_PATH.exists():
-        raise HTTPException(status_code=503, detail=f"Database not found: {DB_PATH}")
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+def get_db(db_name: str = None):
+    """Get database connection. If db_name provided, use archive DB, otherwise use current."""
+    global current_db_path
+
+    if db_name:
+        # Look for database in archive directory
+        db_path = ARCHIVE_DIR / db_name
+        if not db_path.exists():
+            # Try adding .db extension if not present
+            if not db_name.endswith('.db'):
+                db_path = ARCHIVE_DIR / f"{db_name}.db"
+        if not db_path.exists():
+            raise HTTPException(status_code=404, detail=f"Database not found: {db_name}")
+    else:
+        db_path = current_db_path
+        if not db_path.exists():
+            raise HTTPException(status_code=503, detail=f"Database not found: {db_path}")
+
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -40,9 +61,11 @@ async def get_raw(
         scale_factor: float = None,
         query_name: str = None,
         pgx_enabled: bool = None,
-        include_flamegraph: bool = False
+        include_flamegraph: bool = False,
+        container: str = None,
+        db: str = None
 ):
-    conn = get_db()
+    conn = get_db(db)
     cursor = conn.cursor()
 
     conditions = []
@@ -60,10 +83,15 @@ async def get_raw(
     if pgx_enabled is not None:
         conditions.append("q.pgx_enabled = ?")
         params.append(1 if pgx_enabled else 0)
+    if container:
+        conditions.append("r.container = ?")
+        params.append(container)
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
 
     if include_flamegraph:
+        # For flamegraphs, we need to join to profiling data by query_name and pgx_enabled
+        # since profiling data comes from a different run (host-profile container)
         sql = f"""
             SELECT
                 q.query_id,
@@ -77,11 +105,15 @@ async def get_raw(
                 r.scale_factor,
                 r.pgx_version,
                 r.postgres_version,
-                p.cpu_flamegraph_lz4,
-                p.heap_flamegraph_lz4
+                prof.cpu_flamegraph_lz4,
+                prof.heap_flamegraph_lz4
             FROM queries q
             JOIN runs r ON q.run_id = r.run_id
-            LEFT JOIN profiling p ON q.query_id = p.query_id
+            LEFT JOIN (
+                SELECT q2.query_name, q2.pgx_enabled, p.cpu_flamegraph_lz4, p.heap_flamegraph_lz4
+                FROM queries q2
+                JOIN profiling p ON q2.query_id = p.query_id
+            ) prof ON q.query_name = prof.query_name AND q.pgx_enabled = prof.pgx_enabled
             WHERE {where_clause}
             ORDER BY r.run_timestamp DESC, q.query_name, q.pgx_enabled
         """
@@ -181,9 +213,11 @@ async def get_raw(
 @app.get("/api/aggregate")
 async def get_aggregate(
         run_timestamp: str = None,
-        scale_factor: float = None
+        scale_factor: float = None,
+        container: str = None,
+        db: str = None
 ):
-    conn = get_db()
+    conn = get_db(db)
     cursor = conn.cursor()
 
     # Build WHERE clause
@@ -196,6 +230,9 @@ async def get_aggregate(
     if scale_factor is not None:
         conditions.append("r.scale_factor = ?")
         params.append(scale_factor)
+    if container:
+        conditions.append("r.container = ?")
+        params.append(container)
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
 
@@ -244,12 +281,12 @@ async def get_aggregate(
 
 
 @app.get("/api/meta")
-async def get_meta():
+async def get_meta(db: str = None):
     """
     Get metadata about available runs and configurations.
     Tells you what data exists.
     """
-    conn = get_db()
+    conn = get_db(db)
     cursor = conn.cursor()
 
     # Get all unique run timestamps and scale factors
@@ -290,11 +327,38 @@ async def get_meta():
 
     conn.close()
 
+    # List available databases
+    databases = []
+
+    # Current database
+    if DEFAULT_DB_PATH.exists():
+        stat = DEFAULT_DB_PATH.stat()
+        databases.append({
+            "name": "current",
+            "path": "benchmark.db",
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "is_current": True
+        })
+
+    # Archived databases
+    if ARCHIVE_DIR.exists():
+        for db_file in sorted(ARCHIVE_DIR.glob("benchmark_*.db"), reverse=True):
+            stat = db_file.stat()
+            databases.append({
+                "name": db_file.stem,  # Without .db extension
+                "path": str(db_file.relative_to(OUTPUT_DIR)),
+                "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "is_current": False
+            })
+
     return {
         "runs": runs,
         "queries": queries,
         "scale_factors": scale_factors,
-        "latest": latest
+        "latest": latest,
+        "databases": databases
     }
 
 
@@ -311,10 +375,11 @@ if __name__ == "__main__":
     import uvicorn
 
     print(f"Starting SIMPLIFIED benchmark dashboard...")
-    print(f"Database: {DB_PATH}")
+    print(f"Database: {DEFAULT_DB_PATH}")
+    print(f"Archive:  {ARCHIVE_DIR}")
     print(f"")
     print(f"API Endpoints:")
-    print(f"  /api/meta      - Available runs/queries/scales")
+    print(f"  /api/meta      - Available runs/queries/scales/databases")
     print(f"  /api/raw       - Query executions (filterable)")
     print(f"  /api/aggregate - Grouped statistics (filterable)")
     print(f"")

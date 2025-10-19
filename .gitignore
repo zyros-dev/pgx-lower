@@ -131,3 +131,6 @@ build-ptest-release
 build-docker-ptest-release
 build-ptest-reldebug
 postgres-debug
+postgres-debug.tar.gz
+perf-host
+*.tar.gz

@@ -41,15 +41,13 @@ RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \
 
 COPY --from=pgbuilder /usr/local/pgsql /usr/local/pgsql
 
-# PostgreSQL and extension will be copied at runtime from /workspace
-# This allows updating without rebuilding the Docker image
+COPY docker/benchmark/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Set up environment
 ENV PATH="/usr/local/pgsql/bin:/usr/lib/llvm-${LLVM_VERSION}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/pgsql/lib:/usr/lib/llvm-${LLVM_VERSION}/lib:${LD_LIBRARY_PATH}"
 
 WORKDIR /workspace
 EXPOSE 5432
 
-# Keep container alive for manual PostgreSQL startup
-CMD ["tail", "-f", "/dev/null"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

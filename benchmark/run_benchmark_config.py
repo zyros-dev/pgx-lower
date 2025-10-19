@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 import yaml
 from typing import Dict
+from datetime import datetime
+import shutil
 
 
 def run_benchmark(run_config: Dict, container_info: Dict, run_num: int, total: int) -> bool:
@@ -19,6 +21,8 @@ def run_benchmark(run_config: Dict, container_info: Dict, run_num: int, total: i
     print(f"  Scale Factor: {sf}, Iterations: {run_config.get('iterations', 1)}")
 
     cmd = ['python3', str(Path(__file__).parent / 'tpch' / 'run.py'), str(sf), '--port', str(port)]
+
+    cmd.extend(['--container', container_info['name']])
 
     if run_config.get('profile'):
         cmd.append('--profile')
@@ -65,6 +69,17 @@ def main():
     profile = profiles[args.profile]
     runs = profile.get('runs', [])
 
+    benchmark_dir = Path(__file__).parent
+    output_dir = benchmark_dir / 'output'
+    archive_dir = output_dir / 'archive'
+    db_path = output_dir / 'benchmark.db'
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    if db_path.exists():
+        print(f"Removing previous benchmark.db")
+        db_path.unlink()
+
     print(f"\nProfile: {args.profile}")
     print(f"Description: {profile.get('description', 'N/A')}")
     print(f"Total runs: {len(runs)}\n")
@@ -83,7 +98,17 @@ def main():
     print(f"\n{'='*80}")
     passed = sum(results)
     print(f"Summary: {passed}/{len(results)} passed")
-    print(f"Results: benchmark/output/benchmark.db\n")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    archive_name = f"benchmark_{timestamp}.db"
+    archive_path = archive_dir / archive_name
+
+    if db_path.exists():
+        shutil.copy2(db_path, archive_path)
+        print(f"Archived: {archive_path}")
+
+    print(f"Current results: benchmark/output/benchmark.db")
+    print(f"All archives: benchmark/output/archive/\n")
 
     if passed < len(results):
         sys.exit(1)
