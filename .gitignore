@@ -53,7 +53,6 @@ _deps/
 **/CMakeFiles/
 **/cmake_install.cmake
 **/CTestTestfile.cmake
-**/Makefile
 
 # CMake generated files in extension directory
 extension/CTestTestfile.cmake
@@ -134,3 +133,7 @@ postgres-debug
 postgres-debug.tar.gz
 perf-host
 *.tar.gz
+build-docker-ptest-profile
+build-ptest-profile
+gmon.out
+gmout.out
