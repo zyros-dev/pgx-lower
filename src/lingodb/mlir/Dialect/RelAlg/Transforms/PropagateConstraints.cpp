@@ -108,7 +108,9 @@ class ReduceAggrKeys : public ::mlir::PassWrapper<ReduceAggrKeys, ::mlir::Operat
          mlir::RewritePatternSet patterns(&getContext());
          patterns.insert<ReduceAggrKeyPattern>(&getContext());
 
-         if (mlir::applyPatternsAndFoldGreedily(getOperation().getRegion(), std::move(patterns)).failed()) {
+         mlir::GreedyRewriteConfig config;
+         config.maxIterations = 5;
+         if (mlir::applyPatternsAndFoldGreedily(getOperation().getRegion(), std::move(patterns), config).failed()) {
             assert(false && "should not happen");
          }
       }

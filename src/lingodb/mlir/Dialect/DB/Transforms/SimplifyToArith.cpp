@@ -149,7 +149,10 @@ class SimplifyToArith : public ::mlir::PassWrapper<SimplifyToArith, ::mlir::Oper
          patterns.insert<DBAddToAddI>(&getContext());
          patterns.insert<DBAddToAddF>(&getContext());
          patterns.insert<DBConstToConst>(&getContext());
-         if (mlir::applyPatternsAndFoldGreedily(getOperation().getRegion(), std::move(patterns)).failed()) {
+
+         mlir::GreedyRewriteConfig config;
+         config.maxIterations = 5;
+         if (mlir::applyPatternsAndFoldGreedily(getOperation().getRegion(), std::move(patterns), config).failed()) {
             assert(false && "should not happen");
          }
       }

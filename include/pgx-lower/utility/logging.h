@@ -211,3 +211,9 @@ private:
     if (::pgx_lower::log::should_log(::pgx_lower::log::Category::category, ::pgx_lower::log::Level::IO)) \
         _pgx_io_logger.emplace(::pgx_lower::log::Category::category, __FILE__, __LINE__, __func__)
 
+#ifdef PGX_RELEASE_MODE
+#define PGX_HOT_LOG(category, level, fmt, ...) ((void)0)
+#else
+#define PGX_HOT_LOG(category, level, fmt, ...) PGX_LOG(category, level, fmt, ##__VA_ARGS__)
+#endif
+

@@ -711,7 +711,7 @@ bool DataSourceIteration::isValid() {
     Datum temp_values[MaxTupleAttributeNumber];
     bool temp_nulls[MaxTupleAttributeNumber];
     while (iter->batch->num_rows < capacity) {
-        PGX_LOG(RUNTIME, TRACE, "Reading tuple %zu", iter->batch->num_rows);
+        PGX_HOT_LOG(RUNTIME, TRACE, "Reading tuple %zu", iter->batch->num_rows);
         const int64_t read_result = read_next_tuple_from_table(iter->table_handle);
 
         if (read_result != 1) {
@@ -755,14 +755,13 @@ bool DataSourceIteration::isValid() {
                     iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(const_cast<char*>(str_data));
                     iter->batch->column_values[json_col_idx][row_idx] = transferred_datum;
 
-
-                    PGX_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
+                    PGX_HOT_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
                             col_spec.name.c_str(), str_len, str_data);
                 }
             } else if (attr->atttypid == NUMERICOID) {
                 if (temp_nulls[pg_col_idx]) {
                     iter->batch->decimal_values[json_col_idx][row_idx] = 0;
-                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC is NULL",
+                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC is NULL",
                             row_idx, json_col_idx, col_spec.name.c_str());
                 } else {
                     // Convert Numeric to i128
@@ -813,7 +812,7 @@ bool DataSourceIteration::isValid() {
                     pfree(numeric_str);
 
                     iter->batch->decimal_values[json_col_idx][row_idx] = scaled_value;
-                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC->i128: scale=%d, value=%lld",
+                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC->i128: scale=%d, value=%lld",
                             row_idx, json_col_idx, col_spec.name.c_str(), type_scale,
                             static_cast<long long>(scaled_value));
                 }
@@ -821,7 +820,7 @@ bool DataSourceIteration::isValid() {
                 if (temp_nulls[pg_col_idx]) {
                     iter->batch->column_values[json_col_idx][row_idx] = 0;
                     iter->batch->column_nulls[json_col_idx][row_idx] = false;
-                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL is NULL",
+                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL is NULL",
                             row_idx, json_col_idx, col_spec.name.c_str());
                 } else {
                     // Extract full interval and convert to microseconds (LingoDB's !db.interval<daytime> format)
@@ -843,7 +842,7 @@ bool DataSourceIteration::isValid() {
                     // Store as int64 Datum (LingoDB format)
                     iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
 
-                    PGX_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL: time=%lld, day=%d, month=%d → total_us=%lld",
+                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL: time=%lld, day=%d, month=%d → total_us=%lld",
                             row_idx, json_col_idx, col_spec.name.c_str(),
                             static_cast<long long>(interval->time), interval->day, interval->month,
                             static_cast<long long>(totalMicroseconds));
@@ -851,13 +850,13 @@ bool DataSourceIteration::isValid() {
             } else {
                 if (temp_nulls[pg_col_idx]) {
                     iter->batch->column_values[json_col_idx][row_idx] = 0;
-                    PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] is NULL", row_idx,
+                    PGX_HOT_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] is NULL", row_idx,
                             json_col_idx, col_spec.name.c_str(), pg_col_idx);
                 } else {
                     iter->batch->column_values[json_col_idx][row_idx] = datumTransfer(temp_values[pg_col_idx], attr->attbyval,
                                                                                   attr->attlen);
 
-                    PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu", row_idx,
+                    PGX_HOT_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu", row_idx,
                             json_col_idx, col_spec.name.c_str(), pg_col_idx,
                             static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]));
                 }

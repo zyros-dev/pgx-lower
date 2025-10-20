@@ -114,7 +114,10 @@ public:
          patterns.insert<EliminateDeriveTruthNonNullable>(&getContext());
          patterns.insert<EliminateDeriveTruthNullable>(&getContext());
          patterns.insert<WrapWithNullCheck>(&getContext());
-         if (mlir::applyPatternsAndFoldGreedily(getOperation().getRegion(), std::move(patterns)).failed()) {
+
+         mlir::GreedyRewriteConfig config;
+         config.maxIterations = 5;
+         if (mlir::applyPatternsAndFoldGreedily(getOperation().getRegion(), std::move(patterns), config).failed()) {
             assert(false && "should not happen");
          }
       }

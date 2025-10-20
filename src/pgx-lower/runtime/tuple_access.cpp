@@ -131,6 +131,7 @@ struct PostgreSQLTableHandle {
     Relation rel;
     TableScanDesc scanDesc;
     TupleDesc tupleDesc;
+    TupleTableSlot* slot;
     bool isOpen;
 };
 
@@ -366,10 +367,13 @@ extern "C" void* open_postgres_table(const char* tableName) {
             handle->rel = table_open(tableOid, AccessShareLock);
             handle->tupleDesc = RelationGetDescr(handle->rel);
 
-            handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
+            handle->slot = MakeSingleTupleTableSlot(handle->tupleDesc, &TTSOpsBufferHeapTuple);
+            const uint32 flags = SO_TYPE_SEQSCAN | SO_ALLOW_PAGEMODE | SO_ALLOW_SYNC;
+            handle->scanDesc = heap_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr, nullptr, flags);
             handle->isOpen = true;
 
-            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Successfully opened table with OID %u", tableOid);
+            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Successfully opened table with OID %u (flags=0x%x, slot=%p)",
+                    tableOid, flags, handle->slot);
         } else {
             PGX_ERROR("open_postgres_table: Cannot determine table to open");
             delete handle;
@@ -426,45 +430,42 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call heap_getnext with scanDesc=%p", handle->scanDesc);
-    PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: scanDesc->rs_rd=%p, snapshot=%p", handle->scanDesc->rs_rd,
-            handle->scanDesc->rs_snapshot);
+    PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call table_scan_getnextslot with scanDesc=%p", handle->scanDesc);
 
-    HeapTuple tuple = nullptr;
+    bool has_tuple = false;
     try {
         PG_TRY();
         {
-            tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
-            PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: heap_getnext completed, tuple=%p", tuple);
+            has_tuple = table_scan_getnextslot(handle->scanDesc, ForwardScanDirection, handle->slot);
+            PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: table_scan_getnextslot returned %d", has_tuple);
         }
         PG_CATCH();
         {
-            PGX_ERROR("read_next_tuple_from_table: heap_getnext threw PostgreSQL exception");
+            PGX_ERROR("read_next_tuple_from_table: table_scan_getnextslot threw PostgreSQL exception");
         }
         PG_END_TRY();
     } catch (const std::exception& e) {
-        PGX_ERROR("read_next_tuple_from_table: heap_getnext threw C++ exception: %s", e.what());
+        PGX_ERROR("read_next_tuple_from_table: table_scan_getnextslot threw C++ exception: %s", e.what());
         return -1;
     } catch (...) {
-        PGX_ERROR("read_next_tuple_from_table: heap_getnext threw unknown exception");
+        PGX_ERROR("read_next_tuple_from_table: table_scan_getnextslot threw unknown exception");
         return -1;
     }
 
-    if (tuple == nullptr) {
-        PGX_LOG(RUNTIME, DEBUG, "read_next_tuple_from_table: heap_getnext returned null - end of table");
+    if (!has_tuple) {
+        PGX_LOG(RUNTIME, DEBUG, "read_next_tuple_from_table: table_scan_getnextslot returned false - end of table");
         PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table OUT: 0 (end of table)");
         return 0;
     }
 
-    PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to process tuple, cleaning up previous tuple");
-    if (g_current_tuple_passthrough.originalTuple) {
-        heap_freetuple(g_current_tuple_passthrough.originalTuple);
-    }
+    HeapTuple tuple = ExecFetchSlotHeapTuple(handle->slot, false, nullptr);
 
-    g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
-    g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
+    // Store pointer to the buffered tuple (NOT a copy!)
+    // This is safe because the slot holds a buffer pin until next scan call
+    g_current_tuple_passthrough.originalTuple = tuple;
+    g_current_tuple_passthrough.tupleDesc = handle->slot->tts_tupleDescriptor;
 
-    PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: Tuple preserved for streaming");
+    PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: Tuple accessed from slot (zero-copy)");
     PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table OUT: 1 (tuple available)");
     return 1;
 }
@@ -477,6 +478,12 @@ extern "C" void close_postgres_table(void* tableHandle) {
     }
 
     auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+
+    if (handle->slot) {
+        PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Dropping TupleTableSlot %p", handle->slot);
+        ExecDropSingleTupleTableSlot(handle->slot);
+        handle->slot = nullptr;
+    }
 
     if (handle->rel) {
         PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Closing JIT-managed table scan");

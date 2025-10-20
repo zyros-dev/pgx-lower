@@ -60,7 +60,11 @@ bool runPhase3a(::mlir::ModuleOp module) {
     }
 
     ::mlir::PassManager pm(&context);
+#ifndef PGX_RELEASE_MODE
     pm.enableVerifier(true);
+#else
+    pm.enableVerifier(false);
+#endif
     mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
 
     // Run PassManager with pure C++ exception handling
@@ -92,7 +96,11 @@ bool runPhase3b(::mlir::ModuleOp module) {
 
     {
         ::mlir::PassManager pm1(&context);
+#ifndef PGX_RELEASE_MODE
         pm1.enableVerifier(true);
+#else
+        pm1.enableVerifier(false);
+#endif
         mlir::pgx_lower::createDBToStandardPipeline(pm1, false);
         if (mlir::failed(pm1.run(module))) {
             dumpModuleWithStats(module, "Phase 3b failed: DB+DSA+Util → Standard lowering error", pgx_lower::log::Category::DB_LOWER);
@@ -107,7 +115,11 @@ bool runPhase3b(::mlir::ModuleOp module) {
 
     {
         ::mlir::PassManager pm2(&context);
+#ifndef PGX_RELEASE_MODE
         pm2.enableVerifier(true);
+#else
+        pm2.enableVerifier(false);
+#endif
         mlir::pgx_lower::createDSAToStandardPipeline(pm2, false);
         if (mlir::failed(pm2.run(module))) {
             dumpModuleWithStats(module, "Phase 3b failed: DB+DSA+Util → Standard lowering error", pgx_lower::log::Category::DB_LOWER);
@@ -122,7 +134,11 @@ bool runPhase3b(::mlir::ModuleOp module) {
 
     {
         mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
+#ifndef PGX_RELEASE_MODE
         pmFunc.enableVerifier(true);
+#else
+        pmFunc.enableVerifier(false);
+#endif
         pmFunc.addPass(mlir::createLoopInvariantCodeMotionPass());
         pmFunc.addPass(mlir::createSinkOpPass());
         pmFunc.addPass(mlir::createCSEPass());
