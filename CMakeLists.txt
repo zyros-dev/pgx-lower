@@ -132,7 +132,7 @@ endif()
 # Define PGX_RELEASE_MODE for optimized builds to disable validation overhead
 # This strips MLIR verification, DEBUG/TRACE logging, and detailed assertions
 # while preserving correctness for accurate profiling and production use
-if(CMAKE_BUILD_TYPE MATCHES "^(Release|RelWithDebInfo)$")
+if(CMAKE_BUILD_TYPE MATCHES "^(Release|RelWithDebInfo|Profile)$")
     add_compile_definitions(PGX_RELEASE_MODE=1)
     message(STATUS "PGX_RELEASE_MODE enabled - validation overhead disabled for ${CMAKE_BUILD_TYPE} build")
 endif()
