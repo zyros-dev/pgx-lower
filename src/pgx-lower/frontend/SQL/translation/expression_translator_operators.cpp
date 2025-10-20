@@ -573,6 +573,7 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
 }
 
 auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> void {
+#ifndef PGX_RELEASE_MODE
     PGX_IO(AST_TRANSLATE);
     if (auto* defOp = val.getDefiningOp()) {
         const auto verifyResult = mlir::verify(defOp);
@@ -600,6 +601,7 @@ auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> v
     } catch (...) {
         PGX_ERROR("Unknown exception during value print");
     }
+#endif
 }
 
 auto PostgreSQLASTTranslator::Impl::print_type(const mlir::Type val) -> void {

@@ -293,12 +293,7 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
                 if cpu_vendor == 'amd':
                     magic_trace_cmd.extend(['-sampling', '-timer-resolution', 'High', '-callgraph-mode', 'fp'])
                 else:
-                    # Intel: Use LBR sampling with frequency adjusted by scale factor
-                    # LBR (Last Branch Record) provides hardware stack traces without frame pointers/DWARF
-                    # -timer-resolution controls sampling frequency: Low=1000/s, Normal=10000/s, High=max
-                    if scale_factor <= 0.01:
-                        # Small scale factor: High frequency for detailed profiling
-                        # Fast queries (~30-300ms): ~20-25 samples/ms, ~0.2-4MB files
+                    if scale_factor <= 0.05:
                         magic_trace_cmd.extend(['-sampling', '-callgraph-mode', 'lbr',
                                               '-timer-resolution', 'High', '-full-execution'])
                     else:

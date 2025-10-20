@@ -5,6 +5,7 @@
 namespace pgx_lower { namespace log {
 
 auto verify_and_print(const mlir::Value val) -> void {
+#ifndef PGX_RELEASE_MODE
     PGX_IO(AST_TRANSLATE);
     if (auto* defOp = val.getDefiningOp()) {
         const auto verifyResult = mlir::verify(defOp);
@@ -32,6 +33,7 @@ auto verify_and_print(const mlir::Value val) -> void {
     } catch (...) {
         PGX_ERROR("Unknown exception during value print");
     }
+#endif
 }
 
 auto print_type(const mlir::Type val) -> void {

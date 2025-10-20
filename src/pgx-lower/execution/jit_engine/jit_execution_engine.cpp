@@ -71,12 +71,7 @@ bool JITEngine::compile(mlir::ModuleOp module) {
         return false;
     }
 
-#ifndef PGX_RELEASE_MODE
-    if (mlir::failed(mlir::verify(module))) {
-        PGX_ERROR("Module verification failed");
-        return false;
-    }
-#endif
+    pgx_lower::log::verify_module_or_throw(module, "JIT Compile", "Module verification failed before JIT compilation");
 
     PGX_LOG(JIT, IO, "JIT Compile IN: MLIR Module (opt_level=%d)", static_cast<int>(opt_level_));
 

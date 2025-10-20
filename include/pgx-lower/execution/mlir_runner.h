@@ -38,8 +38,6 @@ bool runPhase3b(::mlir::ModuleOp module);
 bool runPhase3c(::mlir::ModuleOp module);
 bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 
-bool verifyModuleOrThrow(::mlir::ModuleOp module, const char* phase_name, const char* error_context);
-
 } // namespace mlir_runner
 
 #endif // MLIR_RUNNER_H

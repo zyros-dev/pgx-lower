@@ -86,24 +86,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
 
         // Verify the generated module
-        auto verifyResult = mlir::verify(*module);
-        if (failed(verifyResult)) {
-            // TODO: Swap this for the dump with stats function
-            // Print more detailed error information
-            std::string errorString;
-            llvm::raw_string_ostream errorStream(errorString);
-            module->print(errorStream);
-
-            // Debug: Print the generated MLIR before verification
-            {
-                std::string mlirString;
-                llvm::raw_string_ostream stream(mlirString);
-                module->print(stream);
-                PGX_LOG(JIT, DEBUG, "Generated RelAlg MLIR:\n%s", mlirString.c_str());
-            }
-            PGX_ERROR("Initial RelAlg MLIR module verification failed. Module content:\n%s", errorString.c_str());
-            return false;
-        }
+        pgx_lower::log::verify_module_or_throw(*module, "AST Translation", "PostgreSQL AST to RelAlg MLIR verification failed");
 
         if (!module) {
             PGX_ERROR("Module is null after AST translation");

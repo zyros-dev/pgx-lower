@@ -9,7 +9,6 @@
 #include <cxxabi.h>
 #include <memory>
 #include <optional>
-#include <mlir/IR/BuiltinOps.h.inc>
 
 #ifndef POSTGRESQL_EXTENSION
 #include <iostream>
@@ -18,6 +17,7 @@
 namespace mlir {
     class Value;
     class Type;
+    class ModuleOp;
 }
 
 #ifdef POSTGRESQL_EXTENSION
