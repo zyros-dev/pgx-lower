@@ -211,4 +211,15 @@ bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
     return true;
 }
 
+bool verifyModuleOrThrow(::mlir::ModuleOp module, const char* phase_name, const char* error_context) {
+#ifndef PGX_RELEASE_MODE
+    if (mlir::failed(mlir::verify(module))) {
+        dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
+        std::string error_msg = std::string(phase_name) + ": " + error_context;
+        throw std::runtime_error(error_msg);
+    }
+#endif
+    return true;
+}
+
 } // namespace mlir_runner

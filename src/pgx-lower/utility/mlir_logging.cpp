@@ -58,4 +58,15 @@ auto value_to_string(const mlir::Value val) -> std::string {
     return valueStr;
 }
 
+auto verify_module_or_throw(::mlir::ModuleOp module, const char* phase_name, const char* error_context) -> bool {
+#ifndef PGX_RELEASE_MODE
+    if (mlir::failed(mlir::verify(module))) {
+        std::string error_msg = std::string(phase_name) + ": " + error_context;
+        PGX_ERROR("%s", error_msg.c_str());
+        throw std::runtime_error(error_msg);
+    }
+#endif
+    return true;
+}
+
 }} // namespace pgx_lower::log

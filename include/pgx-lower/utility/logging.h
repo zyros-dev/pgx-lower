@@ -9,6 +9,7 @@
 #include <cxxabi.h>
 #include <memory>
 #include <optional>
+#include <mlir/IR/BuiltinOps.h.inc>
 
 #ifndef POSTGRESQL_EXTENSION
 #include <iostream>
@@ -136,8 +137,8 @@ inline auto capture_stacktrace(int skip_frames = 1, int max_frames = 20) -> std:
     return oss.str();
 }
 
-// MLIR value verification and printing
 auto verify_and_print(const mlir::Value val) -> void;
+auto verify_module_or_throw(::mlir::ModuleOp module, const char* phase_name, const char* error_context) -> bool;
 
 auto print_type(const mlir::Type val) -> void;
 auto type_to_string(const mlir::Type type) -> std::string;
