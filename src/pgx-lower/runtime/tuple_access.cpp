@@ -479,6 +479,9 @@ extern "C" void close_postgres_table(void* tableHandle) {
 
     auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
 
+    g_current_tuple_passthrough.originalTuple = nullptr;
+    g_current_tuple_passthrough.tupleDesc = nullptr;
+
     if (handle->slot) {
         PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Dropping TupleTableSlot %p", handle->slot);
         ExecDropSingleTupleTableSlot(handle->slot);
