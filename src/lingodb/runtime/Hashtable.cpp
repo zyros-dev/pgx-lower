@@ -12,7 +12,8 @@ extern "C" {
 
 std::map<void*, runtime::HashtableMetadata> runtime::g_hashtable_metadata;
 
-static void hex_dump(const char* label, const void* ptr, size_t length) {
+static void hex_dump([[maybe_unused]] const char* label, [[maybe_unused]] const void* ptr, [[maybe_unused]] size_t length) {
+#ifndef PGX_RELEASE_MODE
     const auto bytes = static_cast<const uint8_t*>(ptr);
     std::string output = std::string(label) + " hex dump (" + std::to_string(length) + " bytes):\n";
 
@@ -36,9 +37,11 @@ static void hex_dump(const char* label, const void* ptr, size_t length) {
     }
 
     PGX_LOG(RUNTIME, DEBUG, "%s", output.c_str());
+#endif
 }
 
 void runtime::Hashtable::hex_dump_all() const {
+#ifndef PGX_RELEASE_MODE
     const auto& meta = g_hashtable_metadata[const_cast<Hashtable*>(this)];
 
     PGX_LOG(RUNTIME, DEBUG, "=== Hashtable full hex dump at %p ===", static_cast<const void*>(this));
@@ -62,6 +65,7 @@ void runtime::Hashtable::hex_dump_all() const {
     }
 
     PGX_LOG(RUNTIME, DEBUG, "=== End hashtable hex dump ===");
+#endif
 }
 
 runtime::Hashtable* runtime::Hashtable::create(size_t typeSize, size_t initialCapacity, uint64_t specPtr) {
