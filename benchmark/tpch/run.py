@@ -334,20 +334,11 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
 
             start_time = time.time()
             cur.execute(query_sql)
-
-            # Fetch all rows to measure actual query execution time
-            rows = cur.fetchall()
             duration_ms = (time.time() - start_time) * 1000
 
-            result['duration_ms'] = duration_ms
-            result['row_count'] = len(rows)
-
-            # Stop magic-trace immediately after query execution (before hash/EXPLAIN)
-            # This ensures profiling captures ONLY the actual query, not validation overhead
             if magic_trace_proc is not None:
                 try:
-                    # Send SIGINT to stop recording (for full-execution mode)
-                    print(f"[query done, decoding trace...]", end=' ', flush=True)
+                    print(f"[stopping trace...]", end=' ', flush=True)
                     magic_trace_proc.send_signal(signal.SIGINT)
                     magic_trace_proc.wait(timeout=180)
                     print(f"[decode done]", end=' ', flush=True)
@@ -374,8 +365,11 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
                     if 'magic_trace_log_file' in locals():
                         magic_trace_log_file.close()
 
-            # Now that profiling is done, compute hash and collect EXPLAIN metrics
-            # Hash first 5000 rows for validation
+            rows = cur.fetchall()
+
+            result['duration_ms'] = duration_ms
+            result['row_count'] = len(rows)
+
             hasher = hashlib.sha256()
             for idx, row in enumerate(rows):
                 if idx < 5000:

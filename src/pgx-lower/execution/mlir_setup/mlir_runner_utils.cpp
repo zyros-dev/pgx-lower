@@ -20,6 +20,7 @@
 namespace mlir_runner {
 
 void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase) {
+#ifndef PGX_RELEASE_MODE
     if (!module) {
         PGX_WARNING("dumpModuleWithStats: Module is null for title: %s", title.c_str());
         return;
@@ -143,6 +144,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     } catch (...) {
         PGX_ERROR("Unknown exception in dumpModuleWithStats");
     }
+#endif // PGX_RELEASE_MODE
 }
 
 void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase) {
@@ -195,6 +197,7 @@ std::unique_ptr<mlir::Pass> createModuleDumpPass(const std::string& phaseName, :
 }
 
 bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
+#ifndef PGX_RELEASE_MODE
     if (!module || !module.getOperation()) {
         PGX_ERROR("%s: Module operation is null", phase.c_str());
         return false;
@@ -204,7 +207,7 @@ bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
         PGX_ERROR("%s: Module verification failed", phase.c_str());
         return false;
     }
-
+#endif
     return true;
 }
 

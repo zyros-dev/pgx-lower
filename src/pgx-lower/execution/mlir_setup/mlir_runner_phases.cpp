@@ -69,10 +69,12 @@ bool runPhase3a(::mlir::ModuleOp module) {
         throw std::runtime_error("Phase 3a failed: RelAlg → DB+DSA+Util lowering error");
     }
 
+#ifndef PGX_RELEASE_MODE
     if (mlir::failed(mlir::verify(module))) {
         dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
         throw std::runtime_error("Phase 3a: Module verification failed after lowering");
     }
+#endif
 
     if (!validateModuleState(module, "Phase 3a output")) {
         dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
@@ -151,11 +153,17 @@ bool runPhase3c(::mlir::ModuleOp module) {
     }
 
     ::mlir::PassManager pm(moduleContext);
+#ifndef PGX_RELEASE_MODE
     pm.enableVerifier(true);
+#else
+    pm.enableVerifier(false);
+#endif
 
+#ifndef PGX_RELEASE_MODE
     if (mlir::failed(mlir::verify(module))) {
         throw std::runtime_error("Phase 3c: Module verification failed before lowering");
     }
+#endif
 
     mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
 
@@ -165,10 +173,12 @@ bool runPhase3c(::mlir::ModuleOp module) {
         throw std::runtime_error("Phase 3c failed: Standard → LLVM lowering error");
     }
 
+#ifndef PGX_RELEASE_MODE
     // Verify module after lowering
     if (mlir::failed(mlir::verify(module))) {
         throw std::runtime_error("Phase 3c: Module verification failed after lowering");
     }
+#endif
 
     dumpModuleWithStats(module, "Phase 3c AFTER: Standard -> LLVM", pgx_lower::log::Category::JIT);
 

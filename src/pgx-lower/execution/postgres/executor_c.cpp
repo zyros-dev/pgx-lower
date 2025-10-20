@@ -188,10 +188,12 @@ bool execute_mlir_text(const char* mlir_text, void* dest_receiver) {
 
         mlir::ModuleOp module = moduleRef.release();
 
+#ifndef PGX_RELEASE_MODE
         if (mlir::failed(mlir::verify(module.getOperation()))) {
             PGX_ERROR("MLIR module verification failed");
             return false;
         }
+#endif
 
         if (!mlir_runner::runCompleteLoweringPipeline(module)) {
             PGX_ERROR("MLIR lowering pipeline failed");

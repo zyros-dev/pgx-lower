@@ -71,10 +71,12 @@ bool JITEngine::compile(mlir::ModuleOp module) {
         return false;
     }
 
+#ifndef PGX_RELEASE_MODE
     if (mlir::failed(mlir::verify(module))) {
         PGX_ERROR("Module verification failed");
         return false;
     }
+#endif
 
     PGX_LOG(JIT, IO, "JIT Compile IN: MLIR Module (opt_level=%d)", static_cast<int>(opt_level_));
 
@@ -231,6 +233,7 @@ JITEngine::create_mlir_to_llvm_translator() {
             return nullptr;
         }
 
+#ifndef PGX_RELEASE_MODE
         std::string verify_error;
         llvm::raw_string_ostream verify_stream(verify_error);
         if (llvm::verifyModule(*llvm_module, &verify_stream)) {
@@ -238,6 +241,7 @@ JITEngine::create_mlir_to_llvm_translator() {
             PGX_ERROR("LLVM module verification failed: %s", verify_error.c_str());
             return nullptr;
         }
+#endif
 
         for (auto& func : llvm_module->functions()) {
             std::string func_name = func.getName().str();
