@@ -335,31 +335,15 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
             start_time = time.time()
             cur.execute(query_sql)
 
-            # Hash first 5000 rows without loading all into memory
-            hasher = hashlib.sha256()
-            row_count = 0
-            for row in cur:
-                row_count += 1
-                if row_count <= 5000:
-                    # Normalize each value in the row
-                    normalized = [normalize_value(val) for val in row]
-                    row_str = '|'.join(normalized) + '\n'
-                    hasher.update(row_str.encode('utf-8'))
-
+            # Fetch all rows to measure actual query execution time
+            rows = cur.fetchall()
             duration_ms = (time.time() - start_time) * 1000
 
             result['duration_ms'] = duration_ms
-            result['row_count'] = row_count
-            result['result_hash'] = hasher.hexdigest()
+            result['row_count'] = len(rows)
 
-            # Collect PostgreSQL metrics (EXPLAIN ANALYZE, buffers, memory contexts)
-            try:
-                result['postgres_metrics'] = collect_query_metrics(cur, query_sql)
-            except Exception as e:
-                print(f"  Warning: Failed to collect PG metrics: {e}")
-                result['postgres_metrics'] = None
-
-            # Stop magic-trace after query execution completes
+            # Stop magic-trace immediately after query execution (before hash/EXPLAIN)
+            # This ensures profiling captures ONLY the actual query, not validation overhead
             if magic_trace_proc is not None:
                 try:
                     # Send SIGINT to stop recording (for full-execution mode)
@@ -389,6 +373,22 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
                 finally:
                     if 'magic_trace_log_file' in locals():
                         magic_trace_log_file.close()
+
+            # Now that profiling is done, compute hash and collect EXPLAIN metrics
+            # Hash first 5000 rows for validation
+            hasher = hashlib.sha256()
+            for idx, row in enumerate(rows):
+                if idx < 5000:
+                    normalized = [normalize_value(val) for val in row]
+                    row_str = '|'.join(normalized) + '\n'
+                    hasher.update(row_str.encode('utf-8'))
+            result['result_hash'] = hasher.hexdigest()
+
+            try:
+                result['postgres_metrics'] = collect_query_metrics(cur, query_sql)
+            except Exception as e:
+                print(f"  Warning: Failed to collect PG metrics: {e}")
+                result['postgres_metrics'] = None
 
         conn.commit()
 
