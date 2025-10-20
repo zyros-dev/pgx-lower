@@ -68,17 +68,16 @@ all: down
 	@echo "Step 10: Installing native PostgreSQL for profiling..."
 	@$(MAKE) install-host-profile
 	@echo "Step 11: Cleaning and starting host PostgreSQL..."
-	@pkill -9 -f "^/opt/pgx-profile/bin/postgres" 2>/dev/null || true
-	@sudo rm -rf /opt/pgx-profile/data
+	@pkill -9 -f "^$(PGX_PROFILE_DIR)/bin/postgres" 2>/dev/null || true
+	@rm -rf $(PGX_PROFILE_DIR)/data
 	@echo "Initializing database in container (avoids host locale issues)..."
 	@docker exec -u postgres pgx-lower-dev bash -c "rm -rf /tmp/pgx-profile-data && /workspace/postgres-debug/bin/initdb -D /tmp/pgx-profile-data -U $(USER)"
 	@docker exec pgx-lower-dev tar czf /workspace/pgx-profile-data.tar.gz -C /tmp pgx-profile-data
-	@sudo tar xzf ../pgx-profile-data.tar.gz -C /opt/pgx-profile
-	@sudo mv /opt/pgx-profile/pgx-profile-data /opt/pgx-profile/data
-	@sudo chown -R $(USER):$(USER) /opt/pgx-profile/data
-	@echo "port = 54325" >> /opt/pgx-profile/data/postgresql.conf
+	@tar xzf ../pgx-profile-data.tar.gz -C $(PGX_PROFILE_DIR)
+	@mv $(PGX_PROFILE_DIR)/pgx-profile-data $(PGX_PROFILE_DIR)/data
+	@echo "port = 54325" >> $(PGX_PROFILE_DIR)/data/postgresql.conf
 	@echo "Starting PostgreSQL..."
-	@LD_LIBRARY_PATH=/opt/pgx-profile/lib/compat /opt/pgx-profile/bin/pg_ctl -D /opt/pgx-profile/data -l /tmp/pgx-profile.log start
+	@LD_LIBRARY_PATH=$(PGX_PROFILE_DIR)/lib/compat $(PGX_PROFILE_DIR)/bin/pg_ctl -D $(PGX_PROFILE_DIR)/data -l /tmp/pgx-profile.log start
 	@sleep 2
 	@psql -h localhost -p 54325 -U $(USER) -d postgres -c "CREATE USER postgres SUPERUSER;"
 	@echo ""
@@ -310,24 +309,24 @@ build-perf:
 	@echo "perf binary available at: /workspace/docker/perf-built"
 
 # Host installation for profiling (no Docker overhead)
-# ============================================================================
+PGX_PROFILE_DIR ?= $(HOME)/.pgx-profile
+
 install-host-profile: build-profile build-postgres-debug
-	@echo "Installing PostgreSQL + pgx_lower (with -pg profiling) to /opt/pgx-profile..."
-	@sudo rm -rf /opt/pgx-profile
-	@sudo mkdir -p /opt/pgx-profile
+	@echo "Installing PostgreSQL + pgx_lower (with -pg profiling) to $(PGX_PROFILE_DIR)..."
+	@rm -rf $(PGX_PROFILE_DIR)
+	@mkdir -p $(PGX_PROFILE_DIR)
 	@echo "Extracting postgres-debug (with -pg) from container..."
 	@docker exec pgx-lower-dev tar czf /workspace/postgres-debug.tar.gz -C /workspace postgres-debug
 	@docker exec pgx-lower-dev bash -c "cd /usr/lib/x86_64-linux-gnu && tar czf /workspace/icu74.tar.gz libicu*.so.74*"
 	@docker exec pgx-lower-dev bash -c "cd /usr/lib/llvm-20/lib && tar czf /workspace/mlir-libs.tar.gz libMLIR*.so* libLLVM*.so*"
-	@sudo tar xzf ../postgres-debug.tar.gz -C /opt/pgx-profile --strip-components=1
-	@sudo mkdir -p /opt/pgx-profile/lib/compat
-	@sudo tar xzf ../icu74.tar.gz -C /opt/pgx-profile/lib/compat
-	@sudo tar xzf ../mlir-libs.tar.gz -C /opt/pgx-profile/lib/compat
-	@sudo chown -R $$USER:$$USER /opt/pgx-profile
+	@tar xzf ../postgres-debug.tar.gz -C $(PGX_PROFILE_DIR) --strip-components=1
+	@mkdir -p $(PGX_PROFILE_DIR)/lib/compat
+	@tar xzf ../icu74.tar.gz -C $(PGX_PROFILE_DIR)/lib/compat
+	@tar xzf ../mlir-libs.tar.gz -C $(PGX_PROFILE_DIR)/lib/compat
 	@echo "Installing pgx_lower extension (with -pg profiling)..."
-	@cp ../build-docker-ptest-profile/extension/pgx_lower.so /opt/pgx-profile/lib/
-	@cp ../extension/control/pgx_lower.control /opt/pgx-profile/share/extension/
-	@cp ../extension/sql/pgx_lower--1.0.sql /opt/pgx-profile/share/extension/
+	@cp ../build-docker-ptest-profile/extension/pgx_lower.so $(PGX_PROFILE_DIR)/lib/
+	@cp ../extension/control/pgx_lower.control $(PGX_PROFILE_DIR)/share/extension/
+	@cp ../extension/sql/pgx_lower--1.0.sql $(PGX_PROFILE_DIR)/share/extension/
 	@echo ""
 	@echo "PostgreSQL + pgx_lower with -pg instrumentation installed successfully!"
 	@echo "Database will be initialized when running benchmarks."
