@@ -145,7 +145,7 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     -9999.99 |  -1245.6789 | f                | t             |  -11245.6689 |       -19999.98
      9999.99 |  9999.99999 | t                | t             |  19999.98999 |        19999.98
              |             |                  |               |              |                
-        0.00 |     0.00000 | f                | t             |      0.00000 |        0.000000
+           0 |           0 | f                | t             |            0 |               0
 (5 rows)
 
 SELECT SUM(decimal_col) AS sum_decimal,
@@ -263,7 +263,7 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  f        |     -200 |    -2000 |   -200000 |      -2.71 | -2.71828182846 | world      | test       | another text     |    -9999.99 |  -1245.6789 | 06-30-2024 | Sun Jun 30 14:45:30.123 2024    | @ 2160 hours
  t        |      322 |    21474 | 922337203 |   1.23e+10 |       1.23e+20 | special!@# | chars$%^   | third text       |     9999.99 |  9999.99999 | 12-31-2024 | Tue Dec 31 23:59:59.999999 2024 | @ 10080 hours
           |          |          |           |            |                |            |            |                  |             |             |            |                                 | 
- f        |        0 |        0 |         0 |          0 |              0 |            |            |                  |        0.00 |     0.00000 | 02-29-2024 | Thu Feb 29 00:00:00 2024        | @ 0
+ f        |        0 |        0 |         0 |          0 |              0 |            |            |                  |           0 |           0 | 02-29-2024 | Thu Feb 29 00:00:00 2024        | @ 0
 (5 rows)
 
 DROP TABLE type_test_table;

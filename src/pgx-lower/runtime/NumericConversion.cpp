@@ -93,6 +93,9 @@ struct NumericData {
 #define NUMERIC_DIGITS(num) (NUMERIC_HEADER_IS_SHORT(num) ? (num)->choice.n_short.n_data : (num)->choice.n_long.n_data)
 #define NUMERIC_NDIGITS(num) ((VARSIZE(num) - NUMERIC_HEADER_SIZE(num)) / sizeof(NumericDigit))
 
+// Size of numeric header (long format)
+#define NUMERIC_HDRSZ (VARHDRSZ + sizeof(uint16) + sizeof(int16))
+
 __int128 numeric_to_i128(Datum numeric_datum, int32_t target_scale) {
     PGX_IO(RUNTIME);
 
@@ -147,61 +150,80 @@ Datum i128_to_numeric(__int128 value, int32_t scale) {
 
     PGX_LOG(RUNTIME, TRACE, "i128_to_numeric: value=%lld, scale=%d", static_cast<long long>(value), scale);
 
-    char value_str[45];
+    if (value == 0) {
+        return DirectFunctionCall1(int4_numeric, Int32GetDatum(0));
+    }
+
     const bool is_negative = (value < 0);
     __uint128_t abs_value = is_negative ? -static_cast<__uint128_t>(value) : static_cast<__uint128_t>(value);
 
-    char* p = value_str + sizeof(value_str) - 1;
-    *p = '\0';
-
-    do {
-        *--p = '0' + (abs_value % 10);
-        abs_value /= 10;
-    } while (abs_value > 0 && p > value_str);
-
-    if (is_negative && p > value_str) {
-        *--p = '-';
+    __uint128_t scale_divisor = 1;
+    for (int i = 0; i < scale; i++) {
+        scale_divisor *= 10;
     }
 
-    size_t len = strlen(p);
-    char* end = p + len - 1;
-    int zeros_removed = 0;
-    while (end > p && *end == '0' && zeros_removed < scale) {
-        *end-- = '\0';
-        zeros_removed++;
-    }
-    scale -= zeros_removed;
-    len = strlen(p);
+    __uint128_t integer_part = abs_value / scale_divisor;
+    __uint128_t fractional_part = abs_value % scale_divisor;
 
-    char buffer[128];
-    if (scale > 0) {
-        if (len <= static_cast<size_t>(scale)) {
-            const int leading_zeros = scale - len + 1;
-            buffer[0] = '0';
-            buffer[1] = '.';
-            int pos = 2;
-            for (int i = 1; i < leading_zeros; i++) {
-                buffer[pos++] = '0';
-            }
-            strcpy(buffer + pos, p);
-        } else {
-            // Number >= 1, insert decimal point
-            const size_t integer_len = len - scale;
-            strncpy(buffer, p, integer_len);
-            buffer[integer_len] = '.';
-            strcpy(buffer + integer_len + 1, p + integer_len);
-        }
+    int actual_frac_scale = scale;
+    while (actual_frac_scale > 0 && fractional_part % 10 == 0) {
+        fractional_part /= 10;
+        actual_frac_scale--;
+    }
+
+    const int frac_padding = (DEC_DIGITS - (actual_frac_scale % DEC_DIGITS)) % DEC_DIGITS;
+    for (int i = 0; i < frac_padding; i++) {
+        fractional_part *= 10;
+    }
+
+    NumericDigit int_digits[40];
+    int int_ndigits = 0;
+    __uint128_t temp = integer_part;
+    if (temp == 0) {
+        int_digits[int_ndigits++] = 0;
     } else {
-        // No decimal point needed
-        strcpy(buffer, p);
+        while (temp > 0) {
+            int_digits[int_ndigits++] = temp % NBASE;
+            temp /= NBASE;
+        }
     }
 
-    PGX_LOG(RUNTIME, TRACE, "i128_to_numeric: formatted='%s'", buffer);
+    NumericDigit frac_digits[40];
+    int frac_ndigits = 0;
+    temp = fractional_part;
+    const int expected_frac_digits = (actual_frac_scale + frac_padding) / DEC_DIGITS;
+    while (frac_ndigits < expected_frac_digits) {
+        frac_digits[frac_ndigits++] = temp % NBASE;
+        temp /= NBASE;
+    }
 
-    const Datum numeric_datum = DirectFunctionCall3(numeric_in, CStringGetDatum(buffer), ObjectIdGetDatum(InvalidOid),
-                                                    Int32GetDatum(-1));
+    NumericDigit digits[40];
+    int ndigits = 0;
 
-    const Datum copied_datum = datumCopy(numeric_datum, false, -1);
+    for (int i = int_ndigits - 1; i >= 0; i--) {
+        digits[ndigits++] = int_digits[i];
+    }
 
-    return copied_datum;
+    for (int i = frac_ndigits - 1; i >= 0; i--) {
+        digits[ndigits++] = frac_digits[i];
+    }
+
+    while (ndigits > int_ndigits && digits[ndigits - 1] == 0) {
+        ndigits--;
+    }
+
+    const int weight = int_ndigits - 1;
+
+    const int numeric_size = NUMERIC_HDRSZ + ndigits * sizeof(NumericDigit);
+    Numeric result = static_cast<Numeric>(palloc(numeric_size));
+
+    SET_VARSIZE(result, numeric_size);
+
+    result->choice.n_header = is_negative ? NUMERIC_NEG : NUMERIC_POS;
+    result->choice.n_long.n_sign_dscale = (is_negative ? NUMERIC_NEG : NUMERIC_POS) | (actual_frac_scale & NUMERIC_DSCALE_MASK);
+    result->choice.n_long.n_weight = weight;
+
+    memcpy(result->choice.n_long.n_data, digits, ndigits * sizeof(NumericDigit));
+
+    return NumericGetDatum(result);
 }
