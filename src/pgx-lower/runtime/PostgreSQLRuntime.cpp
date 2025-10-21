@@ -1,4 +1,5 @@
 #include "pgx-lower/runtime/PostgreSQLRuntime.h"
+#include "pgx-lower/runtime/NumericConversion.h"
 #include "lingodb/runtime/DataSourceIteration.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
@@ -298,77 +299,17 @@ void TableBuilder::addDecimal(const bool is_valid, const __int128 value) {
     if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
     } else {
-        // TODO: This obviously isn't perfect... converting into a string then relying on postgres constructors
-        //       is far from ideal. also, since its a uin128_t I can't just sprintf because it overflows. So...
         if (!this->next_decimal_scale.has_value()) {
             PGX_ERROR("Never set the decimal scale");
             throw std::runtime_error("Have no decimal scale");
         }
-        auto scale = this->next_decimal_scale.value();
+        const int32_t scale = this->next_decimal_scale.value();
 
-        char value_str[45];
-        const bool is_negative = (value < 0);
-        __uint128_t abs_value = is_negative ? -static_cast<__uint128_t>(value) : static_cast<__uint128_t>(value);
+        const Datum numeric_datum = i128_to_numeric(value, scale);
+        const auto numeric_value = DatumGetNumeric(numeric_datum);
 
-        char* p = value_str + sizeof(value_str) - 1;
-        *p = '\0';
-        do {
-            *--p = '0' + (abs_value % 10);
-            abs_value /= 10;
-        } while (abs_value > 0 && p > value_str);
-
-        if (is_negative && p > value_str) {
-            *--p = '-';
-        }
-
-        size_t len = strlen(p);
-        char* end = p + len - 1;
-        int zeros_removed = 0;
-        while (end > p && *end == '0' && zeros_removed < scale) {
-            *end-- = '\0';
-            zeros_removed++;
-        }
-        scale -= zeros_removed;
-        len = strlen(p);
-
-        // Format the numeric string with proper decimal point placement
-        char buffer[128];
-        if (scale > 0) {
-            // Need to insert decimal point
-            if (len <= scale) {
-                // Number is less than 1, need leading zeros
-                const int leading_zeros = scale - len + 1;
-                buffer[0] = '0';
-                buffer[1] = '.';
-                int pos = 2;
-                for (int i = 1; i < leading_zeros; i++) {
-                    buffer[pos++] = '0';
-                }
-                strcpy(buffer + pos, p);
-            } else {
-                // Number >= 1, insert decimal point at appropriate position
-                const size_t integer_len = len - scale;
-                strncpy(buffer, p, integer_len);
-                buffer[integer_len] = '.';
-                strcpy(buffer + integer_len + 1, p + integer_len);
-            }
-        } else {
-            // No decimal point needed
-            strcpy(buffer, p);
-        }
-        PGX_LOG(RUNTIME, DEBUG, "Decimal numeric: %s (scale=%d, removed %d trailing zeros)", buffer, scale,
-                zeros_removed);
-
-        PGX_LOG(RUNTIME, DEBUG, "addDecimal: before DirectFunctionCall3, CurrentMemoryContext=%p", CurrentMemoryContext);
-
-        const auto numeric_datum = DirectFunctionCall3(numeric_in, CStringGetDatum(buffer),
-                                                       ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
-
-        const auto copied_datum = datumCopy(numeric_datum, false, -1);
-        const auto numeric_value = DatumGetNumeric(copied_datum);
-
-        PGX_LOG(RUNTIME, DEBUG, "addDecimal: created and copied Numeric at %p (orig=%lu, copied=%lu)", numeric_value,
-                numeric_datum, copied_datum);
+        PGX_LOG(RUNTIME, DEBUG, "addDecimal: created Numeric at %p (scale=%d, value=%lld)",
+                numeric_value, scale, static_cast<long long>(value));
 
         pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
         this->next_decimal_scale = std::nullopt;
@@ -764,52 +705,16 @@ bool DataSourceIteration::isValid() {
                     PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC is NULL",
                             row_idx, json_col_idx, col_spec.name.c_str());
                 } else {
-                    // Convert Numeric to i128
-                    const Numeric num = DatumGetNumeric(temp_values[pg_col_idx]);
-
                     int32_t type_scale = 0;
                     if (attr->atttypmod >= 0) {
                         // typmod encoding: ((precision << 16) | scale) + 4
                         const int32_t adjusted = attr->atttypmod - 4; // VARHDRSZ = 4
                         type_scale = adjusted & 0xFFFF;
                     } else {
-                        type_scale = 6; // unconstrained
+                        type_scale = 6;
                     }
 
-                    char* numeric_str = DatumGetCString(DirectFunctionCall1(numeric_out, NumericGetDatum(num)));
-
-                    __int128 scaled_value = 0;
-                    const char* p = numeric_str;
-                    const bool negative = (*p == '-');
-                    if (negative) p++;
-
-                    int digits_after_decimal = 0;
-                    bool seen_decimal = false;
-
-                    while (*p) {
-                        if (*p == '.') {
-                            seen_decimal = true;
-                        } else if (*p >= '0' && *p <= '9') {
-                            scaled_value = scaled_value * 10 + (*p - '0');
-                            if (seen_decimal) {
-                                digits_after_decimal++;
-                            }
-                        }
-                        p++;
-                    }
-
-                    // Apply additional scaling if needed
-                    int scale_diff = type_scale - digits_after_decimal;
-                    while (scale_diff > 0) {
-                        scaled_value *= 10;
-                        scale_diff--;
-                    }
-
-                    if (negative) {
-                        scaled_value = -scaled_value;
-                    }
-
-                    pfree(numeric_str);
+                    __int128 scaled_value = numeric_to_i128(temp_values[pg_col_idx], type_scale);
 
                     iter->batch->decimal_values[json_col_idx][row_idx] = scaled_value;
                     PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC->i128: scale=%d, value=%lld",

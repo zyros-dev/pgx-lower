@@ -1,6 +1,7 @@
 // ReSharper disable CppUseStructuredBinding
 #include "lingodb/runtime/PgSortRuntime.h"
 #include "lingodb/runtime/RuntimeSpecifications.h"
+#include "pgx-lower/runtime/NumericConversion.h"
 #include "pgx-lower/utility/logging.h"
 #include <cstdlib>
 #include <cstring>
@@ -258,38 +259,10 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
             break;
         }
         case PhysicalType::DECIMAL128: {
-            // The scale is constant per column, so ordering is preserved
             const __int128 val = *reinterpret_cast<const __int128*>(&mlir_tuple[layout.value_offset]);
-
-            const int64_t upper = static_cast<int64_t>(val >> 64);
-            const uint64_t lower = static_cast<uint64_t>(val & 0xFFFFFFFFFFFFFFFFULL);
-
-            const int64_t lower_high = static_cast<int64_t>(lower >> 32);
-            const int64_t lower_low = lower & 0xFFFFFFFFULL;
-
-            const Numeric num_upper = int64_to_numeric(upper);
-            const Numeric num_2_64 = int64_to_numeric(1LL << 63);
-            Datum upper_shifted = DirectFunctionCall2(numeric_mul,
-                                                      NumericGetDatum(num_upper),
-                                                      NumericGetDatum(num_2_64));
-            upper_shifted = DirectFunctionCall2(numeric_mul,
-                                                upper_shifted,
-                                                NumericGetDatum(int64_to_numeric(2)));
-
-            const Numeric num_lower_high = int64_to_numeric(lower_high);
-            const Numeric num_2_32 = int64_to_numeric(1LL << 32);
-            const Datum lower_high_shifted = DirectFunctionCall2(numeric_mul,
-                                                           NumericGetDatum(num_lower_high),
-                                                           NumericGetDatum(num_2_32));
-
-            // Add all parts: upper * 2^64 + lower_high * 2^32 + lower_low
-            const Datum temp = DirectFunctionCall2(numeric_add, upper_shifted, lower_high_shifted);
-            const Datum result = DirectFunctionCall2(numeric_add,
-                                                     temp,
-                                                     NumericGetDatum(int64_to_numeric(lower_low)));
-
-            values[i] = result;
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: upper=%ld, lower=%lu", i, upper, lower);
+            values[i] = i128_to_numeric(val, 0);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: i128=%lld (unscaled)",
+                    i, static_cast<long long>(val));
             break;
         }
         default:
@@ -378,50 +351,10 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
             break;
         }
         case PhysicalType::DECIMAL128: {
-            const Numeric num = DatumGetNumeric(values[i]);
-
-            // Convert Numeric to string, then parse to __int128
-            char* num_str = DatumGetCString(DirectFunctionCall1(numeric_out, NumericGetDatum(num)));
-            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: input Numeric = %s", i, num_str);
-
-            // Parse string to __int128
-            __int128 val = 0;
-            bool negative = false;
-            char* p = num_str;
-
-            // Skip whitespace
-            while (*p == ' ') p++;
-
-            // Check for sign
-            if (*p == '-') {
-                negative = true;
-                p++;
-            } else if (*p == '+') {
-                p++;
-            }
-
-            // Parse digits
-            while (*p >= '0' && *p <= '9') {
-                val = val * 10 + (*p - '0');
-                p++;
-            }
-
-            // Skip decimal point and fractional part (we're working with scaled integers)
-            if (*p == '.') {
-                p++;
-                while (*p >= '0' && *p <= '9') {
-                    p++;
-                }
-            }
-
-            if (negative) {
-                val = -val;
-            }
-
+            const __int128 val = numeric_to_i128(values[i], 0);
             *reinterpret_cast<__int128*>(&mlir_tuple[layout.value_offset]) = val;
-            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: string='%s'", i, num_str);
-
-            pfree(num_str);
+            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: i128=%lld (unscaled)",
+                    i, static_cast<long long>(val));
             break;
         }
         default:
@@ -595,38 +528,10 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
         }
         case PhysicalType::DECIMAL128: {
             const __int128 val = *reinterpret_cast<const __int128*>(&tupleData[layout.value_offset]);
+            values[i] = i128_to_numeric(val, 0);
 
-            char buf[64];
-            char* p = buf + sizeof(buf) - 1;
-            *p = '\0';
-
-            __int128 tmp = val;
-            const bool negative = (tmp < 0);
-            if (negative) {
-                tmp = -tmp;
-            }
-
-            if (tmp == 0) {
-                *--p = '0';
-            } else {
-                while (tmp > 0) {
-                    *--p = '0' + static_cast<char>(tmp % 10);
-                    tmp /= 10;
-                }
-            }
-
-            if (negative) {
-                *--p = '-';
-            }
-
-            const Datum result = DirectFunctionCall3(
-                numeric_in,
-                CStringGetDatum(p),
-                ObjectIdGetDatum(InvalidOid),
-                Int32GetDatum(-1)
-            );
-            values[i] = result;
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: %s", i, p);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: i128=%lld (unscaled)",
+                    i, static_cast<long long>(val));
             break;
         }
         default:
