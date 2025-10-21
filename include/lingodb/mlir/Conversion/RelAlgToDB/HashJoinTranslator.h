@@ -64,7 +64,9 @@ class HashJoinUtils {
       if (mlir::isa<mlir::relalg::ReturnOp>(op)) {
          return true;
       }
-      if (mlir::isa<mlir::db::AndOp>(op) || first) {
+      if (mlir::isa<mlir::db::AndOp>(op) ||
+          mlir::isa<mlir::db::DeriveTruth>(op) ||
+          first) {
          for (auto* user : op->getUsers()) {
             if (!isAndedResult(user, false)) return false;
          }

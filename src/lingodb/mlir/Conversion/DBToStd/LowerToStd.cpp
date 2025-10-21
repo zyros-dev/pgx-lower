@@ -1067,6 +1067,9 @@ class HashLowering : public ConversionPattern {
             for (auto v : unpacked->getResults()) {
                totalHash = hashImpl(builder, loc, v, totalHash, originalTupleType.getType(i++));
             }
+            if (!totalHash) {
+               totalHash = builder.create<arith::ConstantOp>(loc, builder.getIndexType(), builder.getIndexAttr(0));
+            }
             return totalHash;
          } else if (originalType.isa<mlir::db::NullableType>()) {
             auto unpacked = builder.create<util::UnPackOp>(loc, v);
