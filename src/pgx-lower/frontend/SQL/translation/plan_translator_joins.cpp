@@ -172,6 +172,11 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
     auto result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue, leftTranslation,
                                         rightTranslation, combinedClauses);
 
+    if (result.op) {
+        result.op->setAttr("impl", ctx.builder.getStringAttr("hash"));
+        PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin: Set impl=\"hash\" attribute for hash join lowering");
+    }
+
     const bool is_outer_join = (hashJoin->join.jointype == JOIN_LEFT || hashJoin->join.jointype == JOIN_RIGHT
                                 || hashJoin->join.jointype == JOIN_FULL);
     if (hashJoin->join.plan.qual) {
