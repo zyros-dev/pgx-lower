@@ -33,7 +33,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     auto time_t = std::chrono::system_clock::to_time_t(timestamp);
 
     std::stringstream filename;
-    filename << "/tmp/pgx_lower_" << title << "_" << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".mlir";
+    filename << "/tmp/pgx_ir/pgx_lower_" << title << "_" << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".mlir";
 
     try {
         std::map<std::string, int> dialectCounts;

@@ -530,6 +530,11 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
     pg_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
     pg_conn.autocommit = False
 
+    with pg_conn.cursor() as cur:
+        cur.execute("SET enable_indexscan = off;")
+        cur.execute("SET enable_bitmapscan = off;")
+    pg_conn.commit()
+
     cursor = db_conn.cursor()
     cursor.execute(
         "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args, container) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

@@ -92,12 +92,6 @@ profiles:
         heap: false
 
       - container: benchmark
-        scale_factor: 0.64
-        iterations: 1
-        profile: false
-        heap: false
-
-      - container: benchmark
         scale_factor: 1
         iterations: 1
         profile: false
