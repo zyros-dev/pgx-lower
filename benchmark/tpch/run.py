@@ -167,12 +167,19 @@ def load_tpch_database(conn):
     print(f"Loading TPC-H database...")
     load_start = time.time()
     try:
-        with open(sql_file, 'r') as f:
-            sql = f.read()
+        dsn_params = conn.get_dsn_parameters()
+        result = subprocess.run(
+            ['psql', '-h', 'localhost', '-p', str(dsn_params.get('port', '5432')),
+             '-U', dsn_params.get('user', 'postgres'), '-f', str(sql_file)],
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
 
-        with conn.cursor() as cur:
-            cur.execute(sql)
-        conn.commit()
+        if result.returncode != 0:
+            print(f"ERROR loading database: {result.stderr}")
+            return False
+
         load_elapsed = time.time() - load_start
 
         with conn.cursor() as cur:
@@ -184,7 +191,6 @@ def load_tpch_database(conn):
 
     except Exception as e:
         print(f"ERROR loading database: {e}")
-        conn.rollback()
         return False
 
 
