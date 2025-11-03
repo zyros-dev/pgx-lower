@@ -625,8 +625,14 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
         pgx_mode = 'ON ' if pgx_enabled else 'OFF'
         print(f"\n{'pgx-lower' if pgx_enabled else 'PostgreSQL'} (pgx-lower {pgx_mode}):")
 
+        # Skip index-heavy queries that run for hours without indexes (only at SF > 0.01)
+        SKIP_QUERIES = {'q02', 'q17', 'q20'} if scale_factor > 0.01 else set()
+
         for qf in query_files:
             current += 1
+            if qf.stem in SKIP_QUERIES:
+                print(f"[{current}/{total}] {qf.stem}... SKIPPED (index-heavy query at SF={scale_factor})", flush=True)
+                continue
             print(f"[{current}/{total}] {qf.stem}...", end=' ', flush=True)
 
             metrics = run_query_with_metrics(

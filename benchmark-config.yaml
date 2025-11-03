@@ -56,30 +56,6 @@ profiles:
   full:
     runs:
       - container: benchmark
-        scale_factor: 0.01
-        iterations: 10
-        profile: false
-        heap: false
-
-      - container: benchmark
-        scale_factor: 0.02
-        iterations: 3
-        profile: false
-        heap: false
-
-      - container: benchmark
-        scale_factor: 0.04
-        iterations: 3
-        profile: false
-        heap: false
-
-      - container: benchmark
-        scale_factor: 0.08
-        iterations: 3
-        profile: false
-        heap: false
-
-      - container: benchmark
         scale_factor: 0.16
         iterations: 3
         profile: false
@@ -95,18 +71,6 @@ profiles:
         scale_factor: 1
         iterations: 1
         profile: false
-        heap: false
-
-      - container: host-profile
-        scale_factor: 0.01
-        iterations: 3
-        profile: true
-        heap: true
-
-      - container: host-profile
-        scale_factor: 0.1
-        iterations: 1
-        profile: true
         heap: false
 
 environment:
