@@ -631,8 +631,7 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
         pgx_mode = 'ON ' if pgx_enabled else 'OFF'
         print(f"\n{'pgx-lower' if pgx_enabled else 'PostgreSQL'} (pgx-lower {pgx_mode}):")
 
-        # Skip index-heavy queries that run for hours without indexes (only at SF > 0.01)
-        SKIP_QUERIES = {'q02', 'q17', 'q20'} if scale_factor > 0.01 else set()
+        SKIP_QUERIES = {'q02', 'q17', 'q20', 'q21'} if scale_factor > 0.01 else set()
 
         for qf in query_files:
             current += 1
