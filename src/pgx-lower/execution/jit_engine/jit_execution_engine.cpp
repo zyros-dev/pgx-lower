@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdlib>
 #include <chrono>
+#include <string>
 
 #include "mlir/IR/Verifier.h"
 #include "mlir/Target/LLVMIR/Dialect/All.h"
@@ -98,12 +99,11 @@ bool JITEngine::compile(mlir::ModuleOp module) {
     engine_ = std::move(*maybe_engine);
 
     if (!lookup_functions()) {
-        PGX_WARNING("Initial function lookup failed, trying static linking");
-        if (!link_static()) {
-            PGX_ERROR("Function lookup and static linking both failed");
-            return false;
-        }
+        PGX_ERROR("JIT function lookup failed");
+        return false;
     }
+
+    PGX_LOG(JIT, DEBUG, "JIT compilation successful");
 
     const auto end_time = std::chrono::high_resolution_clock::now();
     const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
@@ -374,7 +374,7 @@ bool JITEngine::lookup_functions() {
         main_fn_ = main_lookup.get();
         PGX_LOG(JIT, DEBUG, "Found main function at: %p", main_fn_);
     } else {
-        PGX_WARNING("Main function not found via ExecutionEngine::lookup");
+        PGX_ERROR("Main function not found via ExecutionEngine::lookup");
         return false;
     }
 
@@ -383,11 +383,11 @@ bool JITEngine::lookup_functions() {
         set_context_fn_ = ctx_lookup.get();
         PGX_LOG(JIT, DEBUG, "Found rt_set_execution_context at: %p", set_context_fn_);
     } else {
-        PGX_WARNING("rt_set_execution_context function not found");
+        PGX_ERROR("rt_set_execution_context function not found via ExecutionEngine::lookup");
         return false;
     }
 
-    return main_fn_ != nullptr && set_context_fn_ != nullptr;
+    return true;
 }
 
 bool JITEngine::link_static() {
