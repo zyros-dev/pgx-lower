@@ -45,6 +45,10 @@ def run_benchmark(run_config: Dict, container_info: Dict, run_num: int, total: i
     if run_config.get('label'):
         cmd.extend(['--label', run_config['label']])
 
+    iterations = run_config.get('iterations', 1)
+    if iterations > 1:
+        cmd.extend(['--iterations', str(iterations)])
+
     result = subprocess.run(cmd)
     success = result.returncode == 0
     print(f"  {'✓ PASS' if success else '✗ FAIL'}")

@@ -492,7 +492,7 @@ def setup_profiling_dirs(output_dir, run_timestamp, scale_factor):
     return dirpath
 
 
-def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False, label=None):
+def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False, label=None, iterations=1):
     db_file = output_dir / 'benchmark.db'
     db_conn = sqlite3.connect(db_file)
     db_conn.executescript(SCHEMA_SQL)
@@ -555,7 +555,7 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
     cursor = db_conn.cursor()
     cursor.execute(
         "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args, container, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (run_id, run_timestamp, sf, 1, get_postgres_version(pg_conn), get_pgx_version(),
+        (run_id, run_timestamp, sf, iterations, get_postgres_version(pg_conn), get_pgx_version(),
          subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_args, container, label))
     db_conn.commit()
 
@@ -638,7 +638,7 @@ def export_results_to_csv(db_conn, run_id, output_file):
 
 
 def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
-                          pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None, skipped_queries=None):
+                          pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None, skipped_queries=None, iterations=1):
     query_files = sorted((script_dir / 'queries').glob('q*.sql'))
 
     if query_filter:
@@ -658,10 +658,10 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
             print("Warning: magic-trace not found, profiling disabled")
             profile_enabled = False
 
-    total = len(query_files) * 2
+    total = len(query_files) * 2 * iterations
     current = 0
 
-    print(f"\n{total} queries...")
+    print(f"\n{total} queries ({iterations} iteration{'s' if iterations > 1 else ''} each)...")
 
     for pgx_enabled in [False, True]:
         if pgx_enabled and pg_conn:
@@ -679,15 +679,23 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
 
         SKIP_QUERIES = skipped_queries
 
-        for qf in query_files:
-            current += 1
-            if qf.stem in SKIP_QUERIES:
-                print(f"[{current}/{total}] {qf.stem}... SKIPPED (index-heavy query at SF={scale_factor})", flush=True)
-                continue
-            print(f"[{current}/{total}] {qf.stem}...", end=' ', flush=True)
+        for iteration in range(1, iterations + 1):
+            if iterations > 1:
+                print(f"  Iteration {iteration}/{iterations}:")
 
-            metrics = run_query_with_metrics(
-                pg_conn, qf, pgx_enabled, 1,
+            for qf in query_files:
+                current += 1
+                if qf.stem in SKIP_QUERIES:
+                    print(f"[{current}/{total}] {qf.stem}... SKIPPED", flush=True)
+                    continue
+
+                if iterations > 1:
+                    print(f"[{current}/{total}] {qf.stem} (iter {iteration})...", end=' ', flush=True)
+                else:
+                    print(f"[{current}/{total}] {qf.stem}...", end=' ', flush=True)
+
+                metrics = run_query_with_metrics(
+                    pg_conn, qf, pgx_enabled, iteration,
                 profile_enabled=profile_enabled,
                 output_dir=output_dir,
                 db_conn=db_conn,
@@ -769,6 +777,8 @@ def main():
                         help='Comma-separated list of queries to skip (e.g., q02,q17,q20,q21)')
     parser.add_argument('--label', type=str, default='',
                         help='Label for this benchmark run configuration')
+    parser.add_argument('--iterations', type=int, default=1,
+                        help='Number of iterations to run each query (default: 1)')
     args = parser.parse_args()
 
     sf = args.scale_factor
@@ -779,11 +789,14 @@ def main():
     indexes_enabled = args.indexes
     skipped_queries = set(args.skip.split(',')) if args.skip else set()
     label = args.label
+    iterations = args.iterations
 
     if not label:
         label = f"SF={sf}, indexes {'enabled' if indexes_enabled else 'disabled'}"
         if skipped_queries:
             label += f", excluding {{{','.join(sorted(skipped_queries))}}}"
+        if iterations > 1:
+            label += f", {iterations} iterations"
 
     script_dir = Path(__file__).parent
     output_dir = script_dir.parent / 'output'
@@ -804,7 +817,7 @@ def main():
         run_args_parts.append(f"--query={query_filter}")
     run_args = " ".join(run_args_parts)
 
-    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name, indexes_enabled, label)
+    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name, indexes_enabled, label, iterations)
 
     postgres_version = get_postgres_version(pg_conn)
     pgx_version = get_pgx_version()
@@ -816,7 +829,7 @@ def main():
         sys.exit(1)
 
     run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
-                          pgx_version, postgres_version, sf, db_file, pg_port, query_filter, skipped_queries)
+                          pgx_version, postgres_version, sf, db_file, pg_port, query_filter, skipped_queries, iterations)
 
     pg_conn.close()
     validate_results(db_conn, run_id)
