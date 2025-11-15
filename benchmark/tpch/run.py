@@ -58,7 +58,8 @@ SCHEMA_SQL = """
                  pgx_version      TEXT,
                  hostname         TEXT,
                  run_args         TEXT,
-                 container        TEXT
+                 container        TEXT,
+                 label            TEXT
              );
 
              CREATE TABLE IF NOT EXISTS queries
@@ -491,7 +492,7 @@ def setup_profiling_dirs(output_dir, run_timestamp, scale_factor):
     return dirpath
 
 
-def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False):
+def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False, label=None):
     db_file = output_dir / 'benchmark.db'
     db_conn = sqlite3.connect(db_file)
     db_conn.executescript(SCHEMA_SQL)
@@ -553,9 +554,9 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
 
     cursor = db_conn.cursor()
     cursor.execute(
-        "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args, container) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (run_id, run_timestamp, scale_factor, iterations, postgres_version, pgx_version, hostname, run_args, container, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, run_timestamp, sf, 1, get_postgres_version(pg_conn), get_pgx_version(),
-         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_args, container))
+         subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip(), run_args, container, label))
     db_conn.commit()
 
     return db_conn, pg_conn, db_file
@@ -602,21 +603,18 @@ def validate_results(db_conn, run_id):
 
 
 def export_results_to_csv(db_conn, run_id, output_file):
-    """Export benchmark results to CSV with peak memory usage."""
     cursor = db_conn.cursor()
     cursor.execute("""
         SELECT
-            r.scale_factor,
+            COALESCE(r.label,
+                     'SF=' || r.scale_factor ||
+                     CASE WHEN EXISTS(SELECT 1 FROM queries WHERE run_id = r.run_id LIMIT 1) THEN '' ELSE '' END) as label,
             q.query_name,
             q.pgx_enabled,
-            json_extract(q.execution_metadata, '$.status') as status,
             json_extract(q.execution_metadata, '$.duration_ms') as duration_ms,
-            json_extract(q.execution_metadata, '$.row_count') as row_count,
             json_extract(q.metrics_json, '$.memory_peak_mb') as memory_peak_mb,
-            json_extract(q.metrics_json, '$.cpu_user_sec') as cpu_user_sec,
-            json_extract(q.metrics_json, '$.cpu_system_sec') as cpu_system_sec,
-            json_extract(q.metrics_json, '$.io_read_mb') as io_read_mb,
-            json_extract(q.metrics_json, '$.io_write_mb') as io_write_mb,
+            json_extract(q.execution_metadata, '$.status') as status,
+            json_extract(q.execution_metadata, '$.row_count') as row_count,
             json_extract(q.result_validation, '$.valid') as result_valid
         FROM queries q
         JOIN runs r ON q.run_id = r.run_id
@@ -629,10 +627,8 @@ def export_results_to_csv(db_conn, run_id, output_file):
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow([
-            'scale_factor', 'query_name', 'pgx_enabled', 'status',
-            'duration_ms', 'row_count', 'memory_peak_mb',
-            'cpu_user_sec', 'cpu_system_sec', 'io_read_mb', 'io_write_mb',
-            'result_valid'
+            'label', 'query', 'pgx_enabled', 'time_ms', 'memory_peak_mb',
+            'status', 'row_count', 'result_valid'
         ])
 
         for row in rows:
@@ -771,6 +767,8 @@ def main():
                         help='Enable indexes on TPC-H tables')
     parser.add_argument('--skip', type=str, default='',
                         help='Comma-separated list of queries to skip (e.g., q02,q17,q20,q21)')
+    parser.add_argument('--label', type=str, default='',
+                        help='Label for this benchmark run configuration')
     args = parser.parse_args()
 
     sf = args.scale_factor
@@ -780,6 +778,12 @@ def main():
     pg_port = args.port
     indexes_enabled = args.indexes
     skipped_queries = set(args.skip.split(',')) if args.skip else set()
+    label = args.label
+
+    if not label:
+        label = f"SF={sf}, indexes {'enabled' if indexes_enabled else 'disabled'}"
+        if skipped_queries:
+            label += f", excluding {{{','.join(sorted(skipped_queries))}}}"
 
     script_dir = Path(__file__).parent
     output_dir = script_dir.parent / 'output'
@@ -800,7 +804,7 @@ def main():
         run_args_parts.append(f"--query={query_filter}")
     run_args = " ".join(run_args_parts)
 
-    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name, indexes_enabled)
+    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name, indexes_enabled, label)
 
     postgres_version = get_postgres_version(pg_conn)
     pgx_version = get_pgx_version()

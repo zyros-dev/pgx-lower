@@ -74,6 +74,7 @@ profiles:
         heap: false
         indexes: false
         skipped_queries: ""
+        label: "SF=0.01, indexes disabled, 5 iterations"
 
       - container: benchmark
         scale_factor: 0.01
@@ -82,6 +83,7 @@ profiles:
         heap: false
         indexes: false
         skipped_queries: "q07,q20"
+        label: "SF=0.01, indexes disabled - excluding postgres {q07,q20}, 100 iterations"
 
       - container: benchmark
         scale_factor: 0.01
@@ -90,6 +92,7 @@ profiles:
         heap: false
         indexes: true
         skipped_queries: ""
+        label: "SF=0.01, indexes enabled, 100 iterations"
 
       - container: benchmark
         scale_factor: 0.16
@@ -98,6 +101,7 @@ profiles:
         heap: false
         indexes: true
         skipped_queries: ""
+        label: "SF=0.16, indexes enabled, 5 iterations"
 
       - container: benchmark
         scale_factor: 0.16
@@ -106,6 +110,7 @@ profiles:
         heap: false
         indexes: true
         skipped_queries: "q17,q20"
+        label: "SF=0.16, indexes enabled, excluding {q17,q20}, 100 iterations"
 
       - container: benchmark
         scale_factor: 1
@@ -114,6 +119,7 @@ profiles:
         heap: false
         indexes: false
         skipped_queries: "q02,q17,q20,q21"
+        label: "SF=1, indexes disabled, excluding {q02,q17,q20,q21}, 100 iterations"
 
 
 environment:

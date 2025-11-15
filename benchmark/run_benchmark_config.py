@@ -42,6 +42,8 @@ def run_benchmark(run_config: Dict, container_info: Dict, run_num: int, total: i
         cmd.append('--indexes')
     if run_config.get('skipped_queries'):
         cmd.extend(['--skip', run_config['skipped_queries']])
+    if run_config.get('label'):
+        cmd.extend(['--label', run_config['label']])
 
     result = subprocess.run(cmd)
     success = result.returncode == 0
