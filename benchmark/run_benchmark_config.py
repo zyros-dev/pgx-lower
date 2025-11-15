@@ -20,6 +20,13 @@ def run_benchmark(run_config: Dict, container_info: Dict, run_num: int, total: i
     print(f"  Container: {container_info['name']} (port {port})")
     print(f"  Scale Factor: {sf}, Iterations: {run_config.get('iterations', 1)}")
 
+    indexes = run_config.get('indexes', False)
+    skipped = run_config.get('skipped_queries', '')
+    if indexes:
+        print(f"  Indexes: enabled")
+    if skipped:
+        print(f"  Skipping: {skipped}")
+
     cmd = ['python3', str(Path(__file__).parent / 'tpch' / 'run.py'), str(sf), '--port', str(port)]
 
     cmd.extend(['--container', container_info['name']])
@@ -30,6 +37,11 @@ def run_benchmark(run_config: Dict, container_info: Dict, run_num: int, total: i
         cmd.append('--heap')
     if 'query' in run_config:
         cmd.extend(['--query', run_config['query']])
+
+    if run_config.get('indexes', False):
+        cmd.append('--indexes')
+    if run_config.get('skipped_queries'):
+        cmd.extend(['--skip', run_config['skipped_queries']])
 
     result = subprocess.run(cmd)
     success = result.returncode == 0

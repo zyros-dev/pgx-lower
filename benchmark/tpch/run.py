@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -410,7 +411,12 @@ def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_ena
     detailed_metrics['io_write_mb'] = (io_end.write_bytes - io_start.write_bytes) / (1024 * 1024)
     detailed_metrics['cpu_user_sec'] = cpu_end.user - cpu_start.user
     detailed_metrics['cpu_system_sec'] = cpu_end.system - cpu_start.system
-    detailed_metrics['memory_peak_mb'] = mem_end.rss / (1024 * 1024)
+
+    # Calculate peak memory from timeseries samples
+    if timeseries:
+        detailed_metrics['memory_peak_mb'] = max(sample['mem_mb'] for sample in timeseries)
+    else:
+        detailed_metrics['memory_peak_mb'] = mem_end.rss / (1024 * 1024)
 
     try:
         ctx_switches = process.num_ctx_switches()
@@ -485,7 +491,7 @@ def setup_profiling_dirs(output_dir, run_timestamp, scale_factor):
     return dirpath
 
 
-def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None):
+def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False):
     db_file = output_dir / 'benchmark.db'
     db_conn = sqlite3.connect(db_file)
     db_conn.executescript(SCHEMA_SQL)
@@ -537,8 +543,12 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
     pg_conn.autocommit = False
 
     with pg_conn.cursor() as cur:
-        cur.execute("SET enable_indexscan = off;")
-        cur.execute("SET enable_bitmapscan = off;")
+        if not indexes_enabled:
+            cur.execute("SET enable_indexscan = off;")
+            cur.execute("SET enable_bitmapscan = off;")
+        else:
+            cur.execute("SET enable_indexscan = on;")
+            cur.execute("SET enable_bitmapscan = on;")
     pg_conn.commit()
 
     cursor = db_conn.cursor()
@@ -591,8 +601,48 @@ def validate_results(db_conn, run_id):
         print(f"\nAll query results validated!")
 
 
+def export_results_to_csv(db_conn, run_id, output_file):
+    """Export benchmark results to CSV with peak memory usage."""
+    cursor = db_conn.cursor()
+    cursor.execute("""
+        SELECT
+            r.scale_factor,
+            q.query_name,
+            q.pgx_enabled,
+            json_extract(q.execution_metadata, '$.status') as status,
+            json_extract(q.execution_metadata, '$.duration_ms') as duration_ms,
+            json_extract(q.execution_metadata, '$.row_count') as row_count,
+            json_extract(q.metrics_json, '$.memory_peak_mb') as memory_peak_mb,
+            json_extract(q.metrics_json, '$.cpu_user_sec') as cpu_user_sec,
+            json_extract(q.metrics_json, '$.cpu_system_sec') as cpu_system_sec,
+            json_extract(q.metrics_json, '$.io_read_mb') as io_read_mb,
+            json_extract(q.metrics_json, '$.io_write_mb') as io_write_mb,
+            json_extract(q.result_validation, '$.valid') as result_valid
+        FROM queries q
+        JOIN runs r ON q.run_id = r.run_id
+        WHERE q.run_id = ?
+        ORDER BY q.query_name, q.pgx_enabled
+    """, (run_id,))
+
+    rows = cursor.fetchall()
+
+    with open(output_file, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow([
+            'scale_factor', 'query_name', 'pgx_enabled', 'status',
+            'duration_ms', 'row_count', 'memory_peak_mb',
+            'cpu_user_sec', 'cpu_system_sec', 'io_read_mb', 'io_write_mb',
+            'result_valid'
+        ])
+
+        for row in rows:
+            writer.writerow(row)
+
+    print(f"Results exported to: {output_file}")
+
+
 def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
-                          pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None):
+                          pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None, skipped_queries=None):
     query_files = sorted((script_dir / 'queries').glob('q*.sql'))
 
     if query_filter:
@@ -631,7 +681,7 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
         pgx_mode = 'ON ' if pgx_enabled else 'OFF'
         print(f"\n{'pgx-lower' if pgx_enabled else 'PostgreSQL'} (pgx-lower {pgx_mode}):")
 
-        SKIP_QUERIES = {'q02', 'q17', 'q20', 'q21'} if scale_factor > 0.01 else set()
+        SKIP_QUERIES = skipped_queries
 
         for qf in query_files:
             current += 1
@@ -717,6 +767,10 @@ def main():
                         help='PostgreSQL port (default: 5432)')
     parser.add_argument('--container', type=str, default='unknown',
                         help='Container name (for tracking which container this run came from)')
+    parser.add_argument('--indexes', action='store_true',
+                        help='Enable indexes on TPC-H tables')
+    parser.add_argument('--skip', type=str, default='',
+                        help='Comma-separated list of queries to skip (e.g., q02,q17,q20,q21)')
     args = parser.parse_args()
 
     sf = args.scale_factor
@@ -724,6 +778,8 @@ def main():
     query_filter = args.query
     container_name = args.container
     pg_port = args.port
+    indexes_enabled = args.indexes
+    skipped_queries = set(args.skip.split(',')) if args.skip else set()
 
     script_dir = Path(__file__).parent
     output_dir = script_dir.parent / 'output'
@@ -744,7 +800,7 @@ def main():
         run_args_parts.append(f"--query={query_filter}")
     run_args = " ".join(run_args_parts)
 
-    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name)
+    db_conn, pg_conn, db_file = init_databases(sf, run_id, output_dir, run_timestamp, pg_port, run_args, container_name, indexes_enabled)
 
     postgres_version = get_postgres_version(pg_conn)
     pgx_version = get_pgx_version()
@@ -756,10 +812,15 @@ def main():
         sys.exit(1)
 
     run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
-                          pgx_version, postgres_version, sf, db_file, pg_port, query_filter)
+                          pgx_version, postgres_version, sf, db_file, pg_port, query_filter, skipped_queries)
 
     pg_conn.close()
     validate_results(db_conn, run_id)
+
+    # Export results to CSV
+    csv_file = output_dir / f'{run_id}_results.csv'
+    export_results_to_csv(db_conn, run_id, csv_file)
+
     db_conn.close()
 
     print(f"\nDone: {db_file}")
