@@ -73,7 +73,7 @@ profiles:
         iterations: 100
         profile: false
         heap: false
-        indexes: false
+        indexes: true
         skipped_queries: ""
         perf_stats: true
         label: "SF=0.01, perf stats - branch/LLC analysis, 10 iterations"
@@ -83,7 +83,7 @@ profiles:
         iterations: 100
         profile: false
         heap: false
-        indexes: false
+        indexes: true
         skipped_queries: "q02,q17,q20,q21"
         perf_stats: true
         label: "SF=1, perf stats - branch/LLC analysis, excluding {q02,q17,q20,q21}, 10 iterations"
