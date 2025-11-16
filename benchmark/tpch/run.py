@@ -26,52 +26,46 @@ from fxt_to_flamegraph import fxt_to_flamegraph_json
 
 def run_query_with_perf(conn, query_sql, pgx_enabled):
     """Run a query under perf stat to collect comprehensive hardware performance metrics."""
-    import tempfile
-    import re
+    import signal
+    import time
 
-    # Create a temporary script to run the query
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-        script_path = f.name
-        f.write(f"""
-import psycopg2
-import sys
+    with conn.cursor() as cur:
+        # Get backend PID - same as magic-trace does it
+        cur.execute("SELECT pg_backend_pid()")
+        backend_pid = cur.fetchone()[0]
 
-conn = psycopg2.connect(
-    host='localhost',
-    port={conn.info.port},
-    database='{conn.info.dbname}',
-    user='{conn.info.user}'
-)
+        # Set pgx mode
+        cur.execute(f"SET pgx.enabled = {'on' if pgx_enabled else 'off'}")
 
-with conn.cursor() as cur:
-    cur.execute("SET pgx.enabled = {'on' if pgx_enabled else 'off'}")
-    cur.execute('''{query_sql.replace("'", "''")}''')
-    rows = cur.fetchall()
-    print(f"Rows: {{len(rows)}}")
-
-conn.close()
-""")
-
-    try:
-        # Run with perf stat to collect all hardware counters
+        # Start perf stat attached to the backend process
         perf_cmd = [
-            'perf', 'stat',
+            'sudo', 'perf', 'stat',
+            '-p', str(backend_pid),
             '-e', 'task-clock,page-faults,cycles,instructions,branches,branch-misses,LLC-loads,LLC-load-misses',
-            '--', 'python3', script_path
+            '-o', '/tmp/perf_output.txt'
         ]
 
-        result = subprocess.run(perf_cmd, capture_output=True, text=True)
+        perf_proc = subprocess.Popen(perf_cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        time.sleep(0.1)  # Let perf attach
 
-        # Check if perf failed due to permissions
-        if result.returncode != 0:
-            if 'perf_event_paranoid' in result.stderr or 'Access to performance' in result.stderr:
-                print(f"\n[Warning] perf stat requires elevated permissions. Try:")
-                print(f"  sudo sysctl kernel.perf_event_paranoid=-1")
-                return {}
+        # Run the actual query
+        cur.execute(query_sql)
+        rows = cur.fetchall()
+
+        # Stop perf
+        perf_proc.send_signal(signal.SIGINT)
+        perf_proc.wait(timeout=5)
+
+        # Read perf output
+        try:
+            with open('/tmp/perf_output.txt', 'r') as f:
+                result_text = f.read()
+        except:
+            return {}
 
         # Parse perf stat output
         metrics = {}
-        for line in result.stderr.split('\n'):
+        for line in result_text.split('\n'):
             line = line.strip()
             if not line:
                 continue
@@ -177,9 +171,6 @@ conn.close()
                         pass
 
         return metrics
-
-    finally:
-        os.unlink(script_path)
 
 
 def get_cpu_vendor() -> str:
