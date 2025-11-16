@@ -696,59 +696,59 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
 
                 metrics = run_query_with_metrics(
                     pg_conn, qf, pgx_enabled, iteration,
-                profile_enabled=profile_enabled,
-                output_dir=output_dir,
-                db_conn=db_conn,
-                cpu_vendor=cpu_vendor,
-                magic_trace_available=magic_trace_available,
-                scale_factor=scale_factor
-            )
-            query_id = insert_metrics(db_conn, run_id, metrics, run_timestamp, pgx_version, postgres_version,
-                                      scale_factor)
+                    profile_enabled=profile_enabled,
+                    output_dir=output_dir,
+                    db_conn=db_conn,
+                    cpu_vendor=cpu_vendor,
+                    magic_trace_available=magic_trace_available,
+                    scale_factor=scale_factor
+                )
+                query_id = insert_metrics(db_conn, run_id, metrics, run_timestamp, pgx_version, postgres_version,
+                                          scale_factor)
 
-            if profile_enabled and metrics['status'] == 'SUCCESS' and metrics.get('magic_trace_file'):
-                trace_file = Path(metrics['magic_trace_file'])
+                if profile_enabled and metrics['status'] == 'SUCCESS' and metrics.get('magic_trace_file'):
+                    trace_file = Path(metrics['magic_trace_file'])
 
-                if not trace_file.exists():
-                    print("[fxt file missing]", end=' ')
+                    if not trace_file.exists():
+                        print("[fxt file missing]", end=' ')
+                    else:
+                        trace_size_kb = trace_file.stat().st_size / 1024
+
+                        flamegraph_blob = fxt_to_flamegraph_json(trace_file)
+                        flamegraph_size_kb = len(flamegraph_blob) / 1024 if flamegraph_blob else None
+
+                        with open(trace_file, 'rb') as f:
+                            fxt_data = f.read()
+                        fxt_compressed = lz4.frame.compress(fxt_data, compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
+                        fxt_compressed_kb = len(fxt_compressed) / 1024
+
+                        profile_metadata = json.dumps({
+                            'magic_trace': {
+                                'file': str(trace_file),
+                                'raw_kb': trace_size_kb,
+                                'compressed_kb': fxt_compressed_kb,
+                                'compression_ratio': trace_size_kb / fxt_compressed_kb if fxt_compressed_kb > 0 else None,
+                                'cpu_vendor': cpu_vendor,
+                                'mode': 'intel_pt' if cpu_vendor == 'intel' else 'sampling' if cpu_vendor == 'amd' else 'unknown'
+                            },
+                            'flamegraph': {
+                                'size_kb': flamegraph_size_kb,
+                                'available': flamegraph_blob is not None
+                            }
+                        })
+
+                        cursor = db_conn.cursor()
+                        cursor.execute("""
+                                       INSERT INTO profiling (query_id, cpu_data_lz4, cpu_flamegraph_lz4, profile_metadata)
+                                       VALUES (?, ?, ?, ?)
+                                       """, (query_id, fxt_compressed, flamegraph_blob, profile_metadata))
+                        db_conn.commit()
+
+                if metrics['status'] == 'SUCCESS':
+                    hash_short = metrics['result_hash'][:8]
+                    print(f"{metrics['duration_ms']:.1f}ms [{hash_short}]")
                 else:
-                    trace_size_kb = trace_file.stat().st_size / 1024
-
-                    flamegraph_blob = fxt_to_flamegraph_json(trace_file)
-                    flamegraph_size_kb = len(flamegraph_blob) / 1024 if flamegraph_blob else None
-
-                    with open(trace_file, 'rb') as f:
-                        fxt_data = f.read()
-                    fxt_compressed = lz4.frame.compress(fxt_data, compression_level=lz4.frame.COMPRESSIONLEVEL_MAX)
-                    fxt_compressed_kb = len(fxt_compressed) / 1024
-
-                    profile_metadata = json.dumps({
-                        'magic_trace': {
-                            'file': str(trace_file),
-                            'raw_kb': trace_size_kb,
-                            'compressed_kb': fxt_compressed_kb,
-                            'compression_ratio': trace_size_kb / fxt_compressed_kb if fxt_compressed_kb > 0 else None,
-                            'cpu_vendor': cpu_vendor,
-                            'mode': 'intel_pt' if cpu_vendor == 'intel' else 'sampling' if cpu_vendor == 'amd' else 'unknown'
-                        },
-                        'flamegraph': {
-                            'size_kb': flamegraph_size_kb,
-                            'available': flamegraph_blob is not None
-                        }
-                    })
-
-                    cursor = db_conn.cursor()
-                    cursor.execute("""
-                                   INSERT INTO profiling (query_id, cpu_data_lz4, cpu_flamegraph_lz4, profile_metadata)
-                                   VALUES (?, ?, ?, ?)
-                                   """, (query_id, fxt_compressed, flamegraph_blob, profile_metadata))
-                    db_conn.commit()
-
-            if metrics['status'] == 'SUCCESS':
-                hash_short = metrics['result_hash'][:8]
-                print(f"{metrics['duration_ms']:.1f}ms [{hash_short}]")
-            else:
-                print(f"ERROR: {metrics['error_message']}")
+                    print(f"ERROR: {metrics['error_message']}")
 
     print("\nComputing aggregate statistics...")
     from aggregate import aggregate_latest_run
