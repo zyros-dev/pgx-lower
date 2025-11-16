@@ -70,7 +70,7 @@ profiles:
     runs:
       - container: host-profile
         scale_factor: 0.01
-        iterations: 1
+        iterations: 100
         profile: false
         heap: false
         indexes: false
@@ -80,7 +80,7 @@ profiles:
 
       - container: host-profile
         scale_factor: 1
-        iterations: 1
+        iterations: 100
         profile: false
         heap: false
         indexes: false
