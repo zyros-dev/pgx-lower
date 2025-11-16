@@ -65,6 +65,29 @@ profiles:
         skipped_queries: ""
 
 
+  branch-prediction:
+    description: "Measure branch prediction and LLC miss rates with debug symbols"
+    runs:
+      - container: host-profile
+        scale_factor: 0.01
+        iterations: 1
+        profile: false
+        heap: false
+        indexes: false
+        skipped_queries: ""
+        perf_stats: true
+        label: "SF=0.01, perf stats - branch/LLC analysis, 10 iterations"
+
+      - container: host-profile
+        scale_factor: 1
+        iterations: 1
+        profile: false
+        heap: false
+        indexes: false
+        skipped_queries: "q02,q17,q20,q21"
+        perf_stats: true
+        label: "SF=1, perf stats - branch/LLC analysis, excluding {q02,q17,q20,q21}, 10 iterations"
+
   full:
     runs:
       - container: benchmark

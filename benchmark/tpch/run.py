@@ -24,6 +24,164 @@ from metrics_collector import collect_query_metrics
 from fxt_to_flamegraph import fxt_to_flamegraph_json
 
 
+def run_query_with_perf(conn, query_sql, pgx_enabled):
+    """Run a query under perf stat to collect comprehensive hardware performance metrics."""
+    import tempfile
+    import re
+
+    # Create a temporary script to run the query
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        script_path = f.name
+        f.write(f"""
+import psycopg2
+import sys
+
+conn = psycopg2.connect(
+    host='localhost',
+    port={conn.info.port},
+    database='{conn.info.dbname}',
+    user='{conn.info.user}'
+)
+
+with conn.cursor() as cur:
+    cur.execute("SET pgx.enabled = {'on' if pgx_enabled else 'off'}")
+    cur.execute('''{query_sql.replace("'", "''")}''')
+    rows = cur.fetchall()
+    print(f"Rows: {{len(rows)}}")
+
+conn.close()
+""")
+
+    try:
+        # Run with perf stat to collect all hardware counters
+        perf_cmd = [
+            'perf', 'stat',
+            '-e', 'task-clock,page-faults,cycles,instructions,branches,branch-misses,LLC-loads,LLC-load-misses',
+            '--', 'python3', script_path
+        ]
+
+        result = subprocess.run(perf_cmd, capture_output=True, text=True)
+
+        # Check if perf failed due to permissions
+        if result.returncode != 0:
+            if 'perf_event_paranoid' in result.stderr or 'Access to performance' in result.stderr:
+                print(f"\n[Warning] perf stat requires elevated permissions. Try:")
+                print(f"  sudo sysctl kernel.perf_event_paranoid=-1")
+                return {}
+
+        # Parse perf stat output
+        metrics = {}
+        for line in result.stderr.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Parse task-clock
+            if 'task-clock' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['task_clock_ms'] = float(val)
+                    except ValueError:
+                        pass
+
+            # Parse page-faults
+            elif 'page-faults' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['page_faults'] = int(val)
+                    except ValueError:
+                        pass
+
+            # Parse cycles
+            elif 'cycles' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['cycles'] = int(val)
+                    except ValueError:
+                        pass
+
+            # Parse instructions
+            elif 'instructions' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['instructions'] = int(val)
+                        # Extract IPC if available
+                        for part in parts:
+                            if 'insn' in part:
+                                idx = parts.index(part)
+                                if idx + 2 < len(parts) and parts[idx + 1] == 'per' and parts[idx + 2] == 'cycle':
+                                    if idx - 1 >= 0:
+                                        try:
+                                            metrics['ipc'] = float(parts[idx - 1])
+                                        except ValueError:
+                                            pass
+                    except ValueError:
+                        pass
+
+            # Parse branches
+            elif 'branches' in line and 'branch-misses' not in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['branches'] = int(val)
+                    except ValueError:
+                        pass
+
+            # Parse branch-misses
+            elif 'branch-misses' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['branch_misses'] = int(val)
+                        # Extract percentage if available
+                        for part in parts:
+                            if '%' in part:
+                                metrics['branch_miss_rate'] = float(part.strip('%'))
+                                break
+                    except ValueError:
+                        pass
+
+            # Parse LLC-loads
+            elif 'LLC-loads' in line and 'LLC-load-misses' not in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['llc_loads'] = int(val)
+                    except ValueError:
+                        pass
+
+            # Parse LLC-load-misses
+            elif 'LLC-load-misses' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    val = parts[0].replace(',', '')
+                    try:
+                        metrics['llc_load_misses'] = int(val)
+                        # Extract percentage if available
+                        for part in parts:
+                            if '%' in part:
+                                metrics['llc_miss_rate'] = float(part.strip('%'))
+                                break
+                    except ValueError:
+                        pass
+
+        return metrics
+
+    finally:
+        os.unlink(script_path)
+
+
 def get_cpu_vendor() -> str:
     try:
         with open('/proc/cpuinfo', 'r') as f:
@@ -224,7 +382,7 @@ def normalize_value(val):
 
 
 def run_query_with_metrics(conn, query_file, pgx_enabled, iteration, profile_enabled=False,
-                           output_dir=None, db_conn=None, cpu_vendor=None, magic_trace_available=False, scale_factor=0.01):
+                           output_dir=None, db_conn=None, cpu_vendor=None, magic_trace_available=False, scale_factor=0.01, perf_stats=False):
     query_name = query_file.stem
 
     with open(query_file, 'r') as f:
@@ -638,7 +796,7 @@ def export_results_to_csv(db_conn, run_id, output_file):
 
 
 def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
-                          pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None, skipped_queries=None, iterations=1):
+                          pgx_version, postgres_version, scale_factor, db_file, pg_port=5432, query_filter=None, skipped_queries=None, iterations=1, perf_stats_enabled=False):
     query_files = sorted((script_dir / 'queries').glob('q*.sql'))
 
     if query_filter:
@@ -693,6 +851,69 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
                     print(f"[{current}/{total}] {qf.stem} (iter {iteration})...", end=' ', flush=True)
                 else:
                     print(f"[{current}/{total}] {qf.stem}...", end=' ', flush=True)
+
+                # If perf stats enabled, run special perf measurement
+                if perf_stats_enabled:
+                    with open(qf, 'r') as f:
+                        query_sql = f.read()
+
+                    perf_metrics = run_query_with_perf(pg_conn, query_sql, pgx_enabled)
+
+                    # Print perf metrics summary
+                    if perf_metrics:
+                        print(f"[perf] ", end='')
+                        if 'branch_miss_rate' in perf_metrics:
+                            print(f"branch-miss: {perf_metrics['branch_miss_rate']:.2f}% ", end='')
+                        if 'llc_miss_rate' in perf_metrics:
+                            print(f"LLC-miss: {perf_metrics['llc_miss_rate']:.2f}% ", end='')
+                        if 'ipc' in perf_metrics:
+                            print(f"IPC: {perf_metrics['ipc']:.2f} ", end='')
+                        print()
+
+                        # Store perf metrics in database
+                        cursor = db_conn.cursor()
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS perf_stats (
+                                run_id TEXT,
+                                query_name TEXT,
+                                pgx_enabled BOOLEAN,
+                                iteration INTEGER,
+                                task_clock_ms REAL,
+                                page_faults INTEGER,
+                                cycles INTEGER,
+                                instructions INTEGER,
+                                ipc REAL,
+                                branches INTEGER,
+                                branch_misses INTEGER,
+                                branch_miss_rate REAL,
+                                llc_loads INTEGER,
+                                llc_load_misses INTEGER,
+                                llc_miss_rate REAL
+                            )
+                        """)
+
+                        cursor.execute("""
+                            INSERT INTO perf_stats (run_id, query_name, pgx_enabled, iteration,
+                                                   task_clock_ms, page_faults, cycles, instructions, ipc,
+                                                   branches, branch_misses, branch_miss_rate,
+                                                   llc_loads, llc_load_misses, llc_miss_rate)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            run_id, qf.stem, pgx_enabled, iteration,
+                            perf_metrics.get('task_clock_ms'),
+                            perf_metrics.get('page_faults'),
+                            perf_metrics.get('cycles'),
+                            perf_metrics.get('instructions'),
+                            perf_metrics.get('ipc'),
+                            perf_metrics.get('branches'),
+                            perf_metrics.get('branch_misses'),
+                            perf_metrics.get('branch_miss_rate'),
+                            perf_metrics.get('llc_loads'),
+                            perf_metrics.get('llc_load_misses'),
+                            perf_metrics.get('llc_miss_rate')
+                        ))
+                        db_conn.commit()
+                    continue  # Skip regular metrics collection when using perf stats
 
                 metrics = run_query_with_metrics(
                     pg_conn, qf, pgx_enabled, iteration,
@@ -754,6 +975,71 @@ def run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled,
     from aggregate import aggregate_latest_run
     aggregate_latest_run(db_file, run_timestamp)
 
+    # If perf stats were collected, show comparison
+    if perf_stats_enabled:
+        print("\n" + "="*80)
+        print("Branch Prediction & LLC Analysis")
+        print("="*80)
+
+        cursor = db_conn.cursor()
+        cursor.execute("""
+            SELECT
+                query_name,
+                AVG(CASE WHEN pgx_enabled = 0 THEN branch_miss_rate END) as postgres_branch_miss,
+                AVG(CASE WHEN pgx_enabled = 1 THEN branch_miss_rate END) as pgx_branch_miss,
+                AVG(CASE WHEN pgx_enabled = 0 THEN llc_miss_rate END) as postgres_llc_miss,
+                AVG(CASE WHEN pgx_enabled = 1 THEN llc_miss_rate END) as pgx_llc_miss,
+                AVG(CASE WHEN pgx_enabled = 0 THEN ipc END) as postgres_ipc,
+                AVG(CASE WHEN pgx_enabled = 1 THEN ipc END) as pgx_ipc
+            FROM perf_stats
+            WHERE run_id = ?
+            GROUP BY query_name
+            ORDER BY query_name
+        """, (run_id,))
+
+        print(f"\n{'Query':<6} {'Branch Miss Rate %':<25} {'LLC Miss Rate %':<25} {'Instructions Per Cycle':<25}")
+        print(f"{'':6} {'Postgres':<12} {'pgx':<12} {'Postgres':<12} {'pgx':<12} {'Postgres':<12} {'pgx':<12}")
+        print("-"*80)
+
+        for row in cursor.fetchall():
+            query, pg_branch, pgx_branch, pg_llc, pgx_llc, pg_ipc, pgx_ipc = row
+            print(f"{query:<6} ", end='')
+
+            # Branch miss rates
+            if pg_branch is not None:
+                print(f"{pg_branch:>11.2f}% ", end='')
+            else:
+                print(f"{'N/A':>12} ", end='')
+
+            if pgx_branch is not None:
+                print(f"{pgx_branch:>11.2f}% ", end='')
+            else:
+                print(f"{'N/A':>12} ", end='')
+
+            # LLC miss rates
+            if pg_llc is not None:
+                print(f"{pg_llc:>11.2f}% ", end='')
+            else:
+                print(f"{'N/A':>12} ", end='')
+
+            if pgx_llc is not None:
+                print(f"{pgx_llc:>11.2f}% ", end='')
+            else:
+                print(f"{'N/A':>12} ", end='')
+
+            # IPC
+            if pg_ipc is not None:
+                print(f"{pg_ipc:>11.2f} ", end='')
+            else:
+                print(f"{'N/A':>12} ", end='')
+
+            if pgx_ipc is not None:
+                print(f"{pgx_ipc:>11.2f}")
+            else:
+                print(f"{'N/A':>12}")
+
+        print()
+
 
 def main():
     threading.Thread(target=timeout_handler, daemon=True).start()
@@ -779,6 +1065,8 @@ def main():
                         help='Label for this benchmark run configuration')
     parser.add_argument('--iterations', type=int, default=1,
                         help='Number of iterations to run each query (default: 1)')
+    parser.add_argument('--perf-stats', action='store_true',
+                        help='Run queries with perf stat to measure branch prediction and LLC miss rates')
     args = parser.parse_args()
 
     sf = args.scale_factor
@@ -790,6 +1078,7 @@ def main():
     skipped_queries = set(args.skip.split(',')) if args.skip else set()
     label = args.label
     iterations = args.iterations
+    perf_stats_enabled = args.perf_stats
 
     if not label:
         label = f"SF={sf}, indexes {'enabled' if indexes_enabled else 'disabled'}"
@@ -829,7 +1118,7 @@ def main():
         sys.exit(1)
 
     run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
-                          pgx_version, postgres_version, sf, db_file, pg_port, query_filter, skipped_queries, iterations)
+                          pgx_version, postgres_version, sf, db_file, pg_port, query_filter, skipped_queries, iterations, perf_stats_enabled)
 
     pg_conn.close()
     validate_results(db_conn, run_id)
