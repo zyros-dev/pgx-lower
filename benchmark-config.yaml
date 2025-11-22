@@ -64,6 +64,31 @@ profiles:
         indexes: false
         skipped_queries: ""
 
+  profile2:
+    runs:
+      - container: host-profile
+        scale_factor: 0.01
+        iterations: 1
+        profile: true
+        heap: true
+        indexes: false
+        skipped_queries: ""
+
+      - container: host-profile
+        scale_factor: 0.01
+        iterations: 1
+        profile: true
+        heap: true
+        indexes: true
+        skipped_queries: ""
+
+      - container: host-profile
+        scale_factor: 0.16
+        iterations: 1
+        profile: true
+        heap: true
+        indexes: true
+        skipped_queries: ""
 
   branch-prediction:
     description: "Measure branch prediction and LLC miss rates with debug symbols"
