@@ -1,3 +1,4 @@
+// e2e devops-rails smoke test marker — remove before merge.
 #include "pgx-lower/utility/logging.h"
 #include <cstdio>
 #include <cstdlib>
