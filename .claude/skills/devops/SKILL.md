@@ -16,6 +16,7 @@ The whole pipeline is wrapped in `justfile` recipes that SSH into thor and funne
 
 - `just queue` — glance at the build queue. If it's deep, expect your `compile`/`test`/`bench` to wait; don't bypass.
 - `just worktree-list` — confirm you're not about to collide with another agent's worktree.
+- `just spec-status` — if you're working from a spec, check `specs/STATUS.md`. If the spec isn't already `in_progress` under your name, claim it from the **main** checkout: `just spec-claim NN <branch-slug>`. The recipe rebases main and pushes the claim atomically so two agents can't take the same spec.
 
 ## 1. Create a worktree
 
@@ -78,6 +79,9 @@ Before opening the PR, produce a short write-up covering:
   - `just check` — clean / hits
   - `just test` — pass count / any new failures
   - `just bench` — per-query deltas for queries you touched, plus the geomean
+- **Stats summary** — required block (separate spec describes the format; if
+  the format isn't documented yet, ask the user). Goes into the PR body's
+  "Stats summary" section.
 - **Follow-ups** — anything you noticed but didn't fix
 
 ## 7. Pull request
@@ -89,7 +93,13 @@ git push -u origin $ARGUMENTS
 just pr "<title>"
 ```
 
-`just pr` uses a templated body (Summary + Test plan checklist). Paste the final report from step 6 into the Summary section before merging.
+`just pr` uses a templated body (Summary + Stats summary + Test plan checklist). Paste the final report from step 6 into the Summary and Stats summary sections before requesting review.
+
+If you're working from a spec, mark the spec as `in_review` from the main checkout once the PR is open:
+
+```
+just spec-in-review NN <pr-number>
+```
 
 ## Cleanup
 
@@ -100,6 +110,12 @@ just worktree-rm $ARGUMENTS
 ```
 
 Terminates the mutagen session and removes the worktree on both mac and thor.
+
+If working from a spec, mark it `done` from the main checkout:
+
+```
+just spec-complete NN <pr-number>
+```
 
 ## Troubleshooting
 
