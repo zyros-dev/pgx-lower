@@ -1,5 +1,5 @@
 ---
-name: pgx-lower-overview
+name: architecture-overview
 description: High-level architecture map of pgx-lower. The shape of the codebase, what each top-level directory does, and how a query flows from PostgreSQL through MLIR to JITed native code. Use when orienting in this codebase, when asked broad architectural questions, or as the starting point before diving into a specific area.
 ---
 
@@ -81,14 +81,13 @@ exported symbols (`-Wl,--export-dynamic`). Hot paths: `get_*_field_mlir`,
 
 | Question | Skill |
 |----------|-------|
-| How does the executor hook → JIT chain actually work? | pgx-lower-execution-path |
-| How does PG's plan tree become MLIR RelAlg? | pgx-lower-ast-translation |
-| What are RelAlg / DB / DSA / util? How do they lower? | pgx-lower-mlir-dialects |
-| What runtime functions does the JIT call? Where do conversions happen? | pgx-lower-runtime-ffi |
-| What does JITEngine actually do with the LLVM module? | pgx-lower-jit-compilation |
-| How do I build / test this? | pgx-lower-build-and-test |
-| How do I benchmark it / A/B test a change? | pgx-lower-benchmarks |
-| Why Clang? Why these LLVM/PG versions? What lessons from history? | pgx-lower-versions-and-history |
+| How does the executor hook → JIT chain actually work? | architecture-execution-path |
+| How does PG's plan tree become MLIR RelAlg? | architecture-ast-translation |
+| What are RelAlg / DB / DSA / util? How do they lower? | architecture-mlir-dialects |
+| What runtime functions does the JIT call? Where do conversions happen? | architecture-runtime-ffi |
+| What does JITEngine actually do with the LLVM module? | architecture-jit-compilation |
+| Why Clang? Why these LLVM/PG versions? What lessons from history? | architecture-versions-and-history |
+| How do I build, test, benchmark, ship a change? | devops |
 
 ## High-level facts worth knowing up front
 
@@ -99,7 +98,7 @@ exported symbols (`-Wl,--export-dynamic`). Hot paths: `get_*_field_mlir`,
 - **Versions**: LLVM 20, MLIR 20, PG 17.6, C++20, CMake 3.22+. All pinned in
   `docker/dev/Dockerfile`.
 - **What's missing vs LingoDB upstream**: SubOp dialect. Modern LingoDB's
-  vectorisation lives there; we don't have it. See `pgx-lower-mlir-dialects`.
+  vectorisation lives there; we don't have it. See `architecture-mlir-dialects`.
 - **What's missing vs LLVM defaults**: Auto-vectorization is off in
   `jit_execution_engine.cpp:306-308`. See specs/02.
 - **What's missing vs ideal**: No compile cache (every query re-MLIRs and

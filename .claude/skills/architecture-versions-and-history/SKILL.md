@@ -1,13 +1,14 @@
 ---
-name: pgx-lower-versions-and-history
+name: architecture-versions-and-history
 description: Version pinning (LLVM 20, MLIR 20, Clang 20, PG 17.6, Ubuntu 24.04, Clang-only build), known compiler bugs, recurring fragile areas, and lessons mined from git history. Use when bumping versions, hitting compile failures that look version-related, debugging LLVM/MLIR API mismatches, when a fragile-area pattern (decimals, nulls, hash joins) looks familiar, or when planning a refactor in a known-debt area.
 ---
 
 # Versions and history
 
-This is the short summary. **For the deep dive (release-note citations,
-specific PR numbers, full commit chronology, action items per spec) read
-`docs/deep-study-versions-and-history.md`** — it's referenced throughout.
+Version pinning, known gotchas specific to our setup, and the load-bearing
+lessons from git history. For commit-by-commit detail, run
+`git log --oneline --all` filtered by the relevant area — this skill
+captures the patterns, not the chronology.
 
 ## What's pinned
 
@@ -48,7 +49,9 @@ Released 2025-03-04 as 20.1.0. For our use:
   `JITTargetMachineBuilder::detectHost()` — we're safe.
 
 For SLP / loop vectorization (spec 02): start with SLP, it's the cheaper win
-on our typical IR shape. See deep-study `Part 2`.
+on our typical IR shape — small straight-line code with predicate masks for
+nulls. Loop vectorization needs paired `LoopUnrolling=true` to be worth its
+compile-time cost.
 
 ## Clang 20 build-flag changes that may bite us
 
@@ -145,9 +148,9 @@ SetConfigOption("jit", "off", PGC_USERSET, PGC_S_SESSION);
 
 ## Recurring fragile areas (recognise these patterns)
 
-When you find yourself working in any of these areas, expect bugs. Read the
-relevant section of `docs/deep-study-versions-and-history.md` Part 5 for the
-historical commit chain.
+When you find yourself working in any of these areas, expect bugs. The
+historical commit chains for each are findable via `git log --oneline --all
+| grep -iE "decimal|numeric|null|hash join"`.
 
 | Area | Why fragile | Where to look |
 |------|-------------|---------------|
@@ -176,7 +179,7 @@ boundaries between PG and MLIR. The recurring lessons:
    the original tuple, not us. Don't `pfree` it. (Commit 4049a9c — classic
    double-free.)
 
-## Top 10 lessons (from the deep-study doc)
+## Top 10 lessons (mined from history)
 
 1. Establish type-system constraints upfront.
 2. Isolate MLIR memory contexts from PG. Non-negotiable.
@@ -192,8 +195,7 @@ boundaries between PG and MLIR. The recurring lessons:
 
 ## When you're about to bump a version
 
-Read `docs/deep-study-versions-and-history.md` Part 7 (TL;DR action items)
-first. Specifically:
+Specifically:
 
 - **Bumping LLVM**: audit for `LLVMPointerType::get(ctx, elemTy)` (must be
   opaque pointers); check `cl::opt` registrations; rebuild PG against the
@@ -208,11 +210,10 @@ first. Specifically:
 
 ## Related skills
 
-- `pgx-lower-jit-compilation` — the LLVM PassBuilder usage that the LLVM 20
+- `architecture-jit-compilation` — the LLVM PassBuilder usage that the LLVM 20
   notes describe.
-- `pgx-lower-mlir-dialects` — the dialect/conversion code that MLIR 20's
+- `architecture-mlir-dialects` — the dialect/conversion code that MLIR 20's
   1:N change affects.
-- `pgx-lower-execution-path` — the `ExecutorRun_hook` integration point that
+- `architecture-execution-path` — the `ExecutorRun_hook` integration point that
   PG 17.6 changes affect.
-- `pgx-lower-build-and-test` — Docker, CMake, the Clang enforcement and
-  build flag rationale.
+- `devops` — Docker, CMake, the build/test/benchmark workflow.

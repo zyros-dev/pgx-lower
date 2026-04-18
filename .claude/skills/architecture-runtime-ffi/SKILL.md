@@ -1,5 +1,5 @@
 ---
-name: pgx-lower-runtime-ffi
+name: architecture-runtime-ffi
 description: The C++ runtime called from JITed MLIR code. Hashtable, Vector, Sort, type conversions (date/numeric/string/varlena), tuple access globals, FFI symbols. Use when adding runtime functions, debugging JIT↔C boundaries, fixing memory leaks across the FFI, working on type conversions, or touching anything in src/pgx-lower/runtime/ or src/lingodb/runtime/.
 ---
 
@@ -236,7 +236,7 @@ DataSource impl uses them.
 
 ## Related skills
 
-- `pgx-lower-mlir-dialects` — DSA's `dsa.ht_insert`, `dsa.lookup`, `dsa.sort`
+- `architecture-mlir-dialects` — DSA's `dsa.ht_insert`, `dsa.lookup`, `dsa.sort`
   lower into the runtime functions documented here.
-- `pgx-lower-jit-compilation` — how symbols are resolved in the JIT.
-- `pgx-lower-execution-path` — when the per-query state gets reset.
+- `architecture-jit-compilation` — how symbols are resolved in the JIT.
+- `architecture-execution-path` — when the per-query state gets reset.

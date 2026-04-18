@@ -1,5 +1,5 @@
 ---
-name: pgx-lower-ast-translation
+name: architecture-ast-translation
 description: How PostgreSQL plan trees (PlannedStmt) are translated into MLIR RelAlg by PostgreSQLASTTranslator. Plan node coverage, expression translation dispatch, the TranslationContext, schema/type mapping. Use when adding plan node support, debugging "unsupported plan node type" errors, working on expression translation, or touching anything in src/pgx-lower/frontend/SQL/.
 ---
 
@@ -190,11 +190,11 @@ the RTE. Table identifier format in BaseTableOp: `"<table_name>#<table_oid>"`
 2. Implement in `expression_translator_complex.cpp` (most non-trivial cases
    live here).
 3. If it needs a new DB op, add it to the DB dialect first
-   (see `pgx-lower-mlir-dialects` skill).
+   (see `architecture-mlir-dialects` skill).
 
 ## Related skills
 
-- `pgx-lower-mlir-dialects` — what RelAlg ops exist; what DB/DSA/util look
+- `architecture-mlir-dialects` — what RelAlg ops exist; what DB/DSA/util look
   like downstream.
-- `pgx-lower-execution-path` — what calls translate_query (the MLIR runner)
+- `architecture-execution-path` — what calls translate_query (the MLIR runner)
   and what happens after.

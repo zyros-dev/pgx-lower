@@ -1,5 +1,5 @@
 ---
-name: pgx-lower-jit-compilation
+name: architecture-jit-compilation
 description: The LLVM JIT engine, optimization pipeline, ExecutionEngine lifecycle, MLIR→LLVM IR translation, and the per-query compile flow. Use when working on jit_execution_engine.cpp, LLVM passes, JIT compilation issues, ExecutionEngine ownership, function lookup, or symbol resolution.
 ---
 
@@ -192,8 +192,8 @@ to true and use `buildPerModuleDefaultPipeline`.
 
 ## Related skills
 
-- `pgx-lower-execution-path` — what calls `JITEngine::compile` / `execute`.
-- `pgx-lower-mlir-dialects` — what the input LLVM-dialect module looks like.
-- `pgx-lower-runtime-ffi` — what symbols the JITed code resolves at runtime.
-- `pgx-lower-versions-and-history` — LLVM 20 specifics, pass manager
+- `architecture-execution-path` — what calls `JITEngine::compile` / `execute`.
+- `architecture-mlir-dialects` — what the input LLVM-dialect module looks like.
+- `architecture-runtime-ffi` — what symbols the JITed code resolves at runtime.
+- `architecture-versions-and-history` — LLVM 20 specifics, pass manager
   migration history (commits 7816cd2, f8ff190, 5add478).

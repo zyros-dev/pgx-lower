@@ -1,5 +1,5 @@
 ---
-name: pgx-lower-mlir-dialects
+name: architecture-mlir-dialects
 description: The four MLIR dialects (RelAlg, DB, DSA, util) used by pgx-lower, their key types and ops, and the lowering pipeline (RelAlg → DB+DSA+Util → Standard → LLVM). Use when adding ops, debugging lowering passes, working on dialect types, touching anything in src/lingodb/mlir/, or wondering where a particular op lowers.
 ---
 
@@ -205,7 +205,7 @@ between RelAlg and DB+DSA. We don't. See `specs/11-lingodb-rebase-decision.md`.
 
 ## Related skills
 
-- `pgx-lower-runtime-ffi` — what `dsa.scan_source`, `dsa.ht_insert` etc. lower
+- `architecture-runtime-ffi` — what `dsa.scan_source`, `dsa.ht_insert` etc. lower
   into at runtime (the C++ Hashtable, Vector, etc.).
-- `pgx-lower-jit-compilation` — what happens to the LLVM dialect output.
-- `pgx-lower-ast-translation` — what produces RelAlg ops in the first place.
+- `architecture-jit-compilation` — what happens to the LLVM dialect output.
+- `architecture-ast-translation` — what produces RelAlg ops in the first place.

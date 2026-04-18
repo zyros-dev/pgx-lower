@@ -1,5 +1,5 @@
 ---
-name: pgx-lower-execution-path
+name: architecture-execution-path
 description: The full call chain from PostgreSQL ExecutorRun_hook through pgx-lower's dispatcher, query analyzer, MLIR runner, and JIT engine. Use when working on query dispatch, the executor hook, the fallback to PG's interpreter, per-query lifecycle, or any code in src/pgx-lower/execution/postgres/ or mlir_runner.cpp.
 ---
 
@@ -160,8 +160,8 @@ without thinking about cleanup.
 
 ## Related skills
 
-- `pgx-lower-ast-translation` — what `PostgreSQLASTTranslator::translate_query`
+- `architecture-ast-translation` — what `PostgreSQLASTTranslator::translate_query`
   does after `mlir_runner` calls it.
-- `pgx-lower-jit-compilation` — what `JITEngine::compile` and `execute` do.
-- `pgx-lower-runtime-ffi` — what `g_*` globals carry and what symbols the JIT
+- `architecture-jit-compilation` — what `JITEngine::compile` and `execute` do.
+- `architecture-runtime-ffi` — what `g_*` globals carry and what symbols the JIT
   calls back into.
