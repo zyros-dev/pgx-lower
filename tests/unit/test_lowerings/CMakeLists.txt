@@ -257,3 +257,27 @@ set_tests_properties(AstConstTranslationTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;ast;translation"
 )
+
+# ----------------------------------------------------------------------------
+# Version-function smoke test — spec 14. Tests the constant version string
+# pgx_lower_version() returns. The C wrapper calls into PG (cstring_to_text),
+# so unit-test coverage is limited to the literal itself; the pg_regress
+# test in tests/sql/43_version.sql covers the end-to-end SQL path.
+
+add_executable(test_version_function
+    test_version_function.cpp
+)
+
+target_compile_features(test_version_function PRIVATE cxx_std_20)
+
+target_link_libraries(test_version_function
+    gtest
+    gtest_main
+)
+
+add_test(NAME VersionFunctionTest COMMAND test_version_function)
+
+set_tests_properties(VersionFunctionTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;version"
+)
