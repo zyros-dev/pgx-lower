@@ -111,14 +111,14 @@ This sidesteps the trailing-whitespace and SQL-echo footguns entirely.
 
 ### 4. Test registration
 
-Add `16_version` to the `REGRESS` list in `extension/CMakeLists.txt`
+Add `<NN>_version` to the `REGRESS` list in `extension/CMakeLists.txt`
 (around line 39-85, in numeric order).
 
 ## Acceptance criteria
 
 - `just check-diff` clean (scoped to files this PR touches; `just check`
   whole-tree has pre-existing violations that aren't this PR's to fix).
-- `just test` passes — including the new `16_version` regression test.
+- `just test` passes — including the new `<NN>_version` regression test.
 - All existing regression tests still pass (no collateral breakage).
 - `just bench` produces a report; the chart should show **no meaningful
   movement** on any query (this spec doesn't touch any code path the TPC-H
@@ -139,9 +139,9 @@ Add `16_version` to the `REGRESS` list in `extension/CMakeLists.txt`
 |------|--------|
 | `src/pgx-lower/execution/postgres/executor_c.c` | Add `PG_FUNCTION_INFO_V1` + impl |
 | `extension/sql/pgx_lower--1.0.sql` | Add `CREATE FUNCTION` |
-| `tests/sql/16_version.sql` (new) | Two-line regression test |
-| `tests/expected/16_version.out` (new) | Matching expected output |
-| `extension/CMakeLists.txt` | Add `16_version` to `REGRESS` list |
+| `tests/sql/<NN>_version.sql` (new) | Two-line regression test |
+| `tests/expected/<NN>_version.out` (new) | Matching expected output |
+| `extension/CMakeLists.txt` | Add `<NN>_version` to `REGRESS` list |
 | `./benchmarks/<prefix>.{db,png,md}` | Bench-report triplet from `just bench-report` |
 
 ## Risks

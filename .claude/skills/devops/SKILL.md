@@ -36,10 +36,13 @@ When the user says "start spec NN":
 3. From the **main** checkout (not a worktree), claim and create the worktree atomically:
 
 ```
-cd ~/repos/pgx-lower      # main checkout — required for spec-claim
-just spec-claim NN <slug>  # rebases main, marks spec in_progress, pushes
+cd ~/repos/pgx-lower                        # main checkout — required for spec-claim
+just spec-claim NN <slug>                    # rebases main, marks spec in_progress, pushes
 just worktree-new <slug>
-cd .worktrees/<slug>
+cd ~/repos/pgx-lower/.worktrees/<slug>       # always absolute; every `just` recipe reads
+                                             # invocation_directory() freshly, so a relative
+                                             # `cd .worktrees/<slug>` can fail or get you into
+                                             # the wrong tree depending on cwd at call time.
 git checkout -b <slug>
 ```
 
@@ -57,17 +60,9 @@ If the claim is live (PR open and recent, or another agent actively working), st
 
 TDD is mandatory here (see CLAUDE.md). Before any implementation change:
 
-1. Identify the test harness for the thing you're changing — PostgreSQL regression tests live in `extension/sql/` + `extension/expected/`, unit tests in `tests/`.
-2. Add or modify a test that captures the new behavior.
-3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think.
-
-## 2. Red — write a failing test first
-
-TDD is mandatory here (see CLAUDE.md). Before any implementation change:
-
-1. Identify the test harness for the thing you're changing — PostgreSQL regression tests live in `extension/sql/` + `extension/expected/`, unit tests in `tests/`.
-2. Add or modify a test that captures the new behavior.
-3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think.
+1. Identify the test harness for the thing you're changing — PostgreSQL regression tests live in `tests/sql/` + `tests/expected/`, unit tests in `tests/unit/`.
+2. Add or modify a test that captures the new behavior. **For pg_regress tests: write the `.sql` file, but do NOT write the `.out` file by hand.** pg_regress's output format has several footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). After writing the `.sql` and running `just test` once to fail, use `just expected-from-results <NN>_<name>` to copy the authoritative output from the container back into `tests/expected/`.
+3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think. Register the new test in `extension/CMakeLists.txt`'s `REGRESS` list before running.
 
 ## 3. Green — minimum change to pass
 
@@ -85,11 +80,17 @@ just test       # runs regression tests once compile succeeds
 ## 4. Static analysis
 
 ```
-just check-diff      # PR gate: only files changed vs origin/main
+just check-diff      # PR gate: clang-format only on lines your PR changed
+just ffix-diff       # auto-fix those same lines in place
 just check           # whole-tree; for reference only (noisy)
 ```
 
-**Use `just check-diff` for the PR gate.** The whole-tree `just check` emits hundreds of pre-existing violations that aren't this PR's to fix — `check-diff` scopes to files changed vs `origin/main` so its output is actually about your diff. Clean → you're good to proceed. Hits → `ffix` inside the container, or fix the specific lines by hand.
+**Use `just check-diff` for the PR gate.** It runs `clang-format-diff-20` against the unified diff vs `origin/main` — output is scoped to the exact lines your PR added or modified, *not* the whole file. That means touching a file with pre-existing formatting debt (e.g. `executor_c.c`) doesn't flood the output with violations you're not responsible for.
+
+- **Clean** → `check-diff: clean (your hunks match the project style)` → you're good.
+- **Hits** → the recipe prints the suggested reformat as a diff. Apply with `just ffix-diff`, which does the same in-place. Re-run `check-diff` to confirm clean.
+
+`just check` (whole-tree) is only useful as a historical reference; don't gate on it — it's not achievable repo-wide right now.
 
 ## 5. Benchmark
 
@@ -145,7 +146,12 @@ git commit -m "Benchmark report for PR #${N}"
 git push
 ```
 
-Then edit the PR body to paste in the contents of `benchmarks/pr-<N>-spec-<NN>-<slug>.md` — that supplies the chart (via raw.githubusercontent URL), verdict, and per-query table. Add a **Summary** section above it (what changed, why), and keep the `## Test plan` checklist from the `just pr` template.
+`just bench-report` **auto-injects the `.md` block into the PR body**, replacing the `<paste the stats summary block here — required>` placeholder that `just pr` left. You don't have to `gh pr edit` it in by hand. What you still do manually:
+
+- Fill in the `<what and why>` Summary placeholder — `bench-report` can't know your intent.
+- Keep the `## Test plan` checklist from the `just pr` template and tick items as they pass.
+
+If you re-run `bench-report` (e.g. after `just bench-merge`), it detects the placeholder is already gone and skips the auto-inject — paste the new `.md` manually or edit the PR body to match.
 
 If you ran `just bench-merge` too, run `just bench-report` again afterwards — it overwrites the `.db/.png/.md` triplet with the higher-SF numbers, so the PR body picks up the authoritative verdict.
 
@@ -182,8 +188,9 @@ just worktree-rm <slug>
 | `just compile` fails with errors you can't diagnose | Tell user; include the last 30 lines of output. |
 | `just test` shows a failure that's the test you wrote (Red phase) | Continue to Green. |
 | `just test` shows unrelated failures | Don't proceed. Tell user; don't paper over. |
-| `just bench-report` emits 🔴 NAY | Stop; tell the user. Do not open the PR until the regression is understood. |
-| `just bench-report` emits 🟡 MAYBE on a perf-claiming change | Run `just bench-merge` for a trustworthy signal before opening the PR. |
+| `just bench-report` emits 🔴 NAY | Real regression (geomean down ≥3% OR multiple queries past -10%, OR correctness failure). Stop; tell the user. Do not mark the PR ready until understood. |
+| `just bench-report` emits 🟡 MAYBE — suspected JIT-compile-noise outlier | One high-compile-time query (>100ms pgx) regressed past -10% while geomean is positive and everything else is clean. Run `just bench-merge` once to confirm — if that lands MAYBE/YAY, proceed; if it also flags the same query, treat as real. |
+| `just bench-report` emits 🟡 MAYBE on a perf-claiming change | Run `just bench-merge` for a trustworthy signal before marking the PR ready. |
 | `just bench-report` says "no baseline on origin/main" | **First-PR bootstrap case.** The recipe auto-falls-back to a self-compare — your PR will show 0% deltas but validates the full pipeline and seeds the baseline for future PRs. Not an error; note it in the PR body and proceed. |
 | Mutagen sync conflict | `mutagen sync flush pgx-lower-<slug>`; resolve manually; commit. |
 | Spec genuinely ambiguous | Ask user; if they don't know either, run `just spec-block NN "<reason>"` and stop. |

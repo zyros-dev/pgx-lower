@@ -147,6 +147,37 @@ def geomean_speedup(rows) -> float:
     return (gm - 1.0) * 100.0
 
 
+def _compile_noise_outlier(rows) -> tuple[str, float] | None:
+    """Detect the 'positive geomean but one wildly-regressed query' pattern
+    that pgx-lower's SF=0.01 benchmark routinely produces from JIT-compile
+    variance. Returns (query_name, pct) if the pattern matches, else None.
+
+    Pattern — all four must hold:
+      1. Geomean speedup is non-negative (change broadly neutral or faster).
+      2. Exactly one query regresses worse than the -10% NAY threshold.
+      3. That query's absolute pgx timing is >100ms (i.e. compile-cost
+         dominated at SF=0.01 — execution at this data size is <1ms; the
+         time being measured is almost entirely JIT).
+      4. The worst-case regression is bounded (<-60% is real, not noise).
+
+    Calibrated against the spec-14 reviewer's failure mode: q01 went from
+    367ms baseline to 565ms current (-54%) on a 3-line no-op change, while
+    geomean was +1.4% and 19/20 other queries were within ±8%. That's
+    compile-time variance, not a real regression.
+    """
+    gm = geomean_speedup(rows)
+    if gm < 0:
+        return None
+    # Rows below the NAY per-query threshold.
+    bad = [(q, c, d) for (q, _, _, c, d) in rows if d <= -10.0]
+    if len(bad) != 1:
+        return None
+    q, c_ms, pct = bad[0]
+    if c_ms <= 100.0 or pct <= -60.0:
+        return None
+    return (q, pct)
+
+
 def verdict(rows, invalid_queries: list[str] | None = None) -> tuple[str, str]:
     """Return (tag, label) for the PR verdict.
 
@@ -161,12 +192,27 @@ def verdict(rows, invalid_queries: list[str] | None = None) -> tuple[str, str]:
       NAY   — geomean ≤ −3% OR any query regresses worse than −10%.
       MAYBE — everything in between (inside the noise band, mixed signals,
               or signal too weak to act on without more iterations).
+
+    **Compile-noise-outlier softening** (see _compile_noise_outlier): when
+    NAY would fire purely because a single >100ms pgx query regressed in an
+    otherwise-healthy run (positive geomean, nothing else >-10%), downgrade
+    to MAYBE with a specific "re-run with bench-merge to confirm" call-out.
+    This keeps the NAY signal meaningful — real correctness regressions and
+    broad-based slowdowns still trip it.
     """
     if invalid_queries:
         return ("nay", f"🔴 NAY — correctness regression ({', '.join(invalid_queries)})")
     gm = geomean_speedup(rows)
     worst = min((d for (_, _, _, _, d) in rows), default=0.0)
     if gm <= -3.0 or worst <= -10.0:
+        outlier = _compile_noise_outlier(rows)
+        if outlier is not None:
+            q, pct = outlier
+            return ("maybe",
+                    f"🟡 MAYBE — suspected JIT-compile-noise outlier on "
+                    f"**{q}** ({pct:+.1f}%); geomean {gm:+.1f}% is healthy "
+                    f"and no other query regresses past -10%. Re-run "
+                    f"`just bench-merge` to confirm before treating as real.")
         return ("nay", "🔴 NAY — regression")
     if gm >= 3.0 and worst > -5.0:
         return ("yay", "🟢 YAY — improvement")
