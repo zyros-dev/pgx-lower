@@ -38,13 +38,14 @@ When the user says "start spec NN":
 ```
 cd ~/repos/pgx-lower                        # main checkout — required for spec-claim
 just spec-claim NN <slug>                    # rebases main, marks spec in_progress, pushes
-just worktree-new <slug>
+just worktree-new <slug>                     # creates worktree AND the <slug> branch on it
 cd ~/repos/pgx-lower/.worktrees/<slug>       # always absolute; every `just` recipe reads
                                              # invocation_directory() freshly, so a relative
                                              # `cd .worktrees/<slug>` can fail or get you into
                                              # the wrong tree depending on cwd at call time.
-git checkout -b <slug>
 ```
+
+**Do not run `git checkout -b <slug>` after `worktree-new`** — the recipe already created and checked out the branch. `git checkout -b` would fail with "branch already exists" and trying to debug around it is a waste. Skip straight to step 2.
 
 If `just spec-claim` fails because the spec is already claimed, first check whether the claim is stale:
 

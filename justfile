@@ -275,7 +275,17 @@ bench-report:
         # subject to sed's metachar quirks.
         new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('benchmarks/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
         gh pr edit "${pr}" --body "${new_body}" >/dev/null
-        echo "PR  body  : PR #${pr} updated with bench report block."
+        echo "PR  body  : injected bench report block into PR #${pr}."
+        # Detect remaining template placeholders and flag them explicitly —
+        # the old "PR body updated" message overstated what happened and left
+        # agents thinking they were done when the Summary section was still a
+        # literal "<what and why>".
+        remaining=$(gh pr view "${pr}" --json body -q .body | grep -oE '<[^>]*>' | sort -u | grep -v '<br' || true)
+        if [ -n "${remaining}" ]; then
+            echo "NOTE      : PR body still has unfilled template placeholders:"
+            printf '            %s\n' ${remaining}
+            echo "            Fill them in with \`gh pr edit ${pr} --body ...\` before requesting review."
+        fi
     else
         echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste benchmarks/${slug}.md manually if needed."
     fi
@@ -302,8 +312,23 @@ cancel ID:
 # Create a git worktree on mac + thor and a mutagen sync session between them.
 # Usage: just worktree-new feat-foo
 worktree-new NAME:
-    @test -n "{{NAME}}" || { echo "NAME required"; exit 1; }
-    git worktree add .worktrees/{{NAME}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    test -n "{{NAME}}" || { echo "NAME required"; exit 1; }
+    # Refuse to silently reuse an existing local branch. If it exists, the
+    # previous work on it is still there (even after worktree-rm); `git
+    # worktree add` without -b would quietly check that out, and an agent
+    # expecting a fresh branch would get the abandoned implementation back.
+    # Best recovery: `just spec-abandon` for specs (nukes local branch too),
+    # or `git branch -D {{NAME}}` if you really want to reuse the name.
+    if git show-ref --verify --quiet "refs/heads/{{NAME}}"; then
+        echo "ERROR: local branch '{{NAME}}' already exists." >&2
+        echo "  For specs: run 'just spec-abandon NN \"<reason>\"' to clean up atomically." >&2
+        echo "  Otherwise: 'git branch -D {{NAME}}' to discard it, then retry." >&2
+        exit 1
+    fi
+    git fetch origin main --quiet
+    git worktree add -b "{{NAME}}" ".worktrees/{{NAME}}" origin/main
     ssh {{_thor}} 'cd ~/repos/pgx-lower && git fetch origin && git worktree add .worktrees/{{NAME}} 2>/dev/null || true'
     mutagen sync create \
         --name=pgx-lower-{{NAME}} \
@@ -403,6 +428,12 @@ spec-abandon NN REASON:
     git push origin --delete "${branch}" 2>/dev/null && echo "  remote branch ${branch} deleted." || echo "  remote branch ${branch} already gone."
     # Tear down the worktree (does mutagen sync terminate + worktree remove on both sides; all idempotent via `-`).
     just worktree-rm "${branch}" || true
+    # Delete the LOCAL branch on the main checkout. If we skip this, a subsequent
+    # `just spec-claim NN <same-slug>` + `just worktree-new <same-slug>` will
+    # silently reuse the stale branch with the abandoned implementation still
+    # committed — surprising and nearly invisible. -D forces deletion even if
+    # unmerged (which is correct: we're abandoning).
+    git branch -D "${branch}" 2>/dev/null && echo "  local branch ${branch} deleted." || echo "  local branch ${branch} already gone."
     # Flip STATUS.md back to available.
     python3 scripts/spec_status.py release "{{NN}}"
     echo "Spec {{NN}} abandoned and released."
