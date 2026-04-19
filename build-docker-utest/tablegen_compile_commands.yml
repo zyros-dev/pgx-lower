@@ -1,0 +1,255 @@
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/RelAlg/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR/DBInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DB/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAInterfaces.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR/DSAOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/DSA/IR;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util/UtilOps.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/include/lingodb/mlir/Dialect/util;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/src/lingodb/mlir/Dialect/DB/Transforms/EliminateNulls.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/src/lingodb/mlir/Dialect/DB;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/src/lingodb/mlir/Dialect/DB/Transforms/EliminateNulls.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/src/lingodb/mlir/Dialect/DB;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/src/lingodb/Transforms/CustomCanonicalization.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/src/lingodb/Transforms;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"
+--- !FileInfo:
+  filepath: "/workspace/.worktrees/harness-fixes-4/src/lingodb/Transforms/CustomCanonicalization.td"
+  includes: "/workspace/.worktrees/harness-fixes-4/src/lingodb/Transforms;/usr/lib/llvm-20/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/include;/workspace/.worktrees/harness-fixes-4/build-docker-utest/include;/workspace/.worktrees/harness-fixes-4/vendored;/usr/local/pgsql/include;/usr/local/pgsql/include;/usr/local/pgsql/include/server"

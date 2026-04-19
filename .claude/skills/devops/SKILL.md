@@ -73,7 +73,11 @@ TDD is mandatory here (see CLAUDE.md). Before any implementation change:
    - **Unit tests** (preferred): write the `.cpp` in `tests/unit/test_lowerings/`, add to `tests/unit/test_lowerings/CMakeLists.txt`. `just test` runs the full suite.
    - **pg_regress** (only when actually needed): write the `.sql` file, but **do NOT write the `.out` file by hand**. pg_regress's output format has footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). Write the `.sql`, run `just test` once to fail, then `just expected-from-results <NN>_<name>` to copy the authoritative output back.
 
-3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think.
+3. Confirm it **fails** for the reason you expect:
+   - Unit tests: `just utest` (fast; configures+builds to `build-docker-utest/` on first run, incremental after).
+   - pg_regress: `just test` (slower; gated against `tests/pg_regress_baseline.txt`).
+
+   If the test passes, it's not covering what you think — fix the test before touching code.
 
 ## 3. Green — minimum change to pass
 
@@ -83,10 +87,11 @@ Iterate tightly:
 
 ```
 just compile    # ~seconds when cached; streams compiler errors live
-just test       # runs regression tests once compile succeeds
+just utest      # fast TDD loop — gtest-based, scoped to the thing you changed
+just test       # pg_regress output-equivalence; run before opening the PR
 ```
 
-`just compile` and `just test` share a serialized queue — they don't stomp on each other or on a concurrent bench. If a test fails, read the output, fix, repeat. If compile fails, fix and re-run; cached object files survive.
+`compile`, `utest`, and `test` all share the serialized build queue, so they don't stomp on each other or a concurrent bench. Iterate `just compile && just utest` tightly while implementing; run `just test` once before opening the PR to confirm no pg_regress regression.
 
 ## 4. Static analysis
 

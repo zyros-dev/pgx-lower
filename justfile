@@ -155,11 +155,37 @@ expected-from-results TEST:
     echo "Wrote tests/expected/{{TEST}}.out ($(wc -l <tests/expected/{{TEST}}.out) lines, $(wc -c <tests/expected/{{TEST}}.out) bytes)."
     echo "Re-run 'just test' — it should now pass for this case."
 
+# Unit tests (gtest) — the primary TDD home for most spec work. Builds
+# a separate build-docker-utest/ dir with -DBUILDING_UNIT_TESTS=ON and
+# runs ctest. Configures on first invocation; subsequent runs are
+# incremental ninja + ccache. Queued on the build queue so it doesn't
+# race compile/test/bench.
+utest: _preflight
+    #!/usr/bin/env bash
+    set -o pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_wdir}}/build-docker-utest && cd {{_wdir}}/build-docker-utest && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILDING_UNIT_TESTS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && ctest --output-on-failure") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-utest.out
+    rc=${PIPESTATUS[0]}
+    passed=$(grep -oE '^[0-9]+% tests passed' /tmp/pgx-utest.out | tail -1 || echo "unknown")
+    failed=$(grep -oE '[0-9]+ tests? failed out of [0-9]+' /tmp/pgx-utest.out | tail -1 || echo "")
+    echo ""
+    if [ "$rc" -eq 0 ]; then
+        echo "UTEST OK — ${passed}"
+    else
+        echo "UTEST FAILED — ${failed:-unknown}, exit $rc. Last 30 lines:"
+        tail -n 30 /tmp/pgx-utest.out
+        exit "$rc"
+    fi
+
 # Run PostgreSQL regression tests (queued), gated against
 # tests/pg_regress_baseline.txt. Exits non-zero only on *delta* vs the
 # baseline (new failures, or previously-failing tests that now pass).
 # ctest runs as the postgres user so pg_regress's default "whoami"
 # connection works.
+#
+# Note: this is the OUTPUT-EQUIVALENCE suite — it proves pgx_lower
+# matches stock PG on a curated stable set of queries. For TDD on most
+# spec work, prefer `just utest` (faster, scoped to the thing you're
+# actually changing). See SKILL.md step 2.
 test: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
