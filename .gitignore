@@ -138,3 +138,4 @@ build-ptest-profile
 gmon.out
 gmout.out
 benchmark/tpch/traceconv
+build-docker-utest
