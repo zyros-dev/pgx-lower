@@ -34,7 +34,7 @@ atomically against `main` so concurrent agents can't claim the same spec.
 | 11-lingodb-rebase-decision | available | — | — | — | decision spec, not code |
 | 12-copy-and-patch-backend | available | — | — | — | deferred until 01–04 land |
 | 13-adaptive-execution | available | — | — | — | deferred until 09 lands |
-| 14-add-version-function | in_progress |  zyros.dev-0419  |  spec-14-version  |  —  | smoke spec for harness validation; not roadmap work |
+| 14-add-version-function | in_review |   zyros.dev-0419   |   spec-14-version   |  #23  | smoke spec for harness validation; not roadmap work |
 
 ## Conventions
 
