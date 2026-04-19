@@ -25,7 +25,7 @@ atomically against `main` so concurrent agents can't claim the same spec.
 | 02-enable-llvm-vectorization | in_progress |  zyros.dev-0420  |  spec-02-vectorization  |  —  | |
 | 03-plan-shape-compile-cache | available | — | — | — | blocked by 01 per DAG |
 | 04-cost-gate-small-queries | available | — | — | — | blocked by 03 per DAG |
-| 05-decode-at-scan | in_progress |  zyros.dev-0420  |  spec-05-decode  |  —  | |
+| 05-decode-at-scan | in_review |   zyros.dev-0420   |   spec-05-decode   |  #32  | |
 | 06-pg-native-date-repr | available | — | — | — | blocked by 05 per DAG |
 | 07-pg-varlena-strings | available | — | — | — | blocked by 05 per DAG |
 | 08-inline-pg-bitcode | available | — | — | — | blocked by 05+06+07 per DAG |
