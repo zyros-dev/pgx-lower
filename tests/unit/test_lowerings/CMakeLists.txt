@@ -203,6 +203,30 @@ set_tests_properties(TypeMappingTest PROPERTIES
 )
 
 # ----------------------------------------------------------------------------
+# Version-function smoke test — spec 14 harness validation. Tests the
+# literal version string the PG-facing pgx_lower_version() returns.
+# Trivial by design — the point is exercising the utest path for a
+# function-returns-constant-string pattern.
+
+add_executable(test_version_function
+    test_version_function.cpp
+)
+
+target_compile_features(test_version_function PRIVATE cxx_std_20)
+
+target_link_libraries(test_version_function
+    gtest
+    gtest_main
+)
+
+add_test(NAME VersionFunctionTest COMMAND test_version_function)
+
+set_tests_properties(VersionFunctionTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;version"
+)
+
+# ----------------------------------------------------------------------------
 # AST Const-translation smoke test — proves the frontend/SQL/translation
 # layer is unit-testable. Tests the simpler branches of translate_const
 # (integer/float/bool/null/date) that don't require PG runtime — the
