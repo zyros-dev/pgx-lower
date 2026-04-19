@@ -42,6 +42,24 @@ from pathlib import Path
 #   "1: ok 23     - 23_order_by_expressions                    79 ms"
 LINE_RE = re.compile(r"^(?:\d+:\s+)?(not\s+ok|ok)\s+\d+\s*-\s*(\S+)")
 
+# pg_regress emits "Bail out!" on stdout when it cannot even execute a
+# test — most commonly because tests/sql/<NN>_name.sql exists but the
+# matching tests/expected/<NN>_name.out file is missing (the RED half
+# of a TDD pg_regress test). ctest itself exits non-zero in this case,
+# but without detecting Bail out! here the baseline-delta summary would
+# still print "OK: no new regressions vs baseline." — because no TAP
+# `not ok` line is emitted for the missing-expected test. That produced
+# two contradictory verdicts on the same transcript (non-zero exit AND
+# "OK" tail). The Bail-out path now supersedes the baseline-OK branch
+# with an explicit RED marker that names the missing test.
+BAIL_OUT_RE = re.compile(r"(?:^|\s)Bail out!", re.MULTILINE)
+# pg_regress prints "diff: /.../tests/expected/<NN>_name.out: No such
+# file or directory" just before bailing. We recover the test name from
+# that path so the RED marker can be concrete.
+MISSING_EXPECTED_RE = re.compile(
+    r"diff:\s+(?:\S*/)?tests/expected/([^/\s:]+?)\.out:\s*No such file or directory"
+)
+
 
 def parse_ctest_output(text: str) -> tuple[set[str], set[str]]:
     """Return (passing, failing) test-name sets from ctest/TAP-ish output."""
@@ -57,6 +75,21 @@ def parse_ctest_output(text: str) -> tuple[set[str], set[str]]:
         else:
             failing.add(name)
     return passing, failing
+
+
+def detect_bail_out(text: str) -> tuple[bool, list[str]]:
+    """Return (bail_present, missing_expected_testnames).
+
+    `missing_expected_testnames` is best-effort: we scan for the
+    "diff: .../tests/expected/<name>.out: No such file" line pg_regress
+    prints right before bailing. If Bail out! is present but no path is
+    recoverable (different pg_regress version, truncated output), the
+    caller still flags RED — just with a less specific marker.
+    """
+    if not BAIL_OUT_RE.search(text):
+        return False, []
+    missing = sorted(set(MISSING_EXPECTED_RE.findall(text)))
+    return True, missing
 
 
 def read_baseline(path: Path) -> set[str]:
@@ -83,8 +116,9 @@ def main() -> int:
 
     raw = sys.stdin.read()
     passing, failing = parse_ctest_output(raw)
+    bail_out, missing_expected = detect_bail_out(raw)
 
-    if not passing and not failing:
+    if not passing and not failing and not bail_out:
         print("ERROR: no TAP-ish lines found in input — is ctest actually "
               "running with --output-on-failure?", file=sys.stderr)
         return 2
@@ -119,6 +153,38 @@ def main() -> int:
         print("\nNEWLY PASSING — remove these from the baseline file:")
         for name in sorted(now_passing):
             print(f"  + {name}")
+
+    # Bail out! supersedes the baseline-delta OK verdict. pg_regress
+    # couldn't complete the suite, typically because a new .sql has no
+    # matching .out — the classic TDD RED state. Print an unambiguous
+    # single-verdict tail naming the missing test(s), then exit non-zero
+    # regardless of whether the TAP `not ok` set matches the baseline.
+    if bail_out:
+        print("")
+        if missing_expected:
+            for name in missing_expected:
+                print(f"NEW TEST NEEDS EXPECTED FILE: {name}")
+            tests_list = ", ".join(missing_expected)
+            print(
+                f"\nRED: pg_regress bailed out — expected-output file(s) missing "
+                f"for: {tests_list}."
+            )
+            print(
+                "     Run `just expected-from-results <name>` once `just test` has "
+                "produced the results/ output,\n"
+                "     then re-run `just test` to confirm green. "
+                "See .claude/skills/devops/SKILL.md step 2."
+            )
+        else:
+            # Bail out! with no recoverable path — still RED, but we can't
+            # name the test. Surface the raw marker so the agent at least
+            # knows pg_regress short-circuited rather than passed.
+            print("NEW TEST NEEDS EXPECTED FILE: <unknown — pg_regress "
+                  "bailed without a 'diff: .../expected/<name>.out' line>")
+            print("\nRED: pg_regress printed 'Bail out!' but the path could "
+                  "not be parsed from the transcript. Inspect the full "
+                  "ctest output above to identify the failing test.")
+        return 1
 
     if new_failures:
         print("\nREGRESSIONS — these tests used to pass and now fail:")

@@ -158,8 +158,16 @@ expected-from-results TEST:
     #!/usr/bin/env bash
     set -euo pipefail
     src="{{_bdir}}/extension/results/{{TEST}}.out"
-    if ! ssh {{_thor}} "docker exec {{_ctr}} test -f ${src}"; then
-        echo "ERROR: ${src} not found on thor. Run 'just test' first so pg_regress generates the result." >&2
+    # Friendly precondition: when a first-time user (or a canary on a
+    # fresh worktree) runs `just expected-from-results <name>` before
+    # `just test`, the results file simply doesn't exist on thor yet.
+    # Rather than error with an opaque "file not found" from the
+    # subsequent cat, point them at the one step they need to take.
+    # A RED `just test` run is enough — pg_regress still writes
+    # results/<name>.out before bailing on the missing expected file.
+    if ! ssh {{_thor}} "docker exec {{_ctr}} test -f ${src}" 2>/dev/null; then
+        echo "expected-from-results: results/{{TEST}}.out not found on thor."
+        echo "Run \`just test\` first to generate it (RED run is fine; the bail-out still produces the results/ output)."
         exit 1
     fi
     mkdir -p tests/expected
