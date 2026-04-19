@@ -38,13 +38,14 @@ When the user says "start spec NN":
 ```
 cd ~/repos/pgx-lower                        # main checkout — required for spec-claim
 just spec-claim NN <slug>                    # rebases main, marks spec in_progress, pushes
-just worktree-new <slug>
+just worktree-new <slug>                     # creates worktree AND the <slug> branch on it
 cd ~/repos/pgx-lower/.worktrees/<slug>       # always absolute; every `just` recipe reads
                                              # invocation_directory() freshly, so a relative
                                              # `cd .worktrees/<slug>` can fail or get you into
                                              # the wrong tree depending on cwd at call time.
-git checkout -b <slug>
 ```
+
+**Do not run `git checkout -b <slug>` after `worktree-new`** — the recipe already created and checked out the branch. `git checkout -b` would fail with "branch already exists" and trying to debug around it is a waste. Skip straight to step 2.
 
 If `just spec-claim` fails because the spec is already claimed, first check whether the claim is stale:
 
@@ -60,9 +61,26 @@ If the claim is live (PR open and recent, or another agent actively working), st
 
 TDD is mandatory here (see CLAUDE.md). Before any implementation change:
 
-1. Identify the test harness for the thing you're changing — PostgreSQL regression tests live in `tests/sql/` + `tests/expected/`, unit tests in `tests/unit/`.
-2. Add or modify a test that captures the new behavior. **For pg_regress tests: write the `.sql` file, but do NOT write the `.out` file by hand.** pg_regress's output format has several footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). After writing the `.sql` and running `just test` once to fail, use `just expected-from-results <NN>_<name>` to copy the authoritative output from the container back into `tests/expected/`.
-3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think. Register the new test in `extension/CMakeLists.txt`'s `REGRESS` list before running.
+1. **Pick the right test home — default to `tests/unit/` (gtest), not `tests/sql/`.**
+
+   See **`tests/unit/README.md`** for the decision table and existing-test patterns. Short version:
+
+   - `tests/sql/` + `tests/expected/` is the **pg_regress output-equivalence suite** — curated coverage meant to stay stable. Adding a new `.sql` per spec is bloat; the existing suite already catches correctness regressions for lowering changes.
+   - `tests/unit/test_lowerings/*.cpp` (gtest) is the **primary TDD home** for MLIR passes, dialect patterns, JIT pipeline, and pure-computation utilities (type mapping, cost formulas, plan-shape hashing). There are three existing smoke tests you can copy as a template: `test_pipeline_phases.cpp` (full pipeline), `test_boolean_lowering.cpp` (single pattern), `test_type_mapping.cpp` (pure computation).
+   - **Runtime FFI code** (`src/pgx-lower/runtime/*`, `tuple_access`, `PostgreSQLRuntime`) is integration-bound — it IS the PG boundary. Unit tests there would be parallel-reimplementations of PG. Those stay as pg_regress tests; don't try to unit-test them.
+
+   **Add to `tests/sql/` only if**: your change introduces a SQL-level feature the existing suite genuinely doesn't cover. Default assumption: you're adding a unit test under `test_lowerings/`.
+
+2. Add or modify the test that captures the new behavior.
+
+   - **Unit tests** (preferred): write the `.cpp` in `tests/unit/test_lowerings/`, add to `tests/unit/test_lowerings/CMakeLists.txt`. `just test` runs the full suite.
+   - **pg_regress** (only when actually needed): write the `.sql` file, but **do NOT write the `.out` file by hand**. pg_regress's output format has footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). Write the `.sql`, run `just test` once to fail, then `just expected-from-results <NN>_<name>` to copy the authoritative output back.
+
+3. Confirm it **fails** for the reason you expect:
+   - Unit tests: `just utest` (fast; configures+builds to `build-docker-utest/` on first run, incremental after).
+   - pg_regress: `just test` (slower; gated against `tests/pg_regress_baseline.txt`).
+
+   If the test passes, it's not covering what you think — fix the test before touching code.
 
 ## 3. Green — minimum change to pass
 
@@ -72,10 +90,11 @@ Iterate tightly:
 
 ```
 just compile    # ~seconds when cached; streams compiler errors live
-just test       # runs regression tests once compile succeeds
+just utest      # fast TDD loop — gtest-based, scoped to the thing you changed
+just test       # pg_regress output-equivalence; run before opening the PR
 ```
 
-`just compile` and `just test` share a serialized queue — they don't stomp on each other or on a concurrent bench. If a test fails, read the output, fix, repeat. If compile fails, fix and re-run; cached object files survive.
+`compile`, `utest`, and `test` all share the serialized build queue, so they don't stomp on each other or a concurrent bench. Iterate `just compile && just utest` tightly while implementing; run `just test` once before opening the PR to confirm no pg_regress regression.
 
 ## 4. Static analysis
 

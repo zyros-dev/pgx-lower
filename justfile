@@ -155,11 +155,37 @@ expected-from-results TEST:
     echo "Wrote tests/expected/{{TEST}}.out ($(wc -l <tests/expected/{{TEST}}.out) lines, $(wc -c <tests/expected/{{TEST}}.out) bytes)."
     echo "Re-run 'just test' — it should now pass for this case."
 
+# Unit tests (gtest) — the primary TDD home for most spec work. Builds
+# a separate build-docker-utest/ dir with -DBUILDING_UNIT_TESTS=ON and
+# runs ctest. Configures on first invocation; subsequent runs are
+# incremental ninja + ccache. Queued on the build queue so it doesn't
+# race compile/test/bench.
+utest: _preflight
+    #!/usr/bin/env bash
+    set -o pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_wdir}}/build-docker-utest && cd {{_wdir}}/build-docker-utest && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILDING_UNIT_TESTS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && ctest --output-on-failure") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-utest.out
+    rc=${PIPESTATUS[0]}
+    passed=$(grep -oE '^[0-9]+% tests passed' /tmp/pgx-utest.out | tail -1 || echo "unknown")
+    failed=$(grep -oE '[0-9]+ tests? failed out of [0-9]+' /tmp/pgx-utest.out | tail -1 || echo "")
+    echo ""
+    if [ "$rc" -eq 0 ]; then
+        echo "UTEST OK — ${passed}"
+    else
+        echo "UTEST FAILED — ${failed:-unknown}, exit $rc. Last 30 lines:"
+        tail -n 30 /tmp/pgx-utest.out
+        exit "$rc"
+    fi
+
 # Run PostgreSQL regression tests (queued), gated against
 # tests/pg_regress_baseline.txt. Exits non-zero only on *delta* vs the
 # baseline (new failures, or previously-failing tests that now pass).
 # ctest runs as the postgres user so pg_regress's default "whoami"
 # connection works.
+#
+# Note: this is the OUTPUT-EQUIVALENCE suite — it proves pgx_lower
+# matches stock PG on a curated stable set of queries. For TDD on most
+# spec work, prefer `just utest` (faster, scoped to the thing you're
+# actually changing). See SKILL.md step 2.
 test: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
@@ -275,7 +301,17 @@ bench-report:
         # subject to sed's metachar quirks.
         new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('benchmarks/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
         gh pr edit "${pr}" --body "${new_body}" >/dev/null
-        echo "PR  body  : PR #${pr} updated with bench report block."
+        echo "PR  body  : injected bench report block into PR #${pr}."
+        # Detect remaining template placeholders and flag them explicitly —
+        # the old "PR body updated" message overstated what happened and left
+        # agents thinking they were done when the Summary section was still a
+        # literal "<what and why>".
+        remaining=$(gh pr view "${pr}" --json body -q .body | grep -oE '<[^>]*>' | sort -u | grep -v '<br' || true)
+        if [ -n "${remaining}" ]; then
+            echo "NOTE      : PR body still has unfilled template placeholders:"
+            printf '            %s\n' ${remaining}
+            echo "            Fill them in with \`gh pr edit ${pr} --body ...\` before requesting review."
+        fi
     else
         echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste benchmarks/${slug}.md manually if needed."
     fi
@@ -302,8 +338,23 @@ cancel ID:
 # Create a git worktree on mac + thor and a mutagen sync session between them.
 # Usage: just worktree-new feat-foo
 worktree-new NAME:
-    @test -n "{{NAME}}" || { echo "NAME required"; exit 1; }
-    git worktree add .worktrees/{{NAME}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    test -n "{{NAME}}" || { echo "NAME required"; exit 1; }
+    # Refuse to silently reuse an existing local branch. If it exists, the
+    # previous work on it is still there (even after worktree-rm); `git
+    # worktree add` without -b would quietly check that out, and an agent
+    # expecting a fresh branch would get the abandoned implementation back.
+    # Best recovery: `just spec-abandon` for specs (nukes local branch too),
+    # or `git branch -D {{NAME}}` if you really want to reuse the name.
+    if git show-ref --verify --quiet "refs/heads/{{NAME}}"; then
+        echo "ERROR: local branch '{{NAME}}' already exists." >&2
+        echo "  For specs: run 'just spec-abandon NN \"<reason>\"' to clean up atomically." >&2
+        echo "  Otherwise: 'git branch -D {{NAME}}' to discard it, then retry." >&2
+        exit 1
+    fi
+    git fetch origin main --quiet
+    git worktree add -b "{{NAME}}" ".worktrees/{{NAME}}" origin/main
     ssh {{_thor}} 'cd ~/repos/pgx-lower && git fetch origin && git worktree add .worktrees/{{NAME}} 2>/dev/null || true'
     mutagen sync create \
         --name=pgx-lower-{{NAME}} \
@@ -403,6 +454,12 @@ spec-abandon NN REASON:
     git push origin --delete "${branch}" 2>/dev/null && echo "  remote branch ${branch} deleted." || echo "  remote branch ${branch} already gone."
     # Tear down the worktree (does mutagen sync terminate + worktree remove on both sides; all idempotent via `-`).
     just worktree-rm "${branch}" || true
+    # Delete the LOCAL branch on the main checkout. If we skip this, a subsequent
+    # `just spec-claim NN <same-slug>` + `just worktree-new <same-slug>` will
+    # silently reuse the stale branch with the abandoned implementation still
+    # committed — surprising and nearly invisible. -D forces deletion even if
+    # unmerged (which is correct: we're abandoning).
+    git branch -D "${branch}" 2>/dev/null && echo "  local branch ${branch} deleted." || echo "  local branch ${branch} already gone."
     # Flip STATUS.md back to available.
     python3 scripts/spec_status.py release "{{NN}}"
     echo "Spec {{NN}} abandoned and released."

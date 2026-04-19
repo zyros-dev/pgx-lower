@@ -1,19 +1,39 @@
 find_package(GTest REQUIRED)
 
+# test_mlir_lowerings links against code that, in the POSTGRESQL_EXTENSION
+# build, calls into PG's backend (palloc machinery, catalog lookups,
+# CHECK_FOR_INTERRUPTS, pg_fprintf). For the unit-test build those are
+# either #ifdef-ed out at the call site (guarded by POSTGRESQL_EXTENSION)
+# or satisfied by minimal stubs in pg_stubs.cpp below — MLIR-pipeline tests
+# don't exercise those paths, so stubs that `abort()` or return a trivial
+# default are enough.
+#
+# If a new transitive dep introduces more PG-symbol leaks and breaks the
+# link, two knobs: extend pg_stubs.cpp (for leaf calls that never fire in
+# tests), or add a POSTGRESQL_EXTENSION guard at the offending call site
+# (for calls that would actually corrupt the test if run).
+#
+# Flip OFF only if you've broken the link and need the rest of the utest
+# suite to keep running while you debug.
+option(ENABLE_MLIR_LOWERING_TESTS "Build the test_mlir_lowerings gtest binary. Requires pg_stubs.cpp to cover any PG symbols leaked through transitive deps." ON)
+
+if(ENABLE_MLIR_LOWERING_TESTS)
 add_executable(test_mlir_lowerings
     standalone_mlir_runner.cpp
     test_pipeline_phases.cpp
+    pg_stubs.cpp
 
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_runner.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runner_phases.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runner_utils.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runner_passes.cpp
-
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/mlir_logging.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
-
     ${CMAKE_SOURCE_DIR}/src/lingodb/runtime/MetaData.cpp
 )
+endif()
 
 add_executable(test_boolean_lowering
     test_boolean_lowering.cpp
@@ -21,8 +41,13 @@ add_executable(test_boolean_lowering
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
 )
 
+find_package(MLIR REQUIRED CONFIG)
+find_package(LLVM REQUIRED CONFIG)
+
+if(ENABLE_MLIR_LOWERING_TESTS)
+
 # Set the compile definition to enable standalone mode
-target_compile_definitions(test_mlir_lowerings PRIVATE 
+target_compile_definitions(test_mlir_lowerings PRIVATE
     BUILDING_UNIT_TESTS=1
 )
 
@@ -32,9 +57,6 @@ target_include_directories(test_mlir_lowerings PRIVATE
     ${CMAKE_SOURCE_DIR}/lingo-db/include
     ${CMAKE_SOURCE_DIR}/src
 )
-
-find_package(MLIR REQUIRED CONFIG)
-find_package(LLVM REQUIRED CONFIG)
 
 set(MLIR_CORE_LIBS
     MLIRSupport
@@ -93,6 +115,8 @@ set_tests_properties(MLIRLoweringTests PROPERTIES
     LABELS "unit;mlir;lowering"
 )
 
+endif()  # ENABLE_MLIR_LOWERING_TESTS
+
 # Configure boolean lowering test
 target_compile_definitions(test_boolean_lowering PRIVATE 
     BUILDING_UNIT_TESTS=1
@@ -128,4 +152,52 @@ add_test(NAME BooleanLoweringTest COMMAND test_boolean_lowering)
 set_tests_properties(BooleanLoweringTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;mlir;lowering;boolean"
+)
+
+# ----------------------------------------------------------------------------
+# Type-mapping smoke test — proves pure-computation functions in
+# lingodb_utility are unit-testable despite the library's PG-heavy context.
+# Also catches type-mapping contract changes.
+
+add_executable(test_type_mapping
+    test_type_mapping.cpp
+    pg_stubs.cpp
+)
+
+target_compile_definitions(test_type_mapping PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_type_mapping PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+    /usr/local/pgsql/include/server
+)
+
+target_link_libraries(test_type_mapping
+    gtest
+    gtest_main
+    ${MLIR_ALL_LIBS}
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    lingodb_utility
+    ${llvm_libs}
+)
+
+target_compile_features(test_type_mapping PRIVATE cxx_std_20)
+
+add_test(NAME TypeMappingTest COMMAND test_type_mapping)
+
+set_tests_properties(TypeMappingTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;types;mapping"
 )
