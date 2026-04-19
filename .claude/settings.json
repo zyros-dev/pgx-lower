@@ -4,6 +4,8 @@
     "allow": [
       "Edit(.claude/**)",
       "Write(.claude/**)",
+      "Edit(.worktrees/**/.claude/**)",
+      "Write(.worktrees/**/.claude/**)",
       "Edit(specs/**)",
       "Write(specs/**)",
       "Edit(docs/**)",
