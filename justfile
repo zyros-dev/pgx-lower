@@ -755,6 +755,9 @@ spec-status:
 # STATUS.md mutation means the two concerns stay separable: the claim
 # row reflects board state, worktree-new owns filesystem state.
 spec-claim NN BRANCH OWNER='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ "$(git rev-parse --show-toplevel)" = "{{_main_root}}" ] || { echo "spec-claim: refusing to run from a worktree — STATUS.md must be edited on the main checkout. cd {{_main_root}} and retry." >&2; exit 1; }
     OWNER="{{OWNER}}" python3 scripts/spec_status.py claim "{{NN}}" "{{BRANCH}}"
 
 # Release a claim (e.g. abandoning the work). Sets state back to available.
@@ -820,6 +823,7 @@ spec-abandon NN REASON:
 spec-complete NN PR:
     #!/usr/bin/env bash
     set -euo pipefail
+    [ "$(git rev-parse --show-toplevel)" = "{{_main_root}}" ] || { echo "spec-complete: refusing to run from a worktree — STATUS.md must be edited on the main checkout. cd {{_main_root}} and retry." >&2; exit 1; }
     branch=$(python3 scripts/spec_status.py read_branch "{{NN}}" 2>/dev/null || true)
     python3 scripts/spec_status.py complete "{{NN}}" "{{PR}}"
     if [ -n "${branch}" ] && [ -d ".worktrees/${branch}" ]; then
@@ -828,6 +832,9 @@ spec-complete NN PR:
 
 # Mark a spec as in_review (PR open). PR is the PR number.
 spec-in-review NN PR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ "$(git rev-parse --show-toplevel)" = "{{_main_root}}" ] || { echo "spec-in-review: refusing to run from a worktree — STATUS.md must be edited on the main checkout. cd {{_main_root}} and retry." >&2; exit 1; }
     python3 scripts/spec_status.py in_review "{{NN}}" "{{PR}}"
 
 # Mark a spec as blocked, with a reason note.
