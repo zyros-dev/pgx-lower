@@ -124,19 +124,26 @@ bench-report:
     # Snapshot the run's db into the branch under the final name.
     src="{{_wdir}}/benchmark/output/benchmark.db"
     ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/benchmarks/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
-    # Fetch the baseline from origin/main without polluting the feature branch.
+    # Fetch the baseline from origin/main. On a fresh repo there may be none;
+    # in that case we self-compare (baseline == current) so the artifacts are
+    # generated and the PR still gets chart + table + validation block. The
+    # %-deltas are 0 by definition and the verdict is MAYBE, but correctness
+    # checking still works — a self-compare with bad pgx output still trips
+    # the NAY gate.
     git fetch origin main --quiet
     baseline_path=$(git ls-tree -r --name-only origin/main -- 'benchmarks/pr-*.db' | sort -V | tail -1 || true)
     if [ -z "${baseline_path}" ]; then
-        echo "ERROR: no baseline on origin/main:benchmarks/. Merge at least one PR first." >&2
-        exit 1
+        echo "NOTE: no baseline on origin/main:benchmarks/ — self-comparing. This PR will seed the baseline for future PRs." >&2
+        baseline_name="bootstrap-self.db"
+        ssh {{_thor}} "docker exec {{_ctr}} cp {{_wdir}}/benchmarks/${slug}.db /tmp/${baseline_name}"
+    else
+        baseline_name=$(basename "${baseline_path}")
+        # Stage the baseline on thor (not committed — just in /tmp for report.py).
+        git show "origin/main:${baseline_path}" > /tmp/${baseline_name}
+        scp -q /tmp/${baseline_name} {{_thor}}:/tmp/${baseline_name}
+        rm /tmp/${baseline_name}
+        ssh {{_thor}} "docker cp /tmp/${baseline_name} {{_ctr}}:/tmp/${baseline_name}"
     fi
-    baseline_name=$(basename "${baseline_path}")
-    # Stage the baseline on thor (not committed here — just in /tmp for report.py).
-    git show "origin/main:${baseline_path}" > /tmp/${baseline_name}
-    scp -q /tmp/${baseline_name} {{_thor}}:/tmp/${baseline_name}
-    rm /tmp/${baseline_name}
-    ssh {{_thor}} "docker cp /tmp/${baseline_name} {{_ctr}}:/tmp/${baseline_name}"
     ssh {{_thor}} "docker exec {{_ctr}} python3 {{_wdir}}/benchmark/report.py \
         --baseline /tmp/${baseline_name} \
         --current {{_wdir}}/benchmarks/${slug}.db \

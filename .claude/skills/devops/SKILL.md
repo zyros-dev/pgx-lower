@@ -174,7 +174,7 @@ just worktree-rm <slug>
 | `just test` shows unrelated failures | Don't proceed. Tell user; don't paper over. |
 | `just bench-report` emits 🔴 NAY | Stop; tell the user. Do not open the PR until the regression is understood. |
 | `just bench-report` emits 🟡 MAYBE on a perf-claiming change | Run `just bench-merge` for a trustworthy signal before opening the PR. |
-| `just bench-report` says "no baseline in benchmarks/" | Run `just bench && just bench-report` on main first. |
+| `just bench-report` says "no baseline on origin/main" | **First-PR bootstrap case.** The recipe auto-falls-back to a self-compare — your PR will show 0% deltas but validates the full pipeline and seeds the baseline for future PRs. Not an error; note it in the PR body and proceed. |
 | Mutagen sync conflict | `mutagen sync flush pgx-lower-<slug>`; resolve manually; commit. |
 | Spec genuinely ambiguous | Ask user; if they don't know either, run `just spec-block NN "<reason>"` and stop. |
 
@@ -185,5 +185,13 @@ just worktree-rm <slug>
 | `ERROR: task-spooler not installed` | tsp missing on thor | `just bootstrap-tsp` (one-time, needs sudo) |
 | `ERROR: pgx-lower-dev not running` | container stopped | `just up` |
 | `compile` queues but never runs | tsp daemon stuck | `ssh comfy 'TS_SOCKET=/tmp/pgx-build.sock tsp -K'` to kill daemon; it respawns on next use |
+| `Job N not finished or not running` from tsp under queue contention | tsp state confusion when another agent's slot holder exits weirdly | Just re-run the recipe; tsp is idempotent and the second submission gets a fresh id. |
 | Test passes that shouldn't | stale `.so` in PG | `just compile` re-installs the extension into the container's PG; rerun `just test` |
 | Mutagen shows conflicts | simultaneous edit mac/thor | `mutagen sync flush pgx-lower-<slug>`; resolve manually, commit |
+| `ninja: no work to do` after editing source | mutagen mtime race — file synced with older mtime than its build product | `ssh comfy 'docker exec pgx-lower-dev touch /workspace/.worktrees/<slug>/<path/to/file>'` to nudge ninja; or wait ~2s before running `just compile` |
+| `just check` emits thousands of violations unrelated to your diff | Pre-existing clang-format debt; whole tree hasn't been formatted | Gate on "no *new* violations on files your diff touches". `just check` clean is not yet achievable repo-wide. |
+
+## Gotchas worth internalizing
+
+- **Bash cwd is not sticky across tool calls.** Every `just` recipe reads `invocation_directory()` which is the shell's cwd *at the moment of the call*. If you don't explicitly `cd .worktrees/<slug>` (or pass the cwd via your tool's working-directory option) each time, `just` runs against the main repo — which silently succeeds and builds/tests the wrong tree. Double-check the resolved path with `just --dry-run compile | head -1` if something's off.
+- **First bench-report self-compares.** When `origin/main:benchmarks/` has no `pr-*.db` yet, `bench-report` falls back to self-comparison (0% deltas, MAYBE verdict) so the artifacts still land and seed the baseline. Don't treat it as a failure.
