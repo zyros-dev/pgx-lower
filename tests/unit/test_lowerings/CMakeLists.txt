@@ -257,3 +257,37 @@ set_tests_properties(AstConstTranslationTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;ast;translation"
 )
+
+# ----------------------------------------------------------------------------
+# Version-function smoke test — exercises the utest path for spec 14.
+# Tests the literal version string constant. Trivial by design; the point
+# is to verify the utest build registers and runs a new target end-to-end.
+
+add_executable(test_version_function
+    test_version_function.cpp
+)
+
+target_compile_definitions(test_version_function PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_version_function PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_version_function
+    gtest
+    gtest_main
+)
+
+target_compile_features(test_version_function PRIVATE cxx_std_20)
+
+add_test(NAME VersionFunctionTest COMMAND test_version_function)
+
+set_tests_properties(VersionFunctionTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;version"
+)
