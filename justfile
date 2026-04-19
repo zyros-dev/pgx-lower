@@ -433,16 +433,57 @@ worktree-sweep:
     echo ""
     echo "Done."
 
-# List worktrees + their sync sessions.
+# List worktrees + their sync sessions, auto-pruning stale entries first so
+# thor-side rows labeled "prunable" don't leak in as live worktrees on the
+# mac side (and vice versa). Live and prunable are split visually so agents
+# can see at a glance which worktrees are actually on-disk.
 worktree-list:
-    @echo "=== mac worktrees ==="
-    @git worktree list
-    @echo ""
-    @echo "=== thor worktrees ==="
-    @ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree list'
-    @echo ""
-    @echo "=== mutagen sessions ==="
-    @mutagen sync list | grep -E '^Name:|^Status:' || true
+    #!/usr/bin/env bash
+    set -o pipefail
+    # Prune first — this clears out branches whose working-tree dir has been
+    # deleted behind git's back (common after mergers + manual rm -rf).
+    # `--dry-run` would merely warn; we actively prune because the next
+    # `git worktree list` on mac or thor would otherwise flag the same rows
+    # as "prunable" again on subsequent calls.
+    git worktree prune >/dev/null 2>&1 || true
+    ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree prune >/dev/null 2>&1' || true
+    _split_list() {
+        local label="$1"; shift
+        local raw="$1"
+        # Column layout from `git worktree list` is path/commit/branch; the
+        # "prunable" marker, when present, shows up on its own row (one per
+        # worktree). We walk the porcelain form which is unambiguous.
+        # Fall back to plain output if the porcelain variant isn't available.
+        echo "--- ${label} (live) ---"
+        printf '%s\n' "${raw}" | grep -v 'prunable' || true
+        local pruned=$(printf '%s\n' "${raw}" | grep 'prunable' || true)
+        if [ -n "${pruned}" ]; then
+            echo "--- ${label} (prunable) ---"
+            printf '%s\n' "${pruned}"
+        fi
+    }
+    echo "=== mac worktrees ==="
+    mac_raw=$(git worktree list --porcelain 2>/dev/null | awk '
+        /^worktree /{wt=$2}
+        /^HEAD /{head=$2}
+        /^branch /{branch=$2}
+        /^prunable/{pr=1}
+        /^$/{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":""); wt=""; head=""; branch=""; pr=0}}
+        END{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":"")}}')
+    _split_list "mac" "${mac_raw}"
+    echo ""
+    echo "=== thor worktrees ==="
+    thor_raw=$(ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree list --porcelain' 2>/dev/null | awk '
+        /^worktree /{wt=$2}
+        /^HEAD /{head=$2}
+        /^branch /{branch=$2}
+        /^prunable/{pr=1}
+        /^$/{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":""); wt=""; head=""; branch=""; pr=0}}
+        END{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":"")}}')
+    _split_list "thor" "${thor_raw}"
+    echo ""
+    echo "=== mutagen sessions ==="
+    mutagen sync list | grep -E '^Name:|^Status:' || true
 
 # --- PR --------------------------------------------------------------------
 
@@ -452,10 +493,70 @@ worktree-list:
 # `gh pr edit` pass. `just bench-report` handles the stats-summary
 # placeholder later.
 #
+# Summary resolution, in order:
+#   1. SUMMARY arg, if passed and not the placeholder default.
+#   2. BODY_FILE, if set (env var), read from that path.
+#   3. The last commit's body (everything after the subject line), if non-empty.
+#   4. Fall back to the literal `<what and why>` placeholder so agents
+#      who forgot to fill it in still get a functional PR (and `bench-report`
+#      warns them at the end).
+#
 #   just pr "spec 03: plan-shape compile cache"
 #   just pr "fix bench race" "bench-report was reading .md before sync."
+#   BODY_FILE=/tmp/pr-body.md just pr "fix bench race"
 pr TITLE SUMMARY='<what and why>':
-    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n%s\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n' "{{SUMMARY}}")"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    summary="{{SUMMARY}}"
+    if [ "${summary}" = '<what and why>' ]; then
+        if [ -n "${BODY_FILE:-}" ] && [ -r "${BODY_FILE}" ]; then
+            summary=$(cat "${BODY_FILE}")
+        else
+            # Pull the body of the last commit (%b = body only, no subject).
+            # Drop any trailing Co-Authored-By trailer block — that's a
+            # machine-authored trailer, not part of the Summary prose. Then
+            # strip leading/trailing blank lines. If the commit is
+            # subject-only, %b is empty and we fall through to the
+            # placeholder default.
+            commit_body=$(git log -1 --pretty=%b | awk '/^Co-Authored-By:/{exit} {print}')
+            # Trim leading blank lines.
+            commit_body=$(printf '%s' "${commit_body}" | awk 'NF{found=1} found')
+            # Trim trailing blank lines.
+            commit_body=$(printf '%s' "${commit_body}" | awk '{a[NR]=$0} END {last=NR; while(last>0 && a[last]=="") last--; for(i=1;i<=last;i++) print a[i]}')
+            if [ -n "${commit_body}" ]; then
+                summary="${commit_body}"
+            fi
+        fi
+    fi
+    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n%s\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n' "${summary}")"
+
+# Replace the `<what and why>` Summary placeholder on the current branch's
+# open PR in a single gh-pr-edit call. Idempotent — if the placeholder is
+# already gone, this is a no-op (and says so). Use this after `just pr` +
+# `just bench-report` when you're ready to commit your Summary text, so you
+# don't have to hand-craft a full gh pr edit --body invocation.
+#
+#   just pr-summary "Fixes bench race: bench-report was reading .md before sync flushed thor→mac."
+pr-summary SUMMARY:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pr=$(gh pr view --json number -q .number 2>/dev/null || true)
+    if [ -z "${pr}" ]; then
+        echo "ERROR: no open PR on this branch. Run 'just pr' first." >&2
+        exit 1
+    fi
+    body=$(gh pr view "${pr}" --json body -q .body)
+    placeholder='<what and why>'
+    if ! printf '%s' "${body}" | grep -qF "${placeholder}"; then
+        echo "pr-summary: placeholder already replaced on PR #${pr}. No-op."
+        exit 0
+    fi
+    # Pass SUMMARY via an env var so shell-special chars (quotes, backticks,
+    # backslashes) in the user's text don't break the substitution.
+    export _PR_SUMMARY_TEXT="{{SUMMARY}}"
+    new_body=$(printf '%s' "${body}" | python3 -c "import os, sys; body = sys.stdin.read(); print(body.replace('<what and why>', os.environ['_PR_SUMMARY_TEXT']), end='')")
+    gh pr edit "${pr}" --body "${new_body}" >/dev/null
+    echo "pr-summary: replaced <what and why> on PR #${pr}."
 
 # --- Spec coordination ----------------------------------------------------
 # These wrap edits to specs/STATUS.md and commit atomically against main so
