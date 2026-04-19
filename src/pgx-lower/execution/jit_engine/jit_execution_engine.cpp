@@ -1,4 +1,5 @@
 #include "pgx-lower/execution/jit_execution_engine.h"
+#include "pgx-lower/execution/mlir_runtime.h"
 #include "pgx-lower/utility/logging.h"
 #include "pgx-lower/runtime/tuple_access.h"
 #include <fstream>
@@ -198,28 +199,18 @@ bool JITEngine::execute(void* estate, void* dest) const {
 }
 
 void JITEngine::setup_llvm_target() {
-    static bool initialized = false;
-    if (!initialized) {
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-        llvm::InitializeNativeTargetAsmParser();
-        initialized = true;
-
-        const auto target_triple = llvm::sys::getDefaultTargetTriple();
-        PGX_LOG(JIT, DEBUG, "LLVM target triple: %s", target_triple.c_str());
-    }
+    // LLVM native-target + MLIR-to-LLVM dialect registry now live in the
+    // process-lifetime MLIRRuntime singleton (spec 01). Touching the
+    // singleton here keeps legacy callers (unit tests that construct a
+    // JITEngine directly) working without requiring every caller to
+    // invoke initialize_mlir_runtime() explicitly first.
+    (void)pgx_lower::execution::get_mlir_runtime();
 }
 
-void JITEngine::register_dialects(mlir::ModuleOp module) {
-    mlir::DialectRegistry registry;
-    mlir::registerAllToLLVMIRTranslations(registry);
-    mlir::registerConvertFuncToLLVMInterface(registry);
-    mlir::arith::registerConvertArithToLLVMInterface(registry);
-    mlir::cf::registerConvertControlFlowToLLVMInterface(registry);
-    mlir::registerConvertMemRefToLLVMInterface(registry);
-
-    module->getContext()->appendDialectRegistry(registry);
-    mlir::registerLLVMDialectTranslation(*module->getContext());
+void JITEngine::register_dialects(mlir::ModuleOp /*module*/) {
+    // Dialect registry + LLVMDialectTranslation are installed once on the
+    // shared MLIRContext by the MLIRRuntime singleton (spec 01). Per-query
+    // registration would be redundant.
 }
 
 std::function<std::unique_ptr<llvm::Module>(mlir::Operation*, llvm::LLVMContext&)>
@@ -299,23 +290,21 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
                 handler_installed = true;
             }
 
-            llvm::TargetMachine* TM = nullptr;
+            // TargetMachine lives on the MLIRRuntime singleton (spec 01).
+            // Ownership is held by the singleton and outlives every JITEngine,
+            // so passing the raw pointer into PassBuilder is safe (PassBuilder
+            // doesn't take ownership).
+            auto& rt = pgx_lower::execution::get_mlir_runtime();
+            llvm::TargetMachine* TM = rt.target_machine.get();
             std::string triple = module->getTargetTriple();
             if (triple.empty()) {
                 triple = llvm::sys::getDefaultTargetTriple();
                 module->setTargetTriple(triple);
             }
-
-            std::string error;
-            const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, error);
-            if (target) {
-                llvm::TargetOptions target_options;
-                TM = target->createTargetMachine(triple, llvm::sys::getHostCPUName(),
-                                                 "", // Features
-                                                 target_options, llvm::Reloc::PIC_);
-                PGX_LOG(JIT, DEBUG, "Created TargetMachine for triple: %s", triple.c_str());
+            if (TM) {
+                PGX_LOG(JIT, DEBUG, "Using hoisted TargetMachine for triple: %s", triple.c_str());
             } else {
-                PGX_LOG(JIT, DEBUG, "Failed to create TargetMachine: %s", error.c_str());
+                PGX_LOG(JIT, DEBUG, "MLIRRuntime TargetMachine is null (triple=%s)", triple.c_str());
             }
 
             llvm::PipelineTuningOptions PTO;

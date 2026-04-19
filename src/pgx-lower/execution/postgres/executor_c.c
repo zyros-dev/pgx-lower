@@ -87,11 +87,18 @@ void _PG_init(void) {
     PGX_NOTICE_C("Initializing MLIR pass registration...");
     extern void initialize_mlir_passes(void);
     initialize_mlir_passes();
+
+    PGX_NOTICE_C("Initializing MLIR runtime singleton...");
+    extern void initialize_mlir_runtime(void);
+    initialize_mlir_runtime();
 }
 
 void _PG_fini(void) {
     PGX_NOTICE_C("Uninstalling custom executor hook...");
     ExecutorRun_hook = NULL;
+
+    extern void shutdown_mlir_runtime_c(void);
+    shutdown_mlir_runtime_c();
 }
 
 extern bool execute_mlir_text(const char* mlir_text, void* dest_receiver);
