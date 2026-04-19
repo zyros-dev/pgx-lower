@@ -104,6 +104,14 @@ extern struct TupleStreamer g_tuple_streamer;
 extern void tuple_streamer_initialize(struct TupleStreamer* streamer, void* dest, void* slot);
 extern void tuple_streamer_shutdown(struct TupleStreamer* streamer);
 
+PG_FUNCTION_INFO_V1(pgx_lower_version);
+
+Datum
+pgx_lower_version(PG_FUNCTION_ARGS)
+{
+    PG_RETURN_TEXT_P(cstring_to_text("1.0"));
+}
+
 PG_FUNCTION_INFO_V1(pgx_lower_test_relalg);
 
 Datum
