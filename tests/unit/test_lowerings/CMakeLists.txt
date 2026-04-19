@@ -290,6 +290,17 @@ target_include_directories(test_vectorization PRIVATE
     ${LLVM_INCLUDE_DIRS}
 )
 
+# LLVM components needed by optimize_llvm_module: IR-parser (asmparser),
+# the per-module pass pipeline (passes / analysis / instcombine /
+# scalaropts / vectorize / transformutils), and the native target
+# backend so createTargetMachine() succeeds.
+llvm_map_components_to_libnames(llvm_vec_libs
+    support core irreader asmparser
+    passes analysis
+    instcombine scalaropts vectorize transformutils
+    target nativecodegen native
+)
+
 target_link_libraries(test_vectorization
     gtest
     ${MLIR_ALL_LIBS}
@@ -299,20 +310,8 @@ target_link_libraries(test_vectorization
     MLIRDBToArrowStd
     MLIRDSAToStd
     MLIRUtilToLLVM
-    ${LLVM_LIBRARIES}
-    ${llvm_libs}
+    ${llvm_vec_libs}
 )
-
-# Additional LLVM components that optimize_llvm_module needs: the native
-# target backend for TargetMachine, the pass builder pipeline, analysis
-# libs, and the IR-parser (for parseAssemblyString).
-llvm_map_components_to_libnames(llvm_vec_libs
-    support core irreader asmparser
-    passes analysis
-    instcombine scalaropts vectorize transformutils
-    target nativecodegen native
-)
-target_link_libraries(test_vectorization ${llvm_vec_libs})
 
 target_compile_features(test_vectorization PRIVATE cxx_std_20)
 
