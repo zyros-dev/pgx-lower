@@ -201,3 +201,59 @@ set_tests_properties(TypeMappingTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;types;mapping"
 )
+
+# ----------------------------------------------------------------------------
+# AST Const-translation smoke test — proves the frontend/SQL/translation
+# layer is unit-testable. Tests the simpler branches of translate_const
+# (integer/float/bool/null/date) that don't require PG runtime — the
+# NUMERICOID and TIMESTAMPOID branches are already POSTGRESQL_EXTENSION-
+# guarded in the source.
+
+add_executable(test_ast_const_translation
+    test_ast_const_translation.cpp
+    pg_stubs.cpp
+
+    # translate_const + PostgreSQLTypeMapper live here.
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/frontend/SQL/translation/translation_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
+)
+
+target_compile_definitions(test_ast_const_translation PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_ast_const_translation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/frontend/SQL
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+    /usr/local/pgsql/include/server
+)
+
+target_link_libraries(test_ast_const_translation
+    gtest
+    gtest_main
+    ${MLIR_ALL_LIBS}
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    lingodb_utility
+    ${llvm_libs}
+)
+
+target_compile_features(test_ast_const_translation PRIVATE cxx_std_20)
+
+add_test(NAME AstConstTranslationTest COMMAND test_ast_const_translation)
+
+set_tests_properties(AstConstTranslationTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;ast;translation"
+)

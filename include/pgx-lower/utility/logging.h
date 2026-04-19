@@ -11,6 +11,7 @@
 #include <optional>
 
 #ifndef POSTGRESQL_EXTENSION
+#include <cstdio>
 #include <iostream>
 #endif
 
@@ -196,13 +197,31 @@ private:
                               fmt "%s", ##__VA_ARGS__, _pgx_stacktrace.c_str()); \
     } while(0)
 #else
+// Non-extension (unit test) builds: route through unqualified fprintf,
+// which PG's stdio-override #define (in transitively-included PG headers)
+// rewrites to `pg_fprintf`. That symbol is stubbed to a no-op in
+// tests/unit/test_lowerings/pg_stubs.cpp so log output is silently
+// discarded during tests — correct behaviour (tests shouldn't assert
+// against log strings; assert against return values instead).
+//
+// NOTE: do NOT use the preprocessor string-literal-concat trick
+// ("[WARNING] " fmt "\n") — real call sites pass runtime `const char*`
+// values (translation_core.cpp has
+// PGX_WARNING(("Invalid … " + std::to_string(n)).c_str())), which is
+// not a string literal. Split the prefix into a separate fputs call.
 #define PGX_WARNING(fmt, ...) \
-    fprintf(stderr, "[WARNING] " fmt "\n", ##__VA_ARGS__)
+    do { \
+        fputs("[WARNING] ", stderr); \
+        fprintf(stderr, fmt, ##__VA_ARGS__); \
+        fputc('\n', stderr); \
+    } while (0)
 
 #define PGX_ERROR(fmt, ...) \
     do { \
         auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2); \
-        fprintf(stderr, "[ERROR] " fmt "%s\n", ##__VA_ARGS__, _pgx_stacktrace.c_str()); \
+        fputs("[ERROR] ", stderr); \
+        fprintf(stderr, fmt, ##__VA_ARGS__); \
+        fprintf(stderr, "%s\n", _pgx_stacktrace.c_str()); \
     } while(0)
 #endif
 

@@ -9,6 +9,7 @@ gtest-based unit tests for pgx-lower. Build + run via `just utest`.
 | MLIR pass / lowering pattern / dialect op | `tests/unit/test_lowerings/test_*.cpp` | Fast iteration, scoped to the thing you changed; no PG backend needed |
 | Pure-computation utilities (type mapping, cost formulas, plan-shape hashing, etc.) | `tests/unit/test_lowerings/test_*.cpp` | Same pattern as above |
 | JIT engine lifecycle / pass ordering | `tests/unit/test_lowerings/test_*.cpp` | `jit_execution_engine.cpp` is in the test target |
+| **AST translation** (PG plan / expression node → MLIR) | `tests/unit/test_lowerings/test_ast_*.cpp` | Translators take POD PG nodes; tests fabricate a `Const`/`Var`/`Plan` on the stack and pass it through |
 | New SQL feature producing a new output shape | `tests/sql/<NN>_*.sql` + `tests/expected/<NN>_*.out` | pg_regress is the output-equivalence gate |
 | Runtime FFI (`DateRuntime`, `NumericConversion`, `StringRuntime`, `tuple_access`, `PostgreSQLRuntime`) | pg_regress, not unit tests | These files ARE the PG integration boundary — their value is measured by integration behavior, not in isolation |
 | Catalog lookups, memory-context management, anything that reads from real PG state | pg_regress | No meaningful isolation; mocks would be a parallel reimplementation of PG |
@@ -18,6 +19,7 @@ gtest-based unit tests for pgx-lower. Build + run via `just utest`.
 - **`test_pipeline_phases.cpp`** — full MLIR pipeline from RelAlg through Standard/LLVM dialects. Covers specs that change lowering passes or pipeline phases (01, 02, 05, 08, 09, 10, 12).
 - **`test_boolean_lowering.cpp`** — individual DB-dialect lowering patterns (NOT/AND/OR/complex). Template for pattern-level tests.
 - **`test_type_mapping.cpp`** — `lingodb::utility::mlir_type_to_pg_oid`. Template for pure-computation tests that touch PG types; proves `#define` constants (OIDs) from PG headers are usable in unit tests even though the PG runtime isn't linked.
+- **`test_ast_const_translation.cpp`** — `postgresql_ast::translate_const`. Template for AST-translation tests: fabricates a PG `Const` POD on the stack, runs it through the translator, asserts the produced MLIR op kind + value. Covers simpler `translate_const` branches (int/bool/float/null/date); the NUMERICOID and TIMESTAMPOID branches are already `#ifdef POSTGRESQL_EXTENSION`-guarded so they skip in the unit-test build.
 
 Add a new file to `test_lowerings/` following one of these patterns. Wire it into `test_lowerings/CMakeLists.txt` (mirror an existing `add_executable` + `add_test` block).
 
