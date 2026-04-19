@@ -147,37 +147,6 @@ def geomean_speedup(rows) -> float:
     return (gm - 1.0) * 100.0
 
 
-def _compile_noise_outlier(rows) -> tuple[str, float] | None:
-    """Detect the 'positive geomean but one wildly-regressed query' pattern
-    that pgx-lower's SF=0.01 benchmark routinely produces from JIT-compile
-    variance. Returns (query_name, pct) if the pattern matches, else None.
-
-    Pattern — all four must hold:
-      1. Geomean speedup is non-negative (change broadly neutral or faster).
-      2. Exactly one query regresses worse than the -10% NAY threshold.
-      3. That query's absolute pgx timing is >100ms (i.e. compile-cost
-         dominated at SF=0.01 — execution at this data size is <1ms; the
-         time being measured is almost entirely JIT).
-      4. The worst-case regression is bounded (<-60% is real, not noise).
-
-    Calibrated against the spec-14 reviewer's failure mode: q01 went from
-    367ms baseline to 565ms current (-54%) on a 3-line no-op change, while
-    geomean was +1.4% and 19/20 other queries were within ±8%. That's
-    compile-time variance, not a real regression.
-    """
-    gm = geomean_speedup(rows)
-    if gm < 0:
-        return None
-    # Rows below the NAY per-query threshold.
-    bad = [(q, c, d) for (q, _, _, c, d) in rows if d <= -10.0]
-    if len(bad) != 1:
-        return None
-    q, c_ms, pct = bad[0]
-    if c_ms <= 100.0 or pct <= -60.0:
-        return None
-    return (q, pct)
-
-
 def verdict(rows, invalid_queries: list[str] | None = None) -> tuple[str, str]:
     """Return (tag, label) for the PR verdict.
 
@@ -185,34 +154,25 @@ def verdict(rows, invalid_queries: list[str] | None = None) -> tuple[str, str]:
     didn't match PG hash), the verdict is NAY no matter what the timing
     numbers say. A fast wrong answer is still wrong.
 
-    Otherwise, thresholds are calibrated against the ~±3% noise floor
-    observed at SF=0.01 iter=5 (JIT-compile variance dominates below that).
+    Timing thresholds (calibrated for SF=0.5 iter=1, where execution
+    dominates JIT compile and per-query variance is ~5-10%):
 
       YAY   — geomean ≥ +3% AND no query regresses worse than −5%.
       NAY   — geomean ≤ −3% OR any query regresses worse than −10%.
-      MAYBE — everything in between (inside the noise band, mixed signals,
-              or signal too weak to act on without more iterations).
+      MAYBE — everything in between (inside the noise band, mixed signals).
 
-    **Compile-noise-outlier softening** (see _compile_noise_outlier): when
-    NAY would fire purely because a single >100ms pgx query regressed in an
-    otherwise-healthy run (positive geomean, nothing else >-10%), downgrade
-    to MAYBE with a specific "re-run with bench-merge to confirm" call-out.
-    This keeps the NAY signal meaningful — real correctness regressions and
-    broad-based slowdowns still trip it.
+    An earlier version had JIT-compile-noise softening to turn single-query
+    outliers at SF=0.01 into MAYBE instead of NAY. That was a workaround
+    for SF=0.01 iter=5 being bimodal on q01. Now that the bench runs at
+    SF=0.5 (execution-dominated), the softening is both unneeded and
+    actively wrong — a real -10% regression on a high-pgx-time query
+    would be mislabeled as compile noise. Removed.
     """
     if invalid_queries:
         return ("nay", f"🔴 NAY — correctness regression ({', '.join(invalid_queries)})")
     gm = geomean_speedup(rows)
     worst = min((d for (_, _, _, _, d) in rows), default=0.0)
     if gm <= -3.0 or worst <= -10.0:
-        outlier = _compile_noise_outlier(rows)
-        if outlier is not None:
-            q, pct = outlier
-            return ("maybe",
-                    f"🟡 MAYBE — suspected JIT-compile-noise outlier on "
-                    f"**{q}** ({pct:+.1f}%); geomean {gm:+.1f}% is healthy "
-                    f"and no other query regresses past -10%. Re-run "
-                    f"`just bench-merge` to confirm before treating as real.")
         return ("nay", "🔴 NAY — regression")
     if gm >= 3.0 and worst > -5.0:
         return ("yay", "🟢 YAY — improvement")
@@ -248,6 +208,43 @@ def render_markdown(rows, baseline_meta, current_meta, chart_url: str,
                     validation: dict[str, bool] | None = None) -> str:
     validation = validation or {}
     invalid_queries = sorted(q for q, v in validation.items() if not v)
+
+    # Bail out early if baseline and current were captured at different
+    # scale factors. Comparing pgx times across SFs is arithmetic
+    # nonsense — exec time scales roughly linearly with SF, so the diff
+    # reflects "data size changed" not "code changed". This happens
+    # automatically the first time the canonical bench SF changes, when
+    # the new PR diffs against a baseline from the old regime.
+    bsf = baseline_meta.get('scale_factor')
+    csf = current_meta.get('scale_factor')
+    if bsf is not None and csf is not None and abs(bsf - csf) > 1e-9:
+        lines = []
+        lines.append(f"## 🟡 BASELINE-SF-MISMATCH — unable to compare")
+        lines.append("")
+        lines.append(f"- **Baseline scale factor:** {bsf}")
+        lines.append(f"- **Current scale factor:**  {csf}")
+        lines.append("")
+        lines.append(f"![bench diff]({chart_url})")
+        lines.append("")
+        lines.append("> The baseline and this run used different TPC-H scale factors, "
+                     "so per-query percentages reflect data-size change (exec time "
+                     "scales linearly with SF), not code change. Verdict withheld. "
+                     "Once at least one PR at the current SF merges to main, future "
+                     "PRs will have a same-SF baseline.")
+        lines.append("")
+        lines.append("| Query | PG (ms) | pgx baseline (ms) | pgx current (ms) | ✓ |")
+        lines.append("|-------|--------:|------------------:|-----------------:|:--|")
+        for q, pg, b, c, _ in rows:
+            pg_str = f"{pg:.1f}" if pg == pg else "—"
+            if q not in validation:
+                check = "—"
+            elif validation[q]:
+                check = "✅"
+            else:
+                check = "❌"
+            lines.append(f"| {q} | {pg_str} | {b:.1f} | {c:.1f} | {check} |")
+        return "\n".join(lines) + "\n"
+
     gm = geomean_speedup(rows)
     gm_label = f"{gm:+.1f}%" + (" 🟢" if gm > 1 else " 🔴" if gm < -1 else " ⚪")
     _, verdict_label = verdict(rows, invalid_queries=invalid_queries)

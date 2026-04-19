@@ -174,21 +174,29 @@ test-record-baseline: _preflight
     set -euo pipefail
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt --record)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
-# Smoke benchmark: SF=0.01, 5 iterations per query, pgx ON vs OFF. ~40s total.
-# iter=5 damps JIT-compile variance which is the dominant noise source at
-# small SF — the chart would be useless with iter=1 (±8% run-to-run).
-# Recreates the benchmark/output/ dir before starting — a partial interrupted
-# earlier run can leave sqlite journal/lock state that makes subsequent
-# connects open readonly and bomb mid-run with "attempt to write a readonly
-# database". Wiping the whole dir (not just *.db) is the reliable reset.
+# Smoke benchmark: SF=0.5, 1 iteration per query, pgx ON vs OFF.
+# First run on a fresh container takes ~5 min (dbgen + psql load dominates);
+# subsequent runs take ~2 min because run.py detects TPC-H is already loaded
+# at SF=0.5 (customer row count == 75_000) and skips the regen+reload step.
+# Running at SF=0.5 puts us in the execution-dominated regime (~88% of each
+# query's wall time is real execution, ~12% is JIT compile), so the per-query
+# variance drops from the ~50% bimodal mess we saw at SF=0.01 to honest
+# 5–10% execution noise. iter=1 is enough at this SF — medianing multiple
+# iterations doesn't meaningfully reduce execution variance, it just burns
+# time.
+#
+# Recreates benchmark/output/ each run — a partial interrupted earlier run
+# can leave sqlite journal/lock state that makes subsequent connects open
+# readonly and bomb mid-run with "attempt to write a readonly database".
 bench: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.01 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 5") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.5 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
-# Trustworthy-signal benchmark: SF=0.16, 3 iterations. ~60-120s. Run before
-# merging anything that claims a performance improvement — SF=0.01 is
-# compile-dominated and can't distinguish real speedups from noise.
+# Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
+# cached. Run before merging anything that claims a performance improvement
+# where SF=0.5's numbers feel marginal. At SF=1 the per-query wall time is
+# long enough (seconds) that ±5% is real signal.
 bench-merge: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.16 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 3") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 1.0 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Generate the PR benchmark report. Requires an open PR (the PR number
 # becomes part of the filename). Snapshots the current benchmark.db to

@@ -641,17 +641,45 @@ def setup_profiling_dirs(output_dir, run_timestamp, scale_factor):
     return dirpath
 
 
-def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False, label=None, iterations=1):
-    db_file = output_dir / 'benchmark.db'
-    db_conn = sqlite3.connect(db_file)
-    db_conn.executescript(SCHEMA_SQL)
+def tpch_loaded_at_sf(pg_conn, sf: float) -> bool:
+    """Return True iff TPC-H data at this scale factor is already loaded.
 
-    # Kill all existing connections with OS-level kill and drop TPC-H tables
+    Uses `customer` row count as the sentinel (dbgen produces exactly
+    150_000 * SF rows there, no jitter). When the count matches the
+    target SF, skip dbgen + reload — subsequent `just bench` runs after
+    the first complete in ~1/2 the wall time.
+
+    On any error (table missing, connection dropped, unexpected state)
+    returns False and lets the caller fall back to the full load.
+    """
+    expected = int(150_000 * sf)
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('customer')")
+            if cur.fetchone()[0] is None:
+                return False
+            cur.execute("SELECT count(*) FROM customer")
+            actual = cur.fetchone()[0]
+        return actual == expected
+    except Exception:
+        # Reset the connection state — any aborted tx would block
+        # subsequent queries.
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def drop_tpch_tables(pg_port: int = 5432) -> None:
+    """Tear down any stale TPC-H state before a fresh load. Kills
+    backend connections holding table locks, then drops the tables.
+    Isolated in its own autocommit connection because DROP CASCADE
+    requires no other sessions to be attached."""
     cleanup_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
     cleanup_conn.autocommit = True
     try:
         with cleanup_conn.cursor() as cur:
-            # Get all client backend PIDs except our own
             cur.execute("""
                         SELECT pid
                         FROM pg_stat_activity
@@ -659,21 +687,15 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
                           AND backend_type = 'client backend'
                         """)
             pids = [row[0] for row in cur.fetchall()]
-
-            # Force kill at OS level
             if pids:
                 pid_list = ' '.join(str(p) for p in pids)
-                result = subprocess.run(
+                subprocess.run(
                     ['docker', 'compose', '-f', 'docker/docker-compose.yml', 'exec', 'benchmark', 'bash', '-c',
                      f'kill -9 {pid_list}'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
+                    capture_output=True, text=True, timeout=5
                 )
                 print(f"Cleaned up {len(pids)} stale connections")
                 time.sleep(0.5)
-
-            # Drop all TPC-H tables to ensure clean state
             cur.execute("""
                         DROP TABLE IF EXISTS lineitem CASCADE;
                         DROP TABLE IF EXISTS orders CASCADE;
@@ -688,6 +710,12 @@ def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args
         print(f"Warning: Failed to clean up: {e}")
     finally:
         cleanup_conn.close()
+
+
+def init_databases(sf, run_id, output_dir, run_timestamp, pg_port=5432, run_args=None, container=None, indexes_enabled=False, label=None, iterations=1):
+    db_file = output_dir / 'benchmark.db'
+    db_conn = sqlite3.connect(db_file)
+    db_conn.executescript(SCHEMA_SQL)
 
     pg_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
     pg_conn.autocommit = False
@@ -1102,11 +1130,23 @@ def main():
     postgres_version = get_postgres_version(pg_conn)
     pgx_version = get_pgx_version()
 
-    if not generate_tpch_data(sf):
-        sys.exit(1)
-
-    if not load_tpch_database(pg_conn):
-        sys.exit(1)
+    # Idempotent load: if TPC-H is already present at this SF, skip the
+    # 4-minute dbgen+psql-load step. First `just bench` does a full load;
+    # subsequent runs land in ~1/2 the wall time. Re-loading only happens
+    # if the customer row count doesn't match the target SF (fresh
+    # container, different SF than last time, corrupted state).
+    if tpch_loaded_at_sf(pg_conn, sf):
+        print(f"TPC-H already loaded at SF={sf} (customer row count matches); skipping dbgen + load.")
+    else:
+        print(f"TPC-H not present at SF={sf}; loading from scratch.")
+        pg_conn.close()  # release postgres-db conn; drop_tpch_tables opens its own autocommit one
+        drop_tpch_tables(pg_port)
+        pg_conn = psycopg2.connect(host='localhost', port=pg_port, database='postgres', user='postgres')
+        pg_conn.autocommit = False
+        if not generate_tpch_data(sf):
+            sys.exit(1)
+        if not load_tpch_database(pg_conn):
+            sys.exit(1)
 
     run_benchmark_queries(pg_conn, db_conn, run_id, script_dir, profile_enabled, output_dir, run_timestamp,
                           pgx_version, postgres_version, sf, db_file, pg_port, query_filter, skipped_queries, iterations, perf_stats_enabled)
