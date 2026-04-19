@@ -62,9 +62,45 @@ check: _preflight
 test: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod o+rx {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && su postgres -c \"ctest --output-on-failure\"") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
-# Smoke benchmark: SF=0.01, pgx ON vs OFF, <30s. Queued.
+# Smoke benchmark: SF=0.01, 5 iterations per query, pgx ON vs OFF. ~40s total.
+# iter=5 damps JIT-compile variance which is the dominant noise source at
+# small SF — the chart would be useless with iter=1 (±8% run-to-run).
 bench: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/tpch/run.py 0.01 --port 5432 --container {{_ctr}} --indexes --skip q17,q20") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/tpch/run.py 0.01 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 5") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Trustworthy-signal benchmark: SF=0.16, 3 iterations. ~60-120s. Run before
+# merging anything that claims a performance improvement — SF=0.01 is
+# compile-dominated and can't distinguish real speedups from noise.
+bench-merge: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/tpch/run.py 0.16 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 3") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Generate the PR benchmark report: snapshots the current benchmark.db into
+# ./benchmarks/<ts>__<branch>__<sha7>.db, picks the most recent *__main__*.db
+# in that folder as the baseline, and emits matching .png + .md. Prints the
+# markdown body to stdout so `just pr` can consume it.
+bench-report:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    sha=$(git rev-parse --short=7 HEAD)
+    ts=$(date -u +%Y%m%dT%H%M%S)
+    prefix="${ts}__${branch}__${sha}"
+    mkdir -p benchmarks
+    # Snapshot the db produced by `just bench`.
+    src="{{_wdir}}/benchmark/output/benchmark.db"
+    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/benchmarks/${prefix}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
+    # Pick most recent main-branch baseline.
+    baseline=$(ls -1 benchmarks/*__main__*.db 2>/dev/null | sort | tail -1 || true)
+    if [ -z "${baseline}" ]; then
+        echo "ERROR: no baseline in benchmarks/. Run 'just bench && just bench-report' on main first." >&2
+        exit 1
+    fi
+    baseline_name=$(basename "${baseline}")
+    ssh {{_thor}} "docker exec {{_ctr}} python3 {{_wdir}}/benchmark/report.py \
+        --baseline {{_wdir}}/benchmarks/${baseline_name} \
+        --current {{_wdir}}/benchmarks/${prefix}.db \
+        --out {{_wdir}}/benchmarks/${prefix} \
+        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/benchmarks/${prefix}.png\""
 
 # --- Queue ops ------------------------------------------------------------
 

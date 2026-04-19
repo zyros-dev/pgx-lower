@@ -9,6 +9,7 @@ ENV LC_ALL=en_US.UTF-8
 RUN apt-get update && apt-get install -y \
     build-essential \
     ninja-build \
+    ccache \
     git \
     wget \
     curl \
@@ -28,11 +29,13 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libgtest-dev \
     libzstd-dev \
+    unzip \
     locales \
     sudo \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8 \
-    && update-locale LANG=en_US.UTF-8
+    && update-locale LANG=en_US.UTF-8 \
+    && ccache -M 10G
 
 RUN wget -q https://github.com/janestreet/magic-trace/releases/latest/download/magic-trace -O /usr/local/bin/magic-trace && \
     chmod +x /usr/local/bin/magic-trace
