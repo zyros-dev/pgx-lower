@@ -203,6 +203,17 @@ void close_postgres_table(void* tableHandle);
 // C Interface - Field Access
 auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
 auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t;
+// Forward-declare the PG Numeric typedef so the signature is well-formed both
+// with and without the PG headers in scope. In POSTGRESQL_EXTENSION builds,
+// postgres.h has already defined `typedef struct NumericData *Numeric;` above
+// this point and this line just re-types the same thing. In unit-test builds,
+// this is the only declaration of Numeric and it's enough for the signature
+// to compile (the function is never called from unit tests, and if someone
+// ever dereferences it in one, the linker will flag that at that point).
+#ifndef POSTGRESQL_EXTENSION
+struct NumericData;
+typedef struct NumericData* Numeric;
+#endif
 auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> Numeric;
 
 // C Interface - Result Storage

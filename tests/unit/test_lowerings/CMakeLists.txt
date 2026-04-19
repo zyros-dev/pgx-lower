@@ -1,24 +1,23 @@
 find_package(GTest REQUIRED)
 
-# test_mlir_lowerings is currently unbuildable without a real refactor.
+# test_mlir_lowerings links against code that, in the POSTGRESQL_EXTENSION
+# build, calls into PG's backend (palloc machinery, catalog lookups,
+# CHECK_FOR_INTERRUPTS, pg_fprintf). For the unit-test build those are
+# either #ifdef-ed out at the call site (guarded by POSTGRESQL_EXTENSION)
+# or satisfied by minimal stubs in pg_stubs.cpp below — MLIR-pipeline tests
+# don't exercise those paths, so stubs that `abort()` or return a trivial
+# default are enough.
 #
-# Problem: test_pipeline_phases.cpp + mlir_runner.cpp + mlir_runner_phases.cpp
-# transitively drag in source that uses PG backend symbols (pg_fprintf,
-# CHECK_FOR_INTERRUPTS, GetDefaultOpClass / get_opclass_family /
-# get_opfamily_member, the Numeric type, the JITEngine full impl that
-# depends on tuple_access.h) which don't exist when you link outside a
-# running PG. Adding stub .cpp files covers the catalog helpers but the
-# cascade keeps going — MLIR forward-decls in logging.h aren't enough,
-# tuple_access.h unconditionally references Numeric, etc.
+# If a new transitive dep introduces more PG-symbol leaks and breaks the
+# link, two knobs: extend pg_stubs.cpp (for leaf calls that never fire in
+# tests), or add a POSTGRESQL_EXTENSION guard at the offending call site
+# (for calls that would actually corrupt the test if run).
 #
-# Short fix: enable ENABLE_BROKEN_MLIR_LOWERING_TESTS=ON to try to build
-# it anyway (for whoever's refactoring). Real fix: split mlir_to_postgres.cpp
-# and the rest of the cascade into a catalog-free shim + catalog-using
-# impl and link only the shim into tests. Tracked as harness work;
-# doesn't block general unit-test TDD (see test_boolean_lowering below).
-option(ENABLE_BROKEN_MLIR_LOWERING_TESTS "Try to build test_mlir_lowerings (currently unbuildable; needs source refactor)" OFF)
+# Flip OFF only if you've broken the link and need the rest of the utest
+# suite to keep running while you debug.
+option(ENABLE_MLIR_LOWERING_TESTS "Build the test_mlir_lowerings gtest binary. Requires pg_stubs.cpp to cover any PG symbols leaked through transitive deps." ON)
 
-if(ENABLE_BROKEN_MLIR_LOWERING_TESTS)
+if(ENABLE_MLIR_LOWERING_TESTS)
 add_executable(test_mlir_lowerings
     standalone_mlir_runner.cpp
     test_pipeline_phases.cpp
@@ -45,7 +44,7 @@ add_executable(test_boolean_lowering
 find_package(MLIR REQUIRED CONFIG)
 find_package(LLVM REQUIRED CONFIG)
 
-if(ENABLE_BROKEN_MLIR_LOWERING_TESTS)
+if(ENABLE_MLIR_LOWERING_TESTS)
 
 # Set the compile definition to enable standalone mode
 target_compile_definitions(test_mlir_lowerings PRIVATE
@@ -116,7 +115,7 @@ set_tests_properties(MLIRLoweringTests PROPERTIES
     LABELS "unit;mlir;lowering"
 )
 
-endif()  # ENABLE_BROKEN_MLIR_LOWERING_TESTS
+endif()  # ENABLE_MLIR_LOWERING_TESTS
 
 # Configure boolean lowering test
 target_compile_definitions(test_boolean_lowering PRIVATE 

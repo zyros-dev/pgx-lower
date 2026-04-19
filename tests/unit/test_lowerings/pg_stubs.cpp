@@ -22,6 +22,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 using Oid = unsigned int;
 using int16 = short;
@@ -38,7 +39,39 @@ using int16 = short;
     std::abort();
 }
 
+// Some of DSAToStdPatterns.cpp's hashtable-spec construction uses PG's
+// MemoryContext machinery (palloc into CurTransactionContext) at MLIR
+// lowering time. Unit tests don't exercise that path — they test lower-
+// level phase outputs — but the symbols have to resolve for the link to
+// succeed. Provide a minimal self-managed pool that either services the
+// allocation (so the code can run if reached without crashing the test)
+// or aborts if a path genuinely needs PG context semantics.
+struct MemoryContextData;
+typedef struct MemoryContextData* MemoryContext;
+
+// Trivial storage. A test that actually allocates via these will leak
+// until process exit — fine for the test's lifetime, no need for a real
+// memory context implementation.
+
 extern "C" {
+
+// MemoryContext globals (variables, not functions).
+MemoryContext CurrentMemoryContext = nullptr;
+MemoryContext CurTransactionContext = nullptr;
+
+void* MemoryContextAlloc(MemoryContext /*context*/, std::size_t size) {
+    // Use malloc — test-only, no need for arena/context tracking.
+    return std::malloc(size);
+}
+
+// PG's pool-allocated strdup. Same pattern as MemoryContextAlloc.
+char* pstrdup(const char* s) {
+    if (s == nullptr) return nullptr;
+    const std::size_t len = std::strlen(s) + 1;
+    char* dst = static_cast<char*>(std::malloc(len));
+    std::memcpy(dst, s, len);
+    return dst;
+}
 
 int pg_fprintf(std::FILE* /*stream*/, const char* /*fmt*/, ...) {
     pg_stub_abort("pg_fprintf");

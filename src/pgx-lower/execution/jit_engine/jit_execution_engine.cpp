@@ -126,6 +126,14 @@ bool JITEngine::execute(void* estate, void* dest) const {
     PGX_LOG(JIT, IO, "JIT Execute IN: CompiledQuery (estate=%p, dest=%p)", estate, dest);
 
     const auto start_time = std::chrono::high_resolution_clock::now();
+
+    // The PG_TRY/PG_CATCH machinery (error-data capture, MemoryContext
+    // switching, CHECK_FOR_INTERRUPTS) all lives in PG's runtime — available
+    // only when the extension is built against a real PG backend. For unit
+    // tests (BUILDING_UNIT_TESTS) we just call the compiled function
+    // directly; any crash surfaces as a test failure instead of being wrapped
+    // in a PG-level exception.
+#ifdef POSTGRESQL_EXTENSION
     const auto saved_context = CurrentMemoryContext;
 
     PG_TRY();
@@ -171,6 +179,14 @@ bool JITEngine::execute(void* estate, void* dest) const {
     PG_END_TRY();
 
     MemoryContextSwitchTo(saved_context);
+#else  // BUILDING_UNIT_TESTS path
+    if (set_context_fn_) {
+        const auto set_ctx = reinterpret_cast<void (*)(void*)>(set_context_fn_);
+        set_ctx(estate);
+    }
+    const auto fn = reinterpret_cast<void (*)()>(main_fn_);
+    fn();
+#endif
 
     const auto end_time = std::chrono::high_resolution_clock::now();
     const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);

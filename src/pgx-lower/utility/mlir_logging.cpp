@@ -1,4 +1,8 @@
 #include "pgx-lower/utility/logging.h"
+// logging.h forward-declares mlir::ModuleOp; this .cpp needs the complete
+// type for the function signature + verify() call, so pull in the real
+// MLIR builtin ops header (which defines ModuleOp fully).
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
 
