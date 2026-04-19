@@ -27,6 +27,7 @@ add_executable(test_mlir_lowerings
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runner_phases.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runner_utils.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runner_passes.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runtime.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/mlir_logging.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
@@ -256,4 +257,56 @@ add_test(NAME AstConstTranslationTest COMMAND test_ast_const_translation)
 set_tests_properties(AstConstTranslationTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;ast;translation"
+)
+
+# ----------------------------------------------------------------------------
+# MLIRRuntime singleton smoke test — proves get_mlir_runtime() returns a
+# process-lifetime MLIRContext with dialects pre-loaded and a non-null
+# TargetMachine. Covers spec 01 (hoist MLIR/JIT state out of per-query path).
+
+add_executable(test_mlir_runtime
+    test_mlir_runtime.cpp
+    pg_stubs.cpp
+
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/mlir_setup/mlir_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
+    ${CMAKE_SOURCE_DIR}/src/lingodb/runtime/MetaData.cpp
+)
+
+target_compile_definitions(test_mlir_runtime PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_mlir_runtime PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_mlir_runtime
+    gtest
+    gtest_main
+    ${MLIR_ALL_LIBS}
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    ${llvm_libs}
+)
+
+target_compile_features(test_mlir_runtime PRIVATE cxx_std_20)
+
+add_test(NAME MLIRRuntimeTest COMMAND test_mlir_runtime)
+
+set_tests_properties(MLIRRuntimeTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;mlir;runtime"
 )

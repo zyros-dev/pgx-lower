@@ -47,72 +47,8 @@ extern "C" void initialize_mlir_passes() {
     }
 }
 
-namespace mlir_runner {
-
-bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
-    if (!initialize_mlir_context(context)) {
-        PGX_ERROR("Failed to initialize MLIR context and dialects");
-        return false;
-    }
-
-    context.getDiagEngine().registerHandler([](mlir::Diagnostic &diag) {
-        std::string diagStr;
-        llvm::raw_string_ostream os(diagStr);
-        
-        std::string locStr;
-        llvm::raw_string_ostream locOs(locStr);
-        diag.getLocation().print(locOs);
-        locOs.flush();
-        
-        diag.print(os);
-        os.flush();
-        
-        switch (diag.getSeverity()) {
-            case mlir::DiagnosticSeverity::Error:
-            case mlir::DiagnosticSeverity::Warning:
-            case mlir::DiagnosticSeverity::Note:
-            case mlir::DiagnosticSeverity::Remark:
-                PGX_WARNING("MLIR Note at %s: %s",
-                       locStr.empty() ? "unknown" : locStr.c_str(), 
-                       diagStr.c_str());
-                break;
-        }
-        
-        return mlir::success();
-    });
-
-    context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
-    context.getOrLoadDialect<::mlir::db::DBDialect>();
-    context.getOrLoadDialect<::mlir::dsa::DSADialect>();
-    context.getOrLoadDialect<::mlir::util::UtilDialect>();
-    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-    context.getOrLoadDialect<mlir::scf::SCFDialect>();
-    context.getOrLoadDialect<mlir::memref::MemRefDialect>();
-    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-
-    return true;
-}
-
-bool initialize_mlir_context(::mlir::MLIRContext& context) {
-    try {
-        context.disableMultithreading();
-
-        context.getOrLoadDialect<mlir::func::FuncDialect>();
-        context.getOrLoadDialect<mlir::arith::ArithDialect>();
-        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
-        context.getOrLoadDialect<::mlir::db::DBDialect>();
-        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
-        context.getOrLoadDialect<::mlir::util::UtilDialect>();
-
-        return true;
-
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to initialize MLIR context: %s", e.what());
-        return false;
-    } catch (...) {
-        PGX_ERROR("Unknown error during MLIR context initialization");
-        return false;
-    }
-}
-
-} // namespace mlir_runner
+// setupMLIRContextForJIT + initialize_mlir_context used to live here.
+// Spec 01 hoisted all per-query MLIR-context setup into the
+// MLIRRuntime singleton (mlir_runtime.cpp). The unit-test harness
+// StandalonePipelineTester loads dialects inline for its own fresh
+// context.

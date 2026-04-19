@@ -30,6 +30,18 @@ class ColumnManager {
       }
    }
 
+   // Per-query reset. The ColumnManager lives on the RelAlgDialect instance,
+   // which (after spec 01) is shared across queries via the MLIRRuntime
+   // singleton. Column pointers and scope counters from a previous query
+   // would otherwise leak into the next query's query-graph optimizer and
+   // cause stale-pointer lookups (QueryGraphBuilder::calcSES). Call this
+   // before each query translation.
+   void reset() {
+      attributes.clear();
+      attributesRev.clear();
+      scopeUnifier.clear();
+   }
+
    private:
    MLIRContext* context;
    struct HashPair {

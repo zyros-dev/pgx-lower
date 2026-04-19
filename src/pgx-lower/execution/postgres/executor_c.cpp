@@ -9,6 +9,9 @@
 #include <cstring>
 #include "mlir/IR/MLIRContext.h"
 #include "pgx-lower/utility/logging.h"
+#include "pgx-lower/execution/mlir_runtime.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 
 extern "C" {
 #include "postgres.h"
@@ -174,11 +177,11 @@ Datum log_cpp_notice(PG_FUNCTION_ARGS) {
 
 bool execute_mlir_text(const char* mlir_text, void* dest_receiver) {
     try {
-        mlir::MLIRContext context;
-        if (!mlir_runner::setupMLIRContextForJIT(context)) {
-            PGX_ERROR("Failed to setup MLIR context");
-            return false;
-        }
+        // Spec 01: reuse the shared MLIRContext so LLVMDialectTranslation
+        // and the dialect registry (appended once at _PG_init) are visible.
+        auto& rt = pgx_lower::execution::get_mlir_runtime();
+        mlir::MLIRContext& context = rt.context;
+        context.getLoadedDialect<::mlir::relalg::RelAlgDialect>()->getColumnManager().reset();
 
         auto moduleRef = mlir::parseSourceString<mlir::ModuleOp>(mlir_text, &context);
         if (!moduleRef) {

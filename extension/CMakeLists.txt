@@ -12,6 +12,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_phases.cpp
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_passes.cpp
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_utils.cpp
+        ../src/pgx-lower/execution/mlir_setup/mlir_runtime.cpp
         ../src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
         ../src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
         ../src/pgx-lower/frontend/SQL/translation/expression_translator_basic.cpp
