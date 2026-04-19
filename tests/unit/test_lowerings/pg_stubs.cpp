@@ -74,7 +74,11 @@ char* pstrdup(const char* s) {
 }
 
 int pg_fprintf(std::FILE* /*stream*/, const char* /*fmt*/, ...) {
-    pg_stub_abort("pg_fprintf");
+    // PG macros (PGX_WARNING, elog-family, ereport) bottom out in pg_fprintf
+    // for formatted log output. In unit tests we don't care about logs —
+    // silently discard. Tests that want to assert a warning fired should
+    // wire their own check into the code path, not rely on log scraping.
+    return 0;
 }
 
 Oid GetDefaultOpClass(Oid /*type_oid*/, Oid /*am*/) {

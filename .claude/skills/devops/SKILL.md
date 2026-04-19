@@ -63,10 +63,13 @@ TDD is mandatory here (see CLAUDE.md). Before any implementation change:
 
 1. **Pick the right test home — default to `tests/unit/` (gtest), not `tests/sql/`.**
 
-   - `tests/sql/` + `tests/expected/` is the **pg_regress output-equivalence suite**. It exists to prove pgx_lower produces the same output as stock PG for a curated, stable set of SQL patterns (scans, joins, aggregations, decimals, null handling, TPC-H). **The suite is meant to stay roughly constant.** Adding a new `.sql` per spec is bloat — most specs are about *how* the existing queries are lowered/optimized, and the existing suite already catches the correctness regressions that change would cause.
-   - `tests/unit/` (`test_lowerings/*.cpp`, gtest-based) is the **primary TDD home**. New C function? Write a gtest. New MLIR pass? `tests/unit/test_lowerings/test_<thing>.cpp` that invokes the pass with a known input and asserts the expected IR or runtime result. New runtime FFI? gtest that calls it directly. This is the fast iteration loop — no pg_regress ceremony, no `.out` whitespace games.
+   See **`tests/unit/README.md`** for the decision table and existing-test patterns. Short version:
 
-   **Add to `tests/sql/` only if**: your change introduces a SQL-level feature the suite genuinely doesn't cover (a new operator class, a new data-type path, a lowering that exercises a combination the existing queries miss). Default assumption: you're adding a unit test.
+   - `tests/sql/` + `tests/expected/` is the **pg_regress output-equivalence suite** — curated coverage meant to stay stable. Adding a new `.sql` per spec is bloat; the existing suite already catches correctness regressions for lowering changes.
+   - `tests/unit/test_lowerings/*.cpp` (gtest) is the **primary TDD home** for MLIR passes, dialect patterns, JIT pipeline, and pure-computation utilities (type mapping, cost formulas, plan-shape hashing). There are three existing smoke tests you can copy as a template: `test_pipeline_phases.cpp` (full pipeline), `test_boolean_lowering.cpp` (single pattern), `test_type_mapping.cpp` (pure computation).
+   - **Runtime FFI code** (`src/pgx-lower/runtime/*`, `tuple_access`, `PostgreSQLRuntime`) is integration-bound — it IS the PG boundary. Unit tests there would be parallel-reimplementations of PG. Those stay as pg_regress tests; don't try to unit-test them.
+
+   **Add to `tests/sql/` only if**: your change introduces a SQL-level feature the existing suite genuinely doesn't cover. Default assumption: you're adding a unit test under `test_lowerings/`.
 
 2. Add or modify the test that captures the new behavior.
 

@@ -153,3 +153,51 @@ set_tests_properties(BooleanLoweringTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;mlir;lowering;boolean"
 )
+
+# ----------------------------------------------------------------------------
+# Type-mapping smoke test — proves pure-computation functions in
+# lingodb_utility are unit-testable despite the library's PG-heavy context.
+# Also catches type-mapping contract changes.
+
+add_executable(test_type_mapping
+    test_type_mapping.cpp
+    pg_stubs.cpp
+)
+
+target_compile_definitions(test_type_mapping PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_type_mapping PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+    /usr/local/pgsql/include/server
+)
+
+target_link_libraries(test_type_mapping
+    gtest
+    gtest_main
+    ${MLIR_ALL_LIBS}
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    lingodb_utility
+    ${llvm_libs}
+)
+
+target_compile_features(test_type_mapping PRIVATE cxx_std_20)
+
+add_test(NAME TypeMappingTest COMMAND test_type_mapping)
+
+set_tests_properties(TypeMappingTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;types;mapping"
+)
