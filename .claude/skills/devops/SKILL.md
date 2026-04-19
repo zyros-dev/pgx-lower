@@ -199,7 +199,7 @@ git push
 
 `just bench-report` **auto-injects the `.md` block into the PR body**, replacing the `<paste the stats summary block here — required>` placeholder that `just pr` left. You don't have to `gh pr edit` it in by hand. What you still do manually:
 
-- Fill in the `<what and why>` Summary placeholder — `bench-report` can't know your intent.
+- **Only fill `<what and why>` if it's still there.** `just pr` resolves the Summary body in this order: (1) the `SUMMARY` positional arg if you passed one, (2) `$BODY_FILE` env var if set, (3) the last commit's body (everything after the subject line, minus any `Co-Authored-By:` trailer). If any of those sources is non-empty, the PR opens with Summary pre-filled and no `<what and why>` placeholder remains. `just pr-summary "..."` is only useful when the commit was subject-only AND you didn't pass SUMMARY or BODY_FILE — otherwise it (correctly) prints `placeholder already replaced on PR #N. No-op.` and does nothing. That no-op is *success*, not a bug: your commit body already populated the PR.
 - Keep the `## Test plan` checklist from the `just pr` template and tick items as they pass.
 
 If you re-run `bench-report` (e.g. after `just bench-merge`), it detects the placeholder is already gone and skips the auto-inject — paste the new `.md` manually or edit the PR body to match.
