@@ -39,6 +39,7 @@ extern void prepare_computed_results(int32_t numColumns);
 extern bool add_tuple_to_result(int64_t value);
 extern void* open_postgres_table(const char* tableName);
 extern int64_t read_next_tuple_from_table(void* tableHandle);
+extern TupleDesc get_table_handle_tupledesc(void* tableHandle);
 }
 
 static void* g_execution_context = nullptr;
@@ -633,17 +634,9 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
     // Pre-resolve per-column decode metadata once. The per-row hot loop in
     // process_tuple_into_batch reads from this vector instead of doing a
     // TupleDescAttr lookup + type-OID re-dispatch + atttypmod→scale on every
-    // tuple. The table_handle's third field is the TupleDesc (kept in sync
-    // with the layout in tuple_access.cpp's open_postgres_table).
+    // tuple.
     {
-        struct TableHandleLayout {
-            void* rel;
-            void* scanDesc;
-            void* tupleDesc;
-            bool isOpen;
-        };
-        const auto* th = static_cast<TableHandleLayout*>(iter->table_handle);
-        const TupleDesc tupleDesc = static_cast<TupleDesc>(th->tupleDesc);
+        const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
         iter->column_decode_meta.reserve(iter->columns.size());
         for (size_t i = 0; i < iter->columns.size(); i++) {
             ColumnDecodeMeta meta{};
@@ -827,14 +820,7 @@ bool DataSourceIteration::isValid() {
     }
 
     // Need to fetch new batch
-    struct PostgreSQLTableHandle {
-        void* rel;
-        void* scanDesc;
-        void* tupleDesc;
-        bool isOpen;
-    };
-    const auto* table_handle = static_cast<PostgreSQLTableHandle*>(iter->table_handle);
-    const auto tupleDesc = static_cast<TupleDesc>(table_handle->tupleDesc);
+    const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
 
     prepare_new_batch(iter, tupleDesc);
     read_and_fill_batch(iter, tupleDesc);

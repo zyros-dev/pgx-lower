@@ -470,6 +470,13 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     return 1;
 }
 
+extern "C" TupleDesc get_table_handle_tupledesc(void* tableHandle) {
+    if (!tableHandle) {
+        return nullptr;
+    }
+    return static_cast<PostgreSQLTableHandle*>(tableHandle)->tupleDesc;
+}
+
 extern "C" void close_postgres_table(void* tableHandle) {
     PGX_LOG(RUNTIME, IO, "close_postgres_table IN: tableHandle=%p", tableHandle);
     PGX_LOG(RUNTIME, DEBUG, "close_postgres_table called with handle: %p", tableHandle);
