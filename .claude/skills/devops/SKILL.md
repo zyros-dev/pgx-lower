@@ -53,9 +53,14 @@ If `just spec-claim` fails because the spec is already claimed, first check whet
 - `gh pr list --head <branch-from-status>` — any activity?
 - `mutagen sync list pgx-lower-<branch>` — session still live?
 
-If the answer is "PR is CLOSED unmerged and the worktree/branch/session are dangling" (zombie state), recover atomically with `just spec-abandon NN "<reason>"`. That closes the PR if still open, retitles it `[abandoned] spec NN — <reason>` so future agents don't try to resurrect it, deletes the remote branch, tears down the worktree on mac + thor, terminates the mutagen session, and flips STATUS back to `available`. Then re-run `just spec-claim`. Do **not** piece this together by hand — `spec-abandon` is idempotent and handles the "already gone" cases gracefully.
+`just spec-abandon NN "<reason>"` is the right tool for *every* case where you need to reset state — not just zombies. It closes the PR (open or closed), retitles it `[abandoned] spec NN — <reason>`, deletes the remote branch, tears down the worktree on mac + thor, terminates the mutagen session, and flips STATUS back to `available`. Fully idempotent.
 
-If the claim is live (PR open and recent, or another agent actively working), stop and tell the user. Don't double-claim.
+Use it when:
+- PR is CLOSED unmerged + worktree dangling ("zombie state").
+- PR is OPEN but the user told you to restart / redo the spec.
+- Local branch exists from a previous attempt and `just worktree-new` is failing with "branch already exists."
+
+Do NOT use it when someone else is actively working on the spec and you don't have permission — that's where you stop and ask the user. Everything else is a `spec-abandon` away from a clean re-claim.
 
 ## 2. Red — write a failing test first
 
@@ -203,8 +208,7 @@ just worktree-rm <slug>
 
 | Situation | What you do |
 |-----------|-------------|
-| `just spec-claim` says spec is already claimed, PR is CLOSED/unmerged, worktree dangling | Zombie state — `just spec-abandon NN "<reason>"` cleans everything atomically, then re-claim. |
-| `just spec-claim` says spec is already claimed, PR live | Stop, tell user; don't override. |
+| `just spec-claim` says spec is already claimed (CLOSED PR, OPEN PR, stale local branch — any combination) | `just spec-abandon NN "<reason>"` cleans EVERY case atomically, then re-claim. The recipe works on live PRs too (closes + retitles them). Only stop-and-ask if someone else is actively working on it. |
 | `just compile` fails with errors you can fix | Fix and re-run. |
 | `just compile` fails with errors you can't diagnose | Tell user; include the last 30 lines of output. |
 | `just test` shows a failure that's the test you wrote (Red phase) | Continue to Green. |

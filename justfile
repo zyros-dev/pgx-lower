@@ -289,6 +289,15 @@ bench-report:
     echo ""
     echo "Artifacts: benchmarks/${slug}.{db,png,md}"
     echo "Baseline : ${baseline_name} (from origin/main)"
+    # Force mutagen to finish syncing thor→mac before we try to read the
+    # .md that report.py just wrote. Without this, the Python replace step
+    # below races: report.py finishes on thor, we immediately try to open
+    # benchmarks/<slug>.md locally, and mutagen hasn't caught up yet.
+    # `mutagen sync flush` blocks until the cycle completes.
+    session="pgx-lower-${branch}"
+    # If we're on main, the session name is "pgx-lower" (no branch suffix).
+    if [ "${branch}" = "main" ]; then session="pgx-lower"; fi
+    mutagen sync flush "${session}" >/dev/null 2>&1 || true
     # Auto-inject the .md into the PR body, replacing the stats-summary
     # placeholder that `just pr` left. The agent still fills in Summary by
     # hand; everything else is assembled. Safe to re-run — idempotent
@@ -318,12 +327,24 @@ bench-report:
 
 # --- Queue ops ------------------------------------------------------------
 
-# Show the build queue (pending + running + recent finished jobs).
+# Show the build queue (pending + running + recent finished jobs) with a
+# one-line summary up top so you know at a glance whether your job will wait.
+# "deep" per the skill = 3+ queued/running jobs ahead of you; at that point,
+# expect noticeable wait. Count lines parse tsp's table format, not tsp -l
+# machine output, so slight future format drift is OK.
 queue:
-    @echo "=== build queue ==="
-    @ssh {{_thor}} 'TS_SOCKET=/tmp/{{_build_q}}.sock tsp' || true
-    @echo "=== check queue ==="
-    @ssh {{_thor}} 'TS_SOCKET=/tmp/{{_check_q}}.sock tsp' || true
+    #!/usr/bin/env bash
+    set -o pipefail
+    for q in {{_build_q}} {{_check_q}}; do
+        echo "=== ${q} queue ==="
+        out=$(ssh {{_thor}} "TS_SOCKET=/tmp/${q}.sock tsp" 2>&1 || true)
+        # Count data rows (skip the "ID State Output..." header).
+        jobs=$(printf '%s\n' "${out}" | awk 'NR>1 && NF>0' | wc -l | tr -d ' ')
+        running=$(printf '%s\n' "${out}" | awk '/running/' | wc -l | tr -d ' ')
+        queued=$(printf '%s\n' "${out}" | awk '/queued/' | wc -l | tr -d ' ')
+        echo "  ${jobs} total  (${running} running, ${queued} queued)"
+        printf '%s\n' "${out}"
+    done
 
 # Tail the live output of a running job from the build queue.
 tail ID:
@@ -373,6 +394,33 @@ worktree-rm NAME:
     -ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree remove --force .worktrees/{{NAME}}'
     -git worktree remove --force .worktrees/{{NAME}}
 
+# Sweep dangling state from prior worktrees that merged or got abandoned
+# without a clean `just worktree-rm`: terminate mutagen sessions whose
+# local worktree dir is gone, prune thor-side git worktrees that show as
+# prunable, prune mac-side. Idempotent — safe to run whenever
+# `just worktree-list` shows noise.
+worktree-sweep:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== pruning git worktrees (mac) ==="
+    git worktree prune -v
+    echo ""
+    echo "=== pruning git worktrees (thor) ==="
+    ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree prune -v'
+    echo ""
+    echo "=== terminating stale mutagen sessions ==="
+    # For each session named pgx-lower-<slug>, if .worktrees/<slug> is gone
+    # locally, terminate it.
+    for name in $(mutagen sync list 2>/dev/null | awk -F': ' '/^Name:/ {print $2}' | grep '^pgx-lower-' || true); do
+        slug="${name#pgx-lower-}"
+        if [ ! -d ".worktrees/${slug}" ]; then
+            echo "  terminating ${name} (worktree .worktrees/${slug} is gone)"
+            mutagen sync terminate "${name}" >/dev/null 2>&1 || true
+        fi
+    done
+    echo ""
+    echo "Done."
+
 # List worktrees + their sync sessions.
 worktree-list:
     @echo "=== mac worktrees ==="
@@ -389,7 +437,7 @@ worktree-list:
 # Open a PR from the current branch against main. Fill in the Summary +
 # stats summary before requesting review.
 pr TITLE:
-    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n<what and why>\n\n## Stats summary\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n')"
+    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n<what and why>\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n')"
 
 # --- Spec coordination ----------------------------------------------------
 # These wrap edits to specs/STATUS.md and commit atomically against main so
@@ -464,9 +512,17 @@ spec-abandon NN REASON:
     python3 scripts/spec_status.py release "{{NN}}"
     echo "Spec {{NN}} abandoned and released."
 
-# Mark a spec done after its PR merges. PR is the PR number.
+# Mark a spec done after its PR merges. PR is the PR number. Also tears
+# down the worktree + mutagen session automatically so those don't pile
+# up as "prunable" entries in `just worktree-list` after merges.
 spec-complete NN PR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch=$(python3 scripts/spec_status.py read_branch "{{NN}}" 2>/dev/null || true)
     python3 scripts/spec_status.py complete "{{NN}}" "{{PR}}"
+    if [ -n "${branch}" ] && [ -d ".worktrees/${branch}" ]; then
+        just worktree-rm "${branch}" || true
+    fi
 
 # Mark a spec as in_review (PR open). PR is the PR number.
 spec-in-review NN PR:
