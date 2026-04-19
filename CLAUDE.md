@@ -22,6 +22,10 @@ For any code change that ends in a PR, follow the **`/devops` skill** (`.claude/
 
 Don't ask the user for branch names, slugs, PR numbers you can derive, worktree details, or permission to run recipes. Pick sensible defaults from the spec filename and proceed. Escalate only when something genuinely blocks (claim conflict, build broken in a way you can't diagnose, spec ambiguous, conflicts on rebase). The merge skill has one mandatory user-confirmation pause: just before `gh pr merge`. Everything else is autonomous.
 
+## Long-running subagents: always run in the background
+
+When spawning a subagent that will take more than a few minutes (full `/devops` run, canary spec implementation, strengthen-harness inner agents, anything that runs `just compile` / `just bench` / `just test`), **always pass `run_in_background: true`** to the Agent tool. A foreground agent blocks this conversation, and if the user submits a message (or Ctrl-C's) while it's running, the subagent dies mid-flight and we lose the work. Background agents notify on completion and survive interjections. The only reason to run foreground is if the result is needed within ~60s to decide the very next tool call.
+
 ## Red/green TDD is required
 
 Write the failing test **first**. Run `just test` and confirm the expected failure before touching any implementation. Implement the minimum change to turn it green. Only then refactor. No exceptions — "I'll add the test after" produces untested code and we don't merge untested code.

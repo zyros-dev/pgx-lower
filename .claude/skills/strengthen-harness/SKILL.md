@@ -25,6 +25,13 @@ Each iteration has four phases. Do all four before deciding whether to terminate
 
 ### Phase A: Canary run (spawn implementer subagent)
 
+**Always pass `run_in_background: true` to the Agent tool.** Canary runs
+take 30+ minutes; a foreground agent blocks the coordinator thread, and
+any user message (even an unrelated nudge) kills the worker mid-flight.
+Background agents notify on completion and survive interjections. Same
+rule applies to every Agent call in this skill — phases D and E fixer
+agents too.
+
 Spawn a subagent with the general-purpose agent type. Brief them:
 
 - They are implementing spec `<NN>` end-to-end using the `/devops` skill.
