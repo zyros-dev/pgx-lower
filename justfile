@@ -194,6 +194,17 @@ utest: _preflight
 # ctest runs as the postgres user so pg_regress's default "whoami"
 # connection works.
 #
+# ALWAYS rebuilds + reinstalls pgx_lower.so before running tests. The
+# reinstall is load-bearing: `cmake --build` updates the .so inside the
+# build dir, but pg_regress loads the COPY at /usr/local/pgsql/lib/
+# pgx_lower.so. Without a `cmake --install`, a stale .so from a prior
+# worktree or a prior spec can answer the test's queries with
+# yesterday's symbols, silently GREENing a test that should be RED
+# — the TDD-killer pattern. The build+install steps are no-ops when
+# source hasn't changed (ccache + cmake timestamp compare), so doing
+# them unconditionally is cheap and strictly safer. Configures cmake
+# on first run in a fresh worktree, mirroring `just compile`.
+#
 # Note: this is the OUTPUT-EQUIVALENCE suite — it proves pgx_lower
 # matches stock PG on a curated stable set of queries. For TDD on most
 # spec work, prefer `just utest` (faster, scoped to the thing you're
@@ -201,7 +212,7 @@ utest: _preflight
 test: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
-    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Re-record the pg_regress baseline. Run only when you have consciously
 # accepted a new set of red tests on main — each entry that gets added
@@ -389,22 +400,66 @@ worktree-new NAME:
     git fetch origin main --quiet
     git worktree add -b "{{NAME}}" ".worktrees/{{NAME}}" origin/main
     ssh {{_thor}} 'cd ~/repos/pgx-lower && git fetch origin && git worktree add .worktrees/{{NAME}} 2>/dev/null || true'
+    # /benchmark/output/ must be in this ignore list. run.py on thor writes
+    # sqlite files there as docker root; without the ignore, mutagen syncs
+    # them back to mac with altered ownership mid-run, and subsequent writes
+    # hit "attempt to write a readonly database" partway through. This
+    # bit the canary (see round 7). Keep it aligned with `sync-main-reset`.
     mutagen sync create \
         --name=pgx-lower-{{NAME}} \
         --sync-mode=two-way-resolved \
         --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
         --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
         --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
+        --ignore='/benchmark/output/' \
         .worktrees/{{NAME}} {{_thor}}:/home/zel/repos/pgx-lower/.worktrees/{{NAME}}
     echo ""
     echo "Worktree ready. On mac: cd .worktrees/{{NAME}}"
     echo "Mutagen session: pgx-lower-{{NAME}}"
 
-# Tear down a worktree and its sync.
+# Tear down a worktree and its sync. Fully idempotent — every step is
+# allowed to fail (missing session, already-removed worktree, etc.)
+# because we want repeated calls and partial-state recovery to both
+# converge on "nothing here."
+#
+# After git-level removal, we unconditionally `rm -rf` the mac-side
+# .worktrees/<name>/ directory and the thor-side equivalent. `git
+# worktree remove --force` does NOT delete the dir if git no longer
+# recognizes it as a working tree (e.g. it was already pruned, or
+# previous cleanup pass lost the bookkeeping) — it bails with "not a
+# working tree" and leaves a full tree on disk. That residual tree is
+# a landmine: a subsequent `just worktree-new <same-name>` fails with
+# "path already exists," and a subsequent mutagen create sees stale
+# files that don't correspond to any branch. Removing it on the way
+# out guarantees re-creation works without manual `rm -rf`.
 worktree-rm NAME:
     -mutagen sync terminate pgx-lower-{{NAME}}
     -ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree remove --force .worktrees/{{NAME}}'
     -git worktree remove --force .worktrees/{{NAME}}
+    -rm -rf .worktrees/{{NAME}}
+    -ssh {{_thor}} 'rm -rf ~/repos/pgx-lower/.worktrees/{{NAME}}'
+
+# Terminate + recreate the main-repo mutagen session (name `pgx-lower`)
+# with the canonical ignore list. Use this when the main session's
+# ignore list has drifted from what `just worktree-new` creates for
+# worktrees — e.g. a missing `/benchmark/output/` ignore (the cause of
+# the "attempt to write a readonly database" bench failure that
+# prompted round 7). mutagen has no in-place ignore editor, so the
+# recipe is a full terminate + recreate. Safe to run at any time;
+# mutagen reconciles state on the next scan.
+sync-main-reset:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mutagen sync terminate pgx-lower >/dev/null 2>&1 || true
+    mutagen sync create \
+        --name=pgx-lower \
+        --sync-mode=two-way-resolved \
+        --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
+        --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
+        --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
+        --ignore='/benchmark/output/' --ignore='/benchmark_results/' \
+        "{{_main_root}}" {{_thor}}:/home/zel/repos/pgx-lower
+    echo "sync-main-reset: main session recreated with canonical ignores."
 
 # Sweep dangling state from prior worktrees that merged or got abandoned
 # without a clean `just worktree-rm`: terminate mutagen sessions whose
@@ -484,6 +539,36 @@ worktree-list:
     echo ""
     echo "=== mutagen sessions ==="
     mutagen sync list | grep -E '^Name:|^Status:' || true
+    echo ""
+    # Orphan detection: a mutagen session named pgx-lower-<slug> with no
+    # matching .worktrees/<slug>/ directory on mac is a zombie left over
+    # from an abandoned spec or a crashed worktree-rm. It still watches
+    # and syncs, which is how the benchmark/output/ readonly-db trap
+    # pops up silently on the *next* worktree's first bench. Surface
+    # these here so `just worktree-list` doubles as a doctor pass.
+    echo "=== orphaned mutagen sessions ==="
+    # Resolve to the main repo root so the .worktrees/ check works regardless
+    # of whether `just worktree-list` was invoked from the main checkout or
+    # from inside a worktree (where `.worktrees/` doesn't exist and every
+    # session would otherwise be misflagged as orphaned).
+    main_root="{{_main_root}}"
+    orphans=""
+    for name in $(mutagen sync list 2>/dev/null | awk -F': ' '/^Name:/ {print $2}' | grep -E '^pgx-lower-' || true); do
+        slug="${name#pgx-lower-}"
+        # The bare "pgx-lower" session maps to the main checkout, not a worktree.
+        if [ "${name}" = "pgx-lower" ]; then continue; fi
+        if [ ! -d "${main_root}/.worktrees/${slug}" ]; then
+            orphans+="  ${name}  (no .worktrees/${slug}/ on mac)"$'\n'
+        fi
+    done
+    if [ -n "${orphans}" ]; then
+        printf '%s' "${orphans}"
+        echo ""
+        echo "To clean up: \`just worktree-sweep\` terminates all of them in one pass,"
+        echo "or \`mutagen sync terminate <name>\` for a specific session."
+    else
+        echo "  (none)"
+    fi
 
 # --- PR --------------------------------------------------------------------
 
