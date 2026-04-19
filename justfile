@@ -131,7 +131,12 @@ bench-report:
     # checking still works — a self-compare with bad pgx output still trips
     # the NAY gate.
     git fetch origin main --quiet
-    baseline_path=$(git ls-tree -r --name-only origin/main -- 'benchmarks/pr-*.db' | sort -V | tail -1 || true)
+    # git ls-tree pathspec doesn't expand shell-style wildcards — the quoted
+    # 'benchmarks/pr-*.db' was always returning empty, silently forcing the
+    # bootstrap branch even when a real baseline existed. List the whole
+    # benchmarks/ dir and grep instead. `sort -V` picks highest pr-N
+    # numerically — de facto "most recent merge" in FIFO-merge order.
+    baseline_path=$(git ls-tree -r --name-only origin/main -- benchmarks/ 2>/dev/null | grep -E '^benchmarks/pr-.*\.db$' | sort -V | tail -1 || true)
     if [ -z "${baseline_path}" ]; then
         echo "NOTE: no baseline on origin/main:benchmarks/ — self-comparing. This PR will seed the baseline for future PRs." >&2
         baseline_name="bootstrap-self.db"
