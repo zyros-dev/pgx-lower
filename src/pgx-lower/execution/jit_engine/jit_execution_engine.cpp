@@ -278,106 +278,109 @@ JITEngine::create_mlir_to_llvm_translator() {
     };
 }
 
+llvm::Error JITEngine::optimize_llvm_module(llvm::Module& module, llvm::CodeGenOptLevel opt_level) {
+    PGX_LOG(JIT, DEBUG, "Running optimization (opt_level=%d)", static_cast<int>(opt_level));
+
+    if (opt_level == llvm::CodeGenOptLevel::None) {
+        PGX_LOG(JIT, DEBUG, "Optimization disabled");
+        return llvm::Error::success();
+    }
+
+    try {
+        // Install LLVM fatal error handler
+        static bool handler_installed = false;
+        if (!handler_installed) {
+            llvm::install_fatal_error_handler([](void* user_data, const char* reason, bool gen_crash_diag) {
+                PGX_ERROR("LLVM FATAL ERROR: %s (gen_crash_diag=%d)", reason, gen_crash_diag);
+            });
+            handler_installed = true;
+        }
+
+        llvm::TargetMachine* TM = nullptr;
+        std::string triple = module.getTargetTriple();
+        if (triple.empty()) {
+            triple = llvm::sys::getDefaultTargetTriple();
+            module.setTargetTriple(triple);
+        }
+
+        std::string error;
+        const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, error);
+        if (target) {
+            llvm::TargetOptions target_options;
+            TM = target->createTargetMachine(triple, llvm::sys::getHostCPUName(),
+                                             "", // Features
+                                             target_options, llvm::Reloc::PIC_);
+            PGX_LOG(JIT, DEBUG, "Created TargetMachine for triple: %s", triple.c_str());
+        } else {
+            PGX_LOG(JIT, DEBUG, "Failed to create TargetMachine: %s", error.c_str());
+        }
+
+        // Spec 02 — enable the LLVM loop vectorizer, SLP vectorizer, and
+        // loop unroller. PTO alone isn't sufficient: the manual
+        // FunctionPassManager previously used here did not include the
+        // vectorization passes, so switch to the standard per-module
+        // pipeline (buildPerModuleDefaultPipeline) which wires in
+        // loop-vectorize / SLP / unroll / mem2reg / the full O2 sequence.
+        //
+        // Compile-cost trade-off: +~30–80ms per query at O2 (measured on
+        // q01/q06). Acceptable for warm queries; spec 03 (plan-shape cache)
+        // and spec 04 (cost-gate) handle the cold-small-query tail.
+        llvm::PipelineTuningOptions PTO;
+        PTO.LoopUnrolling = true;
+        PTO.LoopVectorization = true;
+        PTO.SLPVectorization = true;
+
+        llvm::PassBuilder PB(TM, PTO);
+        llvm::LoopAnalysisManager LAM;
+        llvm::FunctionAnalysisManager FAM;
+        llvm::CGSCCAnalysisManager CGAM;
+        llvm::ModuleAnalysisManager MAM;
+
+        PGX_LOG(JIT, DEBUG, "Registering all default analyses");
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+        // Map CodeGenOptLevel → OptimizationLevel so the per-module pipeline
+        // runs at the requested intensity. JITEngine's default is Default
+        // (→ O2), which is where the vectorizers are configured to fire.
+        llvm::OptimizationLevel ol = llvm::OptimizationLevel::O2;
+        switch (opt_level) {
+        case llvm::CodeGenOptLevel::None: ol = llvm::OptimizationLevel::O0; break;
+        case llvm::CodeGenOptLevel::Less: ol = llvm::OptimizationLevel::O1; break;
+        case llvm::CodeGenOptLevel::Default: ol = llvm::OptimizationLevel::O2; break;
+        case llvm::CodeGenOptLevel::Aggressive: ol = llvm::OptimizationLevel::O3; break;
+        }
+
+        PGX_LOG(JIT, DEBUG, "Building module pass pipeline at O%u", ol.getSpeedupLevel());
+        llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(ol);
+
+        mlir_runner::dumpLLVMIR(&module, "LLVM IR BEFORE OPTIMIZATION PASSES", log::Category::JIT);
+
+        PGX_LOG(JIT, DEBUG, "Running passes on module with %zu functions", module.size());
+        MPM.run(module, MAM);
+
+        PGX_LOG(JIT, DEBUG, "Optimization passes completed successfully");
+        mlir_runner::dumpLLVMIR(&module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
+
+        return llvm::Error::success();
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception in optimization: %s", e.what());
+        return llvm::make_error<llvm::StringError>("Optimization failed: " + std::string(e.what()),
+                                                   llvm::inconvertibleErrorCode());
+    } catch (...) {
+        PGX_ERROR("Unknown exception in optimization");
+        return llvm::make_error<llvm::StringError>("Optimization failed with unknown exception",
+                                                   llvm::inconvertibleErrorCode());
+    }
+}
+
 std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() const {
     auto opt_level = opt_level_;
-
-    return [opt_level](llvm::Module* module) -> llvm::Error {
-        PGX_LOG(JIT, DEBUG, "Running optimization lambda (opt_level=%d)", static_cast<int>(opt_level));
-
-        if (opt_level == llvm::CodeGenOptLevel::None) {
-            PGX_LOG(JIT, DEBUG, "Optimization disabled");
-            return llvm::Error::success();
-        }
-
-        try {
-            // Install LLVM fatal error handler
-            static bool handler_installed = false;
-            if (!handler_installed) {
-                llvm::install_fatal_error_handler([](void* user_data, const char* reason, bool gen_crash_diag) {
-                    PGX_ERROR("LLVM FATAL ERROR: %s (gen_crash_diag=%d)", reason, gen_crash_diag);
-                });
-                handler_installed = true;
-            }
-
-            llvm::TargetMachine* TM = nullptr;
-            std::string triple = module->getTargetTriple();
-            if (triple.empty()) {
-                triple = llvm::sys::getDefaultTargetTriple();
-                module->setTargetTriple(triple);
-            }
-
-            std::string error;
-            const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, error);
-            if (target) {
-                llvm::TargetOptions target_options;
-                TM = target->createTargetMachine(triple, llvm::sys::getHostCPUName(),
-                                                 "", // Features
-                                                 target_options, llvm::Reloc::PIC_);
-                PGX_LOG(JIT, DEBUG, "Created TargetMachine for triple: %s", triple.c_str());
-            } else {
-                PGX_LOG(JIT, DEBUG, "Failed to create TargetMachine: %s", error.c_str());
-            }
-
-            llvm::PipelineTuningOptions PTO;
-            PTO.LoopUnrolling = false;
-            PTO.LoopVectorization = false;
-            PTO.SLPVectorization = false;
-
-            llvm::PassBuilder PB(TM, PTO);
-            llvm::LoopAnalysisManager LAM;
-            llvm::FunctionAnalysisManager FAM;
-            llvm::CGSCCAnalysisManager CGAM;
-            llvm::ModuleAnalysisManager MAM;
-
-            PGX_LOG(JIT, DEBUG, "Registering all default analyses");
-            PB.registerModuleAnalyses(MAM);
-            PB.registerCGSCCAnalyses(CGAM);
-            PB.registerFunctionAnalyses(FAM);
-            PB.registerLoopAnalyses(LAM);
-            PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-            PGX_LOG(JIT, DEBUG, "Building function pass pipeline");
-            llvm::FunctionPassManager FPM;
-
-            FPM.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
-            FPM.addPass(llvm::InstCombinePass());
-
-            FPM.addPass(llvm::PromotePass());
-            FPM.addPass(llvm::InstCombinePass());
-
-            FPM.addPass(llvm::createFunctionToLoopPassAdaptor(llvm::LICMPass(llvm::LICMOptions()),
-                                                              /*UseMemorySSA=*/true));
-
-            FPM.addPass(llvm::ReassociatePass());
-            FPM.addPass(llvm::GVNPass());
-            FPM.addPass(llvm::SimplifyCFGPass());
-
-            PGX_LOG(JIT, DEBUG, "Running passes on %zu functions", module->size());
-            for (auto& func : *module) {
-                if (func.isDeclaration()) {
-                    PGX_LOG(JIT, DEBUG, "Skipping external function: %s", func.getName().str().c_str());
-                    continue;
-                }
-                if (!func.hasOptNone()) {
-                    PGX_LOG(JIT, DEBUG, "Running passes on function: %s", func.getName().str().c_str());
-                    FPM.run(func, FAM);
-                }
-            }
-
-            PGX_LOG(JIT, DEBUG, "Optimization passes completed successfully");
-            mlir_runner::dumpLLVMIR(module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
-
-            return llvm::Error::success();
-        } catch (const std::exception& e) {
-            PGX_ERROR("Exception in optimization lambda: %s", e.what());
-            return llvm::make_error<llvm::StringError>("Optimization failed: " + std::string(e.what()),
-                                                       llvm::inconvertibleErrorCode());
-        } catch (...) {
-            PGX_ERROR("Unknown exception in optimization lambda");
-            return llvm::make_error<llvm::StringError>("Optimization failed with unknown exception",
-                                                       llvm::inconvertibleErrorCode());
-        }
-    };
+    return
+        [opt_level](llvm::Module* module) -> llvm::Error { return JITEngine::optimize_llvm_module(*module, opt_level); };
 }
 
 bool JITEngine::lookup_functions() {
