@@ -33,10 +33,10 @@ REGRESS = "#e74c3c"   # red
 NEUTRAL = "#95a5a6"   # gray
 
 
-def load_pgx_times(db_path: Path) -> dict[str, float]:
-    """Return {query_name: median duration_ms} for the most recent run's
-    pgx_enabled=1 rows. A benchmark.db can hold many runs — only the latest
-    by run_timestamp is used, so historical experiments don't skew the chart.
+def load_times(db_path: Path, pgx_enabled: int) -> dict[str, float]:
+    """Return {query_name: median duration_ms} across iterations for the most
+    recent run. Multiple iterations exist when --iterations > 1; taking the
+    median damps JIT-compile variance that dominates at small scale factors.
     """
     if not db_path.exists():
         sys.exit(f"ERROR: db not found: {db_path}")
@@ -48,9 +48,9 @@ def load_pgx_times(db_path: Path) -> dict[str, float]:
                json_extract(q.execution_metadata, '$.duration_ms') AS duration_ms
           FROM queries q
           JOIN runs   r ON q.run_id = r.run_id
-         WHERE q.pgx_enabled = 1
+         WHERE q.pgx_enabled = ?
            AND r.run_id = (SELECT run_id FROM runs ORDER BY run_timestamp DESC LIMIT 1)
-    """)
+    """, (pgx_enabled,))
     buckets: dict[str, list[float]] = {}
     for qname, dur in cur.fetchall():
         if dur is None:
@@ -60,54 +60,93 @@ def load_pgx_times(db_path: Path) -> dict[str, float]:
     return {q: median(v) for q, v in buckets.items() if v}
 
 
+def load_pgx_times(db_path: Path) -> dict[str, float]:
+    return load_times(db_path, pgx_enabled=1)
+
+
+def load_pg_times(db_path: Path) -> dict[str, float]:
+    return load_times(db_path, pgx_enabled=0)
+
+
 def load_meta(db_path: Path) -> dict:
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("""
-        SELECT run_id, pgx_version, scale_factor, run_timestamp, label
+        SELECT run_id, pgx_version, scale_factor, iterations, run_timestamp, label
           FROM runs ORDER BY run_timestamp DESC LIMIT 1
     """)
     row = cur.fetchone()
     conn.close()
     if not row:
         return {}
-    keys = ["run_id", "pgx_version", "scale_factor", "run_timestamp", "label"]
+    keys = ["run_id", "pgx_version", "scale_factor", "iterations", "run_timestamp", "label"]
     return dict(zip(keys, row))
 
 
-def compute_deltas(baseline: dict[str, float], current: dict[str, float]) -> list[tuple[str, float, float, float]]:
-    """Return [(query, baseline_ms, current_ms, pct_improvement), ...] sorted by query."""
+def compute_deltas(
+    baseline: dict[str, float],
+    current: dict[str, float],
+    pg: dict[str, float],
+) -> list[tuple[str, float, float, float, float]]:
+    """Return [(query, pg_ms, baseline_ms, current_ms, pct_improvement), ...].
+
+    pct_improvement = (baseline - current) / baseline * 100, so positive means
+    this PR is faster than the main baseline. pg_ms is the PostgreSQL time
+    from the current run (not the baseline) for the "how close is pgx to PG"
+    context line in the table.
+    """
     shared = sorted(set(baseline) & set(current))
     out = []
     for q in shared:
         b = baseline[q]
         c = current[q]
         pct = (b - c) / b * 100.0 if b > 0 else 0.0
-        out.append((q, b, c, pct))
+        out.append((q, pg.get(q, float("nan")), b, c, pct))
     return out
 
 
-def geomean_speedup(rows: list[tuple[str, float, float, float]]) -> float:
+def geomean_speedup(rows) -> float:
     """Geometric mean of baseline/current ratios, expressed as % improvement."""
     if not rows:
         return 0.0
-    ratios = [b / c for (_, b, c, _) in rows if c > 0]
+    ratios = [b / c for (_, _, b, c, _) in rows if c > 0]
     if not ratios:
         return 0.0
     gm = math.exp(sum(math.log(r) for r in ratios) / len(ratios))
     return (gm - 1.0) * 100.0
 
 
+def verdict(rows) -> tuple[str, str]:
+    """Return (tag, label) for the PR verdict.
+
+    Thresholds are calibrated against the ~±3% noise floor observed at
+    SF=0.01 iter=5 (JIT-compile variance dominates below that).
+
+      YAY   — geomean ≥ +3% AND no query regresses worse than −5%.
+      NAY   — geomean ≤ −3% OR any query regresses worse than −10%.
+      MAYBE — everything in between (inside the noise band, mixed signals,
+              or signal too weak to act on without more iterations).
+    """
+    gm = geomean_speedup(rows)
+    worst = min((d for (_, _, _, _, d) in rows), default=0.0)
+    if gm <= -3.0 or worst <= -10.0:
+        return ("nay", "🔴 NAY — regression")
+    if gm >= 3.0 and worst > -5.0:
+        return ("yay", "🟢 YAY — improvement")
+    return ("maybe", "🟡 MAYBE — in the noise band")
+
+
 def plot_chart(rows, out_png: Path, title: str) -> None:
-    queries = [q for (q, _, _, _) in rows]
-    deltas = [d for (_, _, _, d) in rows]
+    queries = [q for (q, _, _, _, _) in rows]
+    deltas = [d for (_, _, _, _, d) in rows]
     colors = [IMPROVE if d > 1 else REGRESS if d < -1 else NEUTRAL for d in deltas]
 
     fig, ax = plt.subplots(figsize=(max(8, len(queries) * 0.45), 5))
     ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_xticks(range(len(queries)))
     ax.bar(queries, deltas, color=colors, edgecolor="black", linewidth=0.6)
 
-    for i, (q, _, _, d) in enumerate(rows):
+    for i, (_, _, _, _, d) in enumerate(rows):
         y = d + (1 if d >= 0 else -1) * max(abs(max(deltas, default=1)), 1) * 0.03
         ax.text(i, y, f"{d:+.1f}%", ha="center",
                 va="bottom" if d >= 0 else "top", fontsize=8)
@@ -125,25 +164,30 @@ def plot_chart(rows, out_png: Path, title: str) -> None:
 def render_markdown(rows, baseline_meta, current_meta, chart_url: str) -> str:
     gm = geomean_speedup(rows)
     gm_label = f"{gm:+.1f}%" + (" 🟢" if gm > 1 else " 🔴" if gm < -1 else " ⚪")
+    tag, verdict_label = verdict(rows)
 
     lines = []
-    lines.append(f"## Benchmark report")
+    lines.append(f"## {verdict_label}")
+    lines.append("")
+    lines.append(f"- **Geomean speedup vs baseline:** {gm_label}")
+    lines.append(f"- **Scale factor:** {current_meta.get('scale_factor', '?')}, "
+                 f"iterations: {current_meta.get('iterations', '?')}")
+    lines.append(f"- **Baseline:** `{baseline_meta.get('pgx_version', '?')}` "
+                 f"({baseline_meta.get('run_timestamp', '?')})")
+    lines.append(f"- **Current:**  `{current_meta.get('pgx_version', '?')}` "
+                 f"({current_meta.get('run_timestamp', '?')})")
     lines.append("")
     lines.append(f"![bench diff]({chart_url})")
     lines.append("")
-    lines.append(f"**Geometric-mean speedup vs baseline: {gm_label}**")
+    lines.append("PG column is PostgreSQL-only runtime from the current run — "
+                 "reference for absolute pgx-lower cost, not part of the A/B.")
     lines.append("")
-    lines.append(f"- Baseline: `{baseline_meta.get('pgx_version', '?')}` "
-                 f"(run {baseline_meta.get('run_timestamp', '?')})")
-    lines.append(f"- Current:  `{current_meta.get('pgx_version', '?')}` "
-                 f"(run {current_meta.get('run_timestamp', '?')})")
-    lines.append(f"- Scale factor: {current_meta.get('scale_factor', '?')}")
-    lines.append("")
-    lines.append("| Query | Baseline (ms) | Current (ms) | Δ |")
-    lines.append("|-------|--------------:|-------------:|--:|")
-    for q, b, c, d in rows:
+    lines.append("| Query | PG (ms) | pgx baseline (ms) | pgx current (ms) | Δ |")
+    lines.append("|-------|--------:|------------------:|-----------------:|--:|")
+    for q, pg, b, c, d in rows:
         marker = "🟢" if d > 1 else "🔴" if d < -1 else "⚪"
-        lines.append(f"| {q} | {b:.1f} | {c:.1f} | {d:+.1f}% {marker} |")
+        pg_str = f"{pg:.1f}" if pg == pg else "—"  # NaN check
+        lines.append(f"| {q} | {pg_str} | {b:.1f} | {c:.1f} | {d:+.1f}% {marker} |")
     return "\n".join(lines) + "\n"
 
 
@@ -160,7 +204,8 @@ def main() -> int:
 
     baseline = load_pgx_times(args.baseline)
     current = load_pgx_times(args.current)
-    rows = compute_deltas(baseline, current)
+    pg = load_pg_times(args.current)
+    rows = compute_deltas(baseline, current, pg)
     if not rows:
         sys.exit("ERROR: no overlapping queries between baseline and current")
 
