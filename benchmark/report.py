@@ -68,6 +68,37 @@ def load_pg_times(db_path: Path) -> dict[str, float]:
     return load_times(db_path, pgx_enabled=0)
 
 
+def load_validation(db_path: Path) -> dict[str, bool]:
+    """Return {query_name: valid} for the most recent run's pgx_enabled=1 rows.
+
+    `valid` is the per-query flag set by `validate_results()` in
+    benchmark/tpch/run.py: it compares the output hash from pgx ON against
+    the hash from pgx OFF and records whether they agree. A False here means
+    pgx produced wrong output — a correctness regression, which must force
+    the report verdict to NAY regardless of timing.
+    """
+    if not db_path.exists():
+        return {}
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT q.query_name,
+               json_extract(q.result_validation, '$.valid') AS valid
+          FROM queries q
+          JOIN runs   r ON q.run_id = r.run_id
+         WHERE q.pgx_enabled = 1
+           AND r.run_id = (SELECT run_id FROM runs ORDER BY run_timestamp DESC LIMIT 1)
+    """)
+    out: dict[str, bool] = {}
+    for qname, valid in cur.fetchall():
+        if valid is None:
+            continue
+        # sqlite stores booleans as 0/1 ints via json_extract.
+        out[qname] = bool(valid)
+    conn.close()
+    return out
+
+
 def load_meta(db_path: Path) -> dict:
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
@@ -116,17 +147,23 @@ def geomean_speedup(rows) -> float:
     return (gm - 1.0) * 100.0
 
 
-def verdict(rows) -> tuple[str, str]:
+def verdict(rows, invalid_queries: list[str] | None = None) -> tuple[str, str]:
     """Return (tag, label) for the PR verdict.
 
-    Thresholds are calibrated against the ~±3% noise floor observed at
-    SF=0.01 iter=5 (JIT-compile variance dominates below that).
+    Correctness dominates: if any query produced wrong output (pgx hash
+    didn't match PG hash), the verdict is NAY no matter what the timing
+    numbers say. A fast wrong answer is still wrong.
+
+    Otherwise, thresholds are calibrated against the ~±3% noise floor
+    observed at SF=0.01 iter=5 (JIT-compile variance dominates below that).
 
       YAY   — geomean ≥ +3% AND no query regresses worse than −5%.
       NAY   — geomean ≤ −3% OR any query regresses worse than −10%.
       MAYBE — everything in between (inside the noise band, mixed signals,
               or signal too weak to act on without more iterations).
     """
+    if invalid_queries:
+        return ("nay", f"🔴 NAY — correctness regression ({', '.join(invalid_queries)})")
     gm = geomean_speedup(rows)
     worst = min((d for (_, _, _, _, d) in rows), default=0.0)
     if gm <= -3.0 or worst <= -10.0:
@@ -161,14 +198,24 @@ def plot_chart(rows, out_png: Path, title: str) -> None:
     plt.close(fig)
 
 
-def render_markdown(rows, baseline_meta, current_meta, chart_url: str) -> str:
+def render_markdown(rows, baseline_meta, current_meta, chart_url: str,
+                    validation: dict[str, bool] | None = None) -> str:
+    validation = validation or {}
+    invalid_queries = sorted(q for q, v in validation.items() if not v)
     gm = geomean_speedup(rows)
     gm_label = f"{gm:+.1f}%" + (" 🟢" if gm > 1 else " 🔴" if gm < -1 else " ⚪")
-    tag, verdict_label = verdict(rows)
+    _, verdict_label = verdict(rows, invalid_queries=invalid_queries)
 
     lines = []
     lines.append(f"## {verdict_label}")
     lines.append("")
+    if invalid_queries:
+        lines.append(f"> **Correctness regression:** pgx output hash did not "
+                     f"match PostgreSQL for: `{', '.join(invalid_queries)}`. "
+                     f"Timing numbers below are reported for context but "
+                     f"don't change the verdict — a fast wrong answer is "
+                     f"still wrong.")
+        lines.append("")
     lines.append(f"- **Geomean speedup vs baseline:** {gm_label}")
     lines.append(f"- **Scale factor:** {current_meta.get('scale_factor', '?')}, "
                  f"iterations: {current_meta.get('iterations', '?')}")
@@ -182,12 +229,18 @@ def render_markdown(rows, baseline_meta, current_meta, chart_url: str) -> str:
     lines.append("PG column is PostgreSQL-only runtime from the current run — "
                  "reference for absolute pgx-lower cost, not part of the A/B.")
     lines.append("")
-    lines.append("| Query | PG (ms) | pgx baseline (ms) | pgx current (ms) | Δ |")
-    lines.append("|-------|--------:|------------------:|-----------------:|--:|")
+    lines.append("| Query | PG (ms) | pgx baseline (ms) | pgx current (ms) | Δ | ✓ |")
+    lines.append("|-------|--------:|------------------:|-----------------:|--:|:--|")
     for q, pg, b, c, d in rows:
         marker = "🟢" if d > 1 else "🔴" if d < -1 else "⚪"
-        pg_str = f"{pg:.1f}" if pg == pg else "—"  # NaN check
-        lines.append(f"| {q} | {pg_str} | {b:.1f} | {c:.1f} | {d:+.1f}% {marker} |")
+        pg_str = f"{pg:.1f}" if pg == pg else "—"
+        if q not in validation:
+            check = "—"
+        elif validation[q]:
+            check = "✅"
+        else:
+            check = "❌"
+        lines.append(f"| {q} | {pg_str} | {b:.1f} | {c:.1f} | {d:+.1f}% {marker} | {check} |")
     return "\n".join(lines) + "\n"
 
 
@@ -205,6 +258,7 @@ def main() -> int:
     baseline = load_pgx_times(args.baseline)
     current = load_pgx_times(args.current)
     pg = load_pg_times(args.current)
+    validation = load_validation(args.current)
     rows = compute_deltas(baseline, current, pg)
     if not rows:
         sys.exit("ERROR: no overlapping queries between baseline and current")
@@ -214,7 +268,8 @@ def main() -> int:
 
     plot_chart(rows, png_path, args.title)
     chart_url = args.chart_url or png_path.name
-    md = render_markdown(rows, load_meta(args.baseline), load_meta(args.current), chart_url)
+    md = render_markdown(rows, load_meta(args.baseline), load_meta(args.current),
+                         chart_url, validation=validation)
     md_path.write_text(md)
 
     print(md)

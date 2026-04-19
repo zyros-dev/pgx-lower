@@ -78,7 +78,11 @@ def default_owner() -> str:
 
 
 def commit_and_push(message: str) -> None:
-    run(["git", "pull", "--rebase", "--quiet", "origin", "main"])
+    # --autostash so the unstaged STATUS.md edit doesn't block the rebase.
+    # Callers write STATUS.md, then commit_and_push; without autostash the
+    # pull --rebase aborts with "cannot pull with rebase: unstaged changes"
+    # and leaves STATUS.md dirty on main.
+    run(["git", "pull", "--rebase", "--autostash", "--quiet", "origin", "main"])
     run(["git", "add", str(STATUS.relative_to(REPO_ROOT))])
     run(["git", "commit", "-m", message])
     run(["git", "push", "origin", "main"])
