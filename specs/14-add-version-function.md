@@ -67,6 +67,14 @@ to see the current high-water mark. Don't hard-code a number; the test
 directory grows and slot suggestions drift. Substitute `<NN>` everywhere
 below.
 
+**Note: `just compile` is NOT the RED signal for this spec.** The C
+function is loaded dynamically from the installed `.so` via the
+`CREATE FUNCTION ... AS '$libdir/pgx_lower', 'pgx_lower_version'`
+declaration — it's never referenced by another C translation unit at
+compile time, so the link resolves whether the symbol exists or not.
+`just compile` will succeed in RED phase. The actual RED is `just test`
+reporting `function pgx_lower_version() does not exist`.
+
 `tests/sql/<NN>_version.sql`:
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgx_lower;
@@ -84,17 +92,16 @@ output format has footguns that almost always bite on the first attempt:
   to the widest row), which editors strip on save.
 - One blank line at the very end.
 
-Generate the file from pg_regress directly. Run `just test` once (it
-fails because the expected file doesn't exist, but writes the actual
-result to `extension/results/<NN>_version.out`), then copy that back:
+Generate the file via `just expected-from-results`. Run `just test`
+once (it fails because the expected file doesn't exist, but writes the
+actual result to `extension/results/<NN>_version.out`), then:
 
 ```sh
-ssh comfy 'docker exec pgx-lower-dev cat /workspace/.worktrees/<slug>/extension/results/<NN>_version.out' \
-  > tests/expected/<NN>_version.out
+just expected-from-results <NN>_version
 ```
 
-Or equivalently, `just expected-from-results <NN>_version` (same thing
-wrapped).
+That copies the canonical output from the thor container into
+`tests/expected/`. This is the only recommended path.
 
 This is the ONLY recommended path. The inline-described format above
 (trailing space, NOTICE line, etc.) is for reference only — use it to
@@ -149,15 +156,17 @@ get a more substantive test using the same pattern.
 - `just utest` passes — including the new `VersionFunctionTest`.
 - `just test` passes — including the new `<NN>_version` regression test.
 - All existing regression / unit tests still pass (no collateral breakage).
-- `just bench` produces a report; the chart should show **no meaningful
-  movement** on any query (this spec doesn't touch any code path the TPC-H
-  queries exercise). A YAY/NAY/MAYBE verdict of MAYBE (within the noise
-  band) is the expected and correct outcome.
+- `just bench` produces a report. Expected verdict: 🟡 **MAYBE**. The
+  geomean lands in the noise band (roughly ±3%) and per-query deltas
+  typically run ±5% at SF=0.5 iter=1 — individual queries showing +3%
+  or −5% is normal run-to-run variance, NOT a bug. A query regressing
+  past −10% would trip 🔴 NAY; anything short of that is expected noise
+  for this no-op-ish change.
 - `just bench-report` produces the `.db / .png / .md` triplet under
   `./benchmarks/`, all three committed with the PR.
-- PR body includes the auto-generated benchmark report block. The Stats
-  summary section will show roughly 0% deltas — that's correct for this
-  spec.
+- PR body includes the auto-injected benchmark report block (don't
+  paste it manually — `just bench-report` does it). Expected: MAYBE
+  verdict, near-zero geomean, mixed per-query signs.
 - spec-reviewer subagent verdict: `approve` or `approve with comments`.
   If it returns `request changes` for substantive reasons, that's
   important data — surface it back to the user.

@@ -28,10 +28,14 @@ default:
 
 # --- Preflight -------------------------------------------------------------
 
-# Verify tsp + dev container are up on thor. Every real recipe depends on this.
+# Verify tsp + dev container are up on thor, and force mutagen to finish
+# the mac→thor sync so recipes reading files on thor see the edits you
+# just made locally. Flush is cheap (~100ms when nothing's pending) and
+# removes the "sleep 3 before just compile" class of cargo-cult timing.
 _preflight:
     @ssh {{_thor}} 'command -v tsp >/dev/null 2>&1 || { echo "ERROR: task-spooler not installed on thor. Run: ssh comfy sudo apt-get install -y task-spooler"; exit 1; }'
     @ssh {{_thor}} 'docker ps --format "{{{{.Names}}" | grep -q "^{{_ctr}}$" || { echo "ERROR: {{_ctr}} not running on thor. Run: just up"; exit 1; }'
+    @branch=$(git rev-parse --abbrev-ref HEAD); session="pgx-lower-${branch}"; [ "${branch}" = "main" ] && session="pgx-lower"; mutagen sync flush "${session}" >/dev/null 2>&1 || true
 
 # Start the dev container on thor (one-time per boot).
 up:
@@ -55,6 +59,14 @@ bootstrap-tsp:
 compile: _preflight
     #!/usr/bin/env bash
     set -o pipefail
+    # Block until the mac→thor mutagen cycle completes so ninja sees the
+    # file mtimes you just edited locally. Removes the "sleep 3 before
+    # just compile" cargo-cult. If we're on main the session is
+    # "pgx-lower" (no branch suffix); on a worktree it's "pgx-lower-<branch>".
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    session="pgx-lower-${branch}"
+    [ "${branch}" = "main" ] && session="pgx-lower"
+    mutagen sync flush "${session}" >/dev/null 2>&1 || true
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-compile.out
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ]; then
@@ -434,10 +446,16 @@ worktree-list:
 
 # --- PR --------------------------------------------------------------------
 
-# Open a PR from the current branch against main. Fill in the Summary +
-# stats summary before requesting review.
-pr TITLE:
-    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n<what and why>\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n')"
+# Open a PR from the current branch against main. Second arg is an
+# optional Summary body (replaces the `<what and why>` placeholder), so
+# agents that know their summary at PR-open time skip a trailing
+# `gh pr edit` pass. `just bench-report` handles the stats-summary
+# placeholder later.
+#
+#   just pr "spec 03: plan-shape compile cache"
+#   just pr "fix bench race" "bench-report was reading .md before sync."
+pr TITLE SUMMARY='<what and why>':
+    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n%s\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n' "{{SUMMARY}}")"
 
 # --- Spec coordination ----------------------------------------------------
 # These wrap edits to specs/STATUS.md and commit atomically against main so

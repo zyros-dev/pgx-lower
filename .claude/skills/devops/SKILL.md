@@ -143,7 +143,7 @@ Naming rules:
 - Spec branch `spec-NN-<slug>` → `pr-<N>-spec-<NN>-<slug>.db`
 - Non-spec branch → `pr-<N>-<slug>.db`
 
-**Ordering matters:** `just bench-report` needs an open PR to know its PR number. Call order is `just bench → just pr → just bench-report → paste the .md into the PR body`.
+**Ordering matters:** `just bench-report` needs an open PR to know its PR number. Call order is `just bench → just pr → just bench-report`. The last step auto-injects the bench block into the PR body — you do not re-paste it manually.
 
 The **baseline** db is pulled on the fly from `origin/main:benchmarks/` (the alphanumerically latest `pr-*.db` there, i.e. the most recently merged PR's db). Feature branches never commit the baseline — each PR adds exactly one `.db` (its own). When this PR merges, its db lands on main and becomes the baseline for future PRs.
 
