@@ -24,8 +24,15 @@ just worktree-list  # other agents' worktrees
 just spec-status    # the spec board
 ```
 
-If `just queue` shows a deep queue, expect your jobs to wait — don't bypass.
-If a worktree for the spec already exists with a different owner, stop and tell the user.
+Concrete queue-depth thresholds. `just queue` emits `N total (M running, K queued)` as its summary line — use the total to decide:
+
+| Total jobs | What to expect |
+|---|---|
+| 0–2 | Fine. Your job runs ~immediately. |
+| 3–5 | Noticeable wait (minutes per slot). Plan a bigger change per build; avoid chaining `compile && utest && test` submissions in tight succession. |
+| 6+  | Deep queue. Run `just check-diff` locally while the queue drains — it lives on a separate queue (`pgx-check`, not `pgx-build`) and runs in parallel, so you get format feedback without joining the backlog. |
+
+Don't bypass the queue. If a worktree for the spec already exists with a different owner, stop and tell the user.
 
 ## 1. Claim the spec + create the worktree
 
@@ -79,7 +86,21 @@ TDD is mandatory here (see CLAUDE.md). Before any implementation change:
 2. Add or modify the test that captures the new behavior.
 
    - **Unit tests** (preferred): write the `.cpp` in `tests/unit/test_lowerings/`, add to `tests/unit/test_lowerings/CMakeLists.txt`. `just test` runs the full suite.
-   - **pg_regress** (only when actually needed): write the `.sql` file, but **do NOT write the `.out` file by hand**. pg_regress's output format has footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). Write the `.sql`, run `just test` once to fail, then `just expected-from-results <NN>_<name>` to copy the authoritative output back.
+   - **pg_regress** (only when actually needed): write the `.sql` file, but **do NOT write the `.out` file by hand**. pg_regress's output format has footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip).
+
+     Canonical pg_regress authoring flow:
+
+     ```
+     # 1. Add tests/sql/NN_name.sql (no .out file yet).
+     # 2. Run the tests to generate the actual pg_regress output.
+     just test                              # will fail: no expected/NN_name.out
+     # 3. Copy pg_regress's own output back as the authoritative expected file.
+     just expected-from-results NN_name
+     # 4. Re-run to confirm green.
+     just test
+     ```
+
+     `just expected-from-results NN_name` reads `build-docker-ptest/extension/results/NN_name.out` on thor and writes `tests/expected/NN_name.out` verbatim. Always use it for the first commit of a new regression test — the manual-authoring path burns time on whitespace and NOTICE-line debugging that pg_regress already knows how to produce.
 
 3. Confirm it **fails** for the reason you expect:
    - Unit tests: `just utest` (fast; configures+builds to `build-docker-utest/` on first run, incremental after).
@@ -100,6 +121,10 @@ just test       # pg_regress output-equivalence; run before opening the PR
 ```
 
 `compile`, `utest`, and `test` all share the serialized build queue, so they don't stomp on each other or a concurrent bench. Iterate `just compile && just utest` tightly while implementing; run `just test` once before opening the PR to confirm no pg_regress regression.
+
+**`just compile` is NOT a RED signal for extension-boundary symbols.** When a SQL function is declared as `AS '$libdir/pgx_lower', 'symbol_name'`, the C symbol is looked up via `dlsym` at PG `CREATE FUNCTION` / invocation time — no other translation unit references it at compile time, so the link resolves whether the symbol exists or not. A `BUILD OK` from `just compile` does NOT prove the implementation is present. The RED signal for this class of change is `just test` reporting `ERROR: function X() does not exist` or `could not find function "X" in file ".../pgx_lower.so"`. Treat those as the canonical failing-test signal — and when you wire a new `CREATE FUNCTION ... AS '$libdir/pgx_lower', 'foo'`, don't declare the implementation done until `just test` is green on a case that actually calls `foo()`.
+
+**Mutagen flush is automatic — don't `sleep`.** Every recipe that hits thor now runs through `_preflight`, which calls `mutagen sync flush "pgx-lower-<branch>"` before the build/test/bench command executes. The flush is ~100ms when the session is idle and deterministic — it blocks until the mac→thor cycle is complete, so `ninja` / `pg_regress` / `run.py` see the file mtimes you just edited locally. **Skip the old `sleep 3` cargo-cult pattern**: editing a file on mac and running `just compile` back-to-back is safe. The only time you need an explicit flush is when you're bypassing the recipes (e.g. calling `ssh comfy docker exec …` directly), which you shouldn't be doing anyway.
 
 ## 4. Static analysis
 
@@ -230,7 +255,7 @@ just worktree-rm <slug>
 | `Job N not finished or not running` from tsp under queue contention | tsp state confusion when another agent's slot holder exits weirdly | Just re-run the recipe; tsp is idempotent and the second submission gets a fresh id. |
 | Test passes that shouldn't | stale `.so` in PG | `just compile` re-installs the extension into the container's PG; rerun `just test` |
 | Mutagen shows conflicts | simultaneous edit mac/thor | `mutagen sync flush pgx-lower-<slug>`; resolve manually, commit |
-| `ninja: no work to do` after editing source | mutagen mtime race — file synced with older mtime than its build product | `ssh comfy 'docker exec pgx-lower-dev touch /workspace/.worktrees/<slug>/<path/to/file>'` to nudge ninja; or wait ~2s before running `just compile` |
+| `ninja: no work to do` after editing source | rare mtime race; normally `_preflight` flushes mutagen before ninja runs, but a file touched mid-recipe can slip through | `ssh comfy 'docker exec pgx-lower-dev touch /workspace/.worktrees/<slug>/<path/to/file>'` to nudge ninja. Don't `sleep` — the flush is already automatic. |
 | `just check` emits thousands of violations unrelated to your diff | Pre-existing clang-format debt; whole tree hasn't been formatted | Gate on "no *new* violations on files your diff touches". `just check` clean is not yet achievable repo-wide. |
 
 ## Gotchas worth internalizing
