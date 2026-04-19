@@ -12,6 +12,8 @@ Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md
 
 For any code change that ends in a PR, follow the **`/devops` skill** (`.claude/skills/devops/SKILL.md`). It covers worktree → test → implement → build → check → bench → report → PR, all via `justfile` recipes that queue through `tsp` on thor so concurrent agents don't collide. Run `just --list` for the recipe surface.
 
+**The user only types "start spec NN" or "implement spec NN" or "spec NN merged"**. Everything else — claiming the spec on the board, creating the worktree, running TDD, opening the PR, marking it in_review, marking it done after merge — is on you, the agent. Read `/devops` and execute it. Don't ask the user for branch names, slugs, worktree details, or permission to run recipes; pick sensible defaults from the spec filename and proceed. Escalate only when something genuinely blocks (claim conflict, build broken in a way you can't diagnose, spec ambiguous).
+
 ## Red/green TDD is required
 
 Write the failing test **first**. Run `just test` and confirm the expected failure before touching any implementation. Implement the minimum change to turn it green. Only then refactor. No exceptions — "I'll add the test after" produces untested code and we don't merge untested code.

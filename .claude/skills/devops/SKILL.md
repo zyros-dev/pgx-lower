@@ -1,9 +1,9 @@
 ---
 name: devops
-description: End-to-end playbook for implementing a feature or fix in pgx-lower. Use whenever the user asks you to make a code change that should end in a pull request. Covers worktree creation, TDD, build, static analysis, tests, benchmark, and PR.
+description: End-to-end playbook for implementing a feature or fix in pgx-lower. Auto-invoke when the user says "start spec NN", "implement spec NN", or asks for any code change that should end in a pull request. Covers spec claiming, worktree creation, TDD, build, static analysis, tests, benchmark, PR, and status-board upkeep. The user only ever says "start spec NN" — every other step is yours.
 disable-model-invocation: false
-argument-hint: "<short feature slug, e.g. feat-trim-proj>"
-allowed-tools: "Bash(just *) Bash(git *) Bash(gh *) Bash(ssh comfy *) Bash(mutagen *)"
+argument-hint: "<spec number, e.g. 03> OR <short feature slug, e.g. feat-trim-proj>"
+allowed-tools: "Bash(just *) Bash(git *) Bash(gh *) Bash(ssh comfy *) Bash(mutagen *) Bash(cd *)"
 ---
 
 # devops — implement-and-ship playbook
@@ -12,23 +12,46 @@ The whole pipeline is wrapped in `justfile` recipes that SSH into thor and funne
 
 **Everything runs on thor.** See CLAUDE.md for the sync/toolchain invariants.
 
-## 0. Before you start
+**The user does not orchestrate.** They say "start spec NN" and you do every step below, including the status-board updates. Don't ask the user for the branch name, the slug, the worktree, or whether to claim — you decide and do it. Only escalate when something blocks (claim conflict, spec genuinely ambiguous, build broken in a way you can't diagnose).
 
-- `just queue` — glance at the build queue. If it's deep, expect your `compile`/`test`/`bench` to wait; don't bypass.
-- `just worktree-list` — confirm you're not about to collide with another agent's worktree.
-- `just spec-status` — if you're working from a spec, check `specs/STATUS.md`. If the spec isn't already `in_progress` under your name, claim it from the **main** checkout: `just spec-claim NN <branch-slug>`. The recipe rebases main and pushes the claim atomically so two agents can't take the same spec.
+## 0. Preflight (always)
 
-## 1. Create a worktree
-
-Never work on `main` directly. Pick a short slug (lowercase, hyphens), create an isolated worktree with its own mutagen sync:
+Run these. They're fast.
 
 ```
-just worktree-new $ARGUMENTS
-cd .worktrees/$ARGUMENTS
-git checkout -b $ARGUMENTS
+just queue          # build-queue depth
+just worktree-list  # other agents' worktrees
+just spec-status    # the spec board
 ```
 
-This creates `.worktrees/<slug>/` on both mac and thor, and a dedicated mutagen session `pgx-lower-<slug>` so your edits sync without touching the main repo.
+If `just queue` shows a deep queue, expect your jobs to wait — don't bypass.
+If a worktree for the spec already exists with a different owner, stop and tell the user.
+
+## 1. Claim the spec + create the worktree
+
+When the user says "start spec NN":
+
+1. Read `specs/NN-*.md` so you know what you're doing before you reserve a slot.
+2. Pick the branch slug. Convention: `spec-NN-<short-keyword>` derived from the spec filename (e.g. `spec-03-cache`, `spec-05-decode`). Lowercase, hyphens.
+3. From the **main** checkout (not a worktree), claim and create the worktree atomically:
+
+```
+cd ~/repos/pgx-lower      # main checkout — required for spec-claim
+just spec-claim NN <slug>  # rebases main, marks spec in_progress, pushes
+just worktree-new <slug>
+cd .worktrees/<slug>
+git checkout -b <slug>
+```
+
+If `just spec-claim` fails because the spec is already claimed, tell the user. Don't double-claim.
+
+## 2. Red — write a failing test first
+
+TDD is mandatory here (see CLAUDE.md). Before any implementation change:
+
+1. Identify the test harness for the thing you're changing — PostgreSQL regression tests live in `extension/sql/` + `extension/expected/`, unit tests in `tests/`.
+2. Add or modify a test that captures the new behavior.
+3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think.
 
 ## 2. Red — write a failing test first
 
@@ -95,27 +118,41 @@ just pr "<title>"
 
 `just pr` uses a templated body (Summary + Stats summary + Test plan checklist). Paste the final report from step 6 into the Summary and Stats summary sections before requesting review.
 
-If you're working from a spec, mark the spec as `in_review` from the main checkout once the PR is open:
+Capture the PR number from `gh pr view --json number -q .number` or from the URL `gh pr create` printed.
+
+Then mark the spec as `in_review` — from the **main** checkout:
 
 ```
+cd ~/repos/pgx-lower
 just spec-in-review NN <pr-number>
 ```
 
-## Cleanup
+Tell the user the PR is up and ready for review (paste the URL).
 
-After the PR lands:
+## 8. After merge (in any future session)
 
-```
-just worktree-rm $ARGUMENTS
-```
-
-Terminates the mutagen session and removes the worktree on both mac and thor.
-
-If working from a spec, mark it `done` from the main checkout:
+When the user says "spec NN merged" or you observe via `gh pr view NN --json state -q .state` that the PR is `MERGED`:
 
 ```
+cd ~/repos/pgx-lower
 just spec-complete NN <pr-number>
+just worktree-rm <slug>
 ```
+
+`worktree-rm` terminates the mutagen session and removes the worktree on both mac and thor. `spec-complete` flips the board row to `done` so future agents see the dependency clear.
+
+## When things go wrong
+
+| Situation | What you do |
+|-----------|-------------|
+| `just spec-claim` says spec is already claimed | Stop, tell user; don't override. |
+| `just compile` fails with errors you can fix | Fix and re-run. |
+| `just compile` fails with errors you can't diagnose | Tell user; include the last 30 lines of output. |
+| `just test` shows a failure that's the test you wrote (Red phase) | Continue to Green. |
+| `just test` shows unrelated failures | Don't proceed. Tell user; don't paper over. |
+| `just bench` shows a regression on queries you touched | Don't silently ignore. Note in report and ask user before opening PR. |
+| Mutagen sync conflict | `mutagen sync flush pgx-lower-<slug>`; resolve manually; commit. |
+| Spec genuinely ambiguous | Ask user; if they don't know either, run `just spec-block NN "<reason>"` and stop. |
 
 ## Troubleshooting
 
