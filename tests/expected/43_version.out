@@ -1,0 +1,7 @@
+LOAD 'pgx_lower.so';
+SELECT pgx_lower_version();
+ pgx_lower_version 
+-------------------
+ 1.0
+(1 row)
+

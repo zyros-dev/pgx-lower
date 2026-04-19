@@ -78,7 +78,7 @@ def default_owner() -> str:
 
 
 def commit_and_push(message: str) -> None:
-    run(["git", "pull", "--rebase", "--quiet", "origin", "main"])
+    run(["git", "pull", "--rebase", "--autostash", "--quiet", "origin", "main"])
     run(["git", "add", str(STATUS.relative_to(REPO_ROOT))])
     run(["git", "commit", "-m", message])
     run(["git", "push", "origin", "main"])
