@@ -257,3 +257,35 @@ set_tests_properties(AstConstTranslationTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;ast;translation"
 )
+
+# ----------------------------------------------------------------------------
+# Version function smoke test — spec 14. Tests the constant version string
+# returned by pgx_lower_version(). The C wrapper requires a live PG backend,
+# so the utest covers the constant itself. Exercises the utest path for a
+# trivial string-returning function.
+
+add_executable(test_version_function
+    test_version_function.cpp
+)
+
+target_compile_definitions(test_version_function PRIVATE
+    BUILDING_UNIT_TESTS=1
+)
+
+target_include_directories(test_version_function PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(test_version_function
+    gtest
+    gtest_main
+)
+
+target_compile_features(test_version_function PRIVATE cxx_std_20)
+
+add_test(NAME VersionFunctionTest COMMAND test_version_function)
+
+set_tests_properties(VersionFunctionTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;version"
+)
