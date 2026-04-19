@@ -16,7 +16,7 @@ For any code change that ends in a PR, follow the **`/devops` skill** (`.claude/
 
 | Trigger | Skill | What you do |
 |---------|-------|-------------|
-| `/pgx:do-spec NN` (or natural language: `start spec NN`) | `/devops` | Claim, worktree, TDD loop, open PR, mark in_review |
+| `/pgx:start-spec NN` (or natural language: `start spec NN`) | `/devops` | Claim, worktree, TDD loop, open PR, mark in_review |
 | `/pgx:review-open-prs` (or natural language: `review pending PRs`) | `/merge` | Spawn `spec-reviewer`, handle conflicts, confirm once per PR, merge, mark done, remove worktree |
 | `spec NN merged` (manual case) | inline | `just spec-complete NN <PR>` + `just worktree-rm <slug>` |
 

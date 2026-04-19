@@ -85,29 +85,38 @@ Fast clang-format dry-run. Runs on a separate queue so it doesn't block builds. 
 ## 5. Benchmark
 
 ```
-just bench
+just bench           # SF=0.01, iter=5, ~40s. Default for every PR.
+just bench-report    # snapshot + chart + verdict
 ```
 
-SF=0.01 TPC-H A/B run, pgx ON vs OFF, under ~30s. Read the per-query table and the geomean. If a query you touched regressed, note it — don't silently ignore.
+`just bench` runs 5 iterations per query per mode because at SF=0.01 pgx-lower's JIT compile dominates execution (q02: PG 8ms vs pgx 570ms — essentially all compile). One iteration has ~±8% run-to-run variance; iter=5's median gets that down to ~±3%, which is what the verdict thresholds below are calibrated against.
 
-Skipped queries: q17 and q20 are skipped by default (pathologically slow without indexes at small SF). If your change touches code paths those queries exercise, run the `full` profile separately and call it out in the report.
+**When to also run `just bench-merge`.** Before merging anything that claims a performance improvement. It runs SF=0.16 with iter=3 (~60-120s) so query execution starts mattering and the numbers aren't compile-noise. Paste both chart links into the PR body if you run it.
 
-## 6. Final report
+**Skipped queries.** q17 and q20 are skipped by default — pathologically slow without indexes at small SF. If your change touches code paths they exercise, run the `full` profile in `benchmark-config.yaml` separately and call it out.
 
-Before opening the PR, produce a short write-up covering:
+## 6. Benchmark report + verdict
 
-- **What changed** (files, high-level)
-- **Why** (the test you added + the observation that motivated it)
-- **Results**:
-  - `just check` — clean / hits
-  - `just test` — pass count / any new failures
-  - `just bench` — per-query deltas for queries you touched, plus the geomean
-- **Stats summary** — required block (separate spec describes the format; if
-  the format isn't documented yet, ask the user). Goes into the PR body's
-  "Stats summary" section.
-- **Follow-ups** — anything you noticed but didn't fix
+`just bench-report` consumes `benchmark/output/benchmark.db` from the last `just bench`, snapshots it to `./benchmarks/<YYYYMMDDTHHMMSS>__<branch>__<sha7>.db`, finds the most recent `*__main__*.db` in that folder as the baseline, and emits:
+
+- `.png` — bar chart, one bar per TPC-H query, height = % speedup on pgx (up = PR faster, green; down = regression, red; gray for <±1% noise).
+- `.md` — verdict header + summary block + per-query table with **PG reference column** (so reviewers see absolute context, not just %-deltas).
+
+**Verdict lines are auto-computed** and go at the top of the `.md`:
+
+| Verdict | Rule |
+|---|---|
+| 🟢 YAY    | geomean ≥ +3% AND no query regresses worse than −5% |
+| 🔴 NAY    | geomean ≤ −3% OR any query regresses worse than −10% |
+| 🟡 MAYBE  | everything in between (inside noise band, or mixed) |
+
+If the verdict is NAY, **stop and tell the user before opening the PR.** Don't paper over regressions. If MAYBE, it's your call — if the change is correctness-motivated (and bench is just the CI), proceed; if it's supposed to be a perf win, investigate first.
+
+**Baseline freshness.** The baseline is whatever the most recent `*__main__*.db` in `./benchmarks/` is. Refresh it by running `just bench && just bench-report` on the main checkout when main has moved meaningfully (schema change, lowering change, runtime change).
 
 ## 7. Pull request
+
+Commit everything — code, tests, **and the `./benchmarks/<prefix>.{db,png,md}` triplet** that `just bench-report` produced. The `.db` is the raw data so reviewers can reconstruct any other chart; the `.png` is what the PR body embeds; the `.md` is the verdict + table.
 
 ```
 git add -A
@@ -116,7 +125,9 @@ git push -u origin $ARGUMENTS
 just pr "<title>"
 ```
 
-`just pr` uses a templated body (Summary + Stats summary + Test plan checklist). Paste the final report from step 6 into the Summary and Stats summary sections before requesting review.
+Then edit the PR body to paste in the contents of `./benchmarks/<prefix>.md` — that supplies the chart, verdict, and per-query table. Add a **Summary** section above it (what changed, why), and keep the auto-generated `## Test plan` checklist.
+
+If you ran `just bench-merge` too, paste its chart link alongside the main one and label which is which.
 
 Capture the PR number from `gh pr view --json number -q .number` or from the URL `gh pr create` printed.
 
@@ -150,7 +161,9 @@ just worktree-rm <slug>
 | `just compile` fails with errors you can't diagnose | Tell user; include the last 30 lines of output. |
 | `just test` shows a failure that's the test you wrote (Red phase) | Continue to Green. |
 | `just test` shows unrelated failures | Don't proceed. Tell user; don't paper over. |
-| `just bench` shows a regression on queries you touched | Don't silently ignore. Note in report and ask user before opening PR. |
+| `just bench-report` emits 🔴 NAY | Stop; tell the user. Do not open the PR until the regression is understood. |
+| `just bench-report` emits 🟡 MAYBE on a perf-claiming change | Run `just bench-merge` for a trustworthy signal before opening the PR. |
+| `just bench-report` says "no baseline in benchmarks/" | Run `just bench && just bench-report` on main first. |
 | Mutagen sync conflict | `mutagen sync flush pgx-lower-<slug>`; resolve manually; commit. |
 | Spec genuinely ambiguous | Ask user; if they don't know either, run `just spec-block NN "<reason>"` and stop. |
 

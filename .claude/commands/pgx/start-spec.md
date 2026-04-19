@@ -1,5 +1,5 @@
 ---
-description: Implement a spec from specs/ end to end (claim → worktree → TDD → PR → in_review). One arg: the spec number, e.g. /pgx:do-spec 03.
+description: Implement a spec from specs/ end to end (claim → worktree → TDD → PR → in_review). One arg: the spec number, e.g. /pgx:start-spec 03.
 argument-hint: "<spec number, e.g. 03>"
 allowed-tools: "Bash(just *) Bash(git *) Bash(gh *) Bash(ssh comfy *) Bash(mutagen *) Bash(cd *)"
 ---
