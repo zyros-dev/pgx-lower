@@ -61,9 +61,19 @@ If the claim is live (PR open and recent, or another agent actively working), st
 
 TDD is mandatory here (see CLAUDE.md). Before any implementation change:
 
-1. Identify the test harness for the thing you're changing — PostgreSQL regression tests live in `tests/sql/` + `tests/expected/`, unit tests in `tests/unit/`.
-2. Add or modify a test that captures the new behavior. **For pg_regress tests: write the `.sql` file, but do NOT write the `.out` file by hand.** pg_regress's output format has several footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). After writing the `.sql` and running `just test` once to fail, use `just expected-from-results <NN>_<name>` to copy the authoritative output from the container back into `tests/expected/`.
-3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think. Register the new test in `extension/CMakeLists.txt`'s `REGRESS` list before running.
+1. **Pick the right test home — default to `tests/unit/` (gtest), not `tests/sql/`.**
+
+   - `tests/sql/` + `tests/expected/` is the **pg_regress output-equivalence suite**. It exists to prove pgx_lower produces the same output as stock PG for a curated, stable set of SQL patterns (scans, joins, aggregations, decimals, null handling, TPC-H). **The suite is meant to stay roughly constant.** Adding a new `.sql` per spec is bloat — most specs are about *how* the existing queries are lowered/optimized, and the existing suite already catches the correctness regressions that change would cause.
+   - `tests/unit/` (`test_lowerings/*.cpp`, gtest-based) is the **primary TDD home**. New C function? Write a gtest. New MLIR pass? `tests/unit/test_lowerings/test_<thing>.cpp` that invokes the pass with a known input and asserts the expected IR or runtime result. New runtime FFI? gtest that calls it directly. This is the fast iteration loop — no pg_regress ceremony, no `.out` whitespace games.
+
+   **Add to `tests/sql/` only if**: your change introduces a SQL-level feature the suite genuinely doesn't cover (a new operator class, a new data-type path, a lowering that exercises a combination the existing queries miss). Default assumption: you're adding a unit test.
+
+2. Add or modify the test that captures the new behavior.
+
+   - **Unit tests** (preferred): write the `.cpp` in `tests/unit/test_lowerings/`, add to `tests/unit/test_lowerings/CMakeLists.txt`. `just test` runs the full suite.
+   - **pg_regress** (only when actually needed): write the `.sql` file, but **do NOT write the `.out` file by hand**. pg_regress's output format has footguns (SQL lines get echoed, `IF NOT EXISTS` emits NOTICE messages, column headers often have trailing whitespace that editors strip). Write the `.sql`, run `just test` once to fail, then `just expected-from-results <NN>_<name>` to copy the authoritative output back.
+
+3. `just test` — confirm it **fails** for the reason you expect. If it passes, the test isn't covering what you think.
 
 ## 3. Green — minimum change to pass
 
