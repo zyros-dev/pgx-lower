@@ -74,29 +74,45 @@ If either is missing, ask for it before starting.
 
 8. **Deeper bench on 🟡 MAYBE or 🔴 NAY.** SF=0.01 is compile-dominated at
    pgx-lower's current maturity; a marginal smoke verdict needs a real
-   measurement before you act on it. In its own worktree:
+   measurement before you act on it. The author's artifacts live at
+   `benchmarks/pr-<PR>-spec-<NN>-<slug>.db`; you don't touch those. Instead,
+   run your own deep bench in a disposable review worktree:
 
    ```
    cd ~/repos/pgx-lower
-   just worktree-new review-<pr-number>
-   cd .worktrees/review-<pr-number>
+   just worktree-new review-<PR>
+   cd .worktrees/review-<PR>
    gh pr checkout <PR>
    just compile
-   just bench-merge        # SF=0.16, iter=3, ~90s
-   just bench-report
-   cat benchmarks/$(ls -t benchmarks/*__review-*__*.md | head -1)
+   just bench-merge                     # SF=0.16, iter=3, ~90s
+   # Don't use `just bench-report` here — that requires an open PR and
+   # writes to the canonical pr-<N>-... name. Run report.py directly with
+   # a review-scoped output name so it never gets mistaken for the author's.
+   ssh comfy "docker exec pgx-lower-dev bash -c '\
+       cp /workspace/.worktrees/review-<PR>/benchmark/output/benchmark.db \
+          /workspace/.worktrees/review-<PR>/benchmarks/review-<PR>-deep.db && \
+       git -C /workspace fetch origin main --quiet && \
+       baseline=\$(git -C /workspace ls-tree -r --name-only origin/main -- \"benchmarks/pr-*.db\" | sort -V | tail -1) && \
+       git -C /workspace show origin/main:\$baseline > /tmp/baseline.db && \
+       python3 /workspace/.worktrees/review-<PR>/benchmark/report.py \
+           --baseline /tmp/baseline.db \
+           --current  /workspace/.worktrees/review-<PR>/benchmarks/review-<PR>-deep.db \
+           --out      /workspace/.worktrees/review-<PR>/benchmarks/review-<PR>-deep'"
+   cat benchmarks/review-<PR>-deep.md
    ```
 
-   The regenerated verdict is authoritative. After reading it, tear down:
+   The regenerated verdict in `review-<PR>-deep.md` is authoritative. Read
+   it, then tear the worktree down (don't push the review-<PR>-deep files
+   anywhere — they're ephemeral):
 
    ```
    cd ~/repos/pgx-lower
-   just worktree-rm review-<pr-number>
+   just worktree-rm review-<PR>
    ```
 
    If the deep bench flips NAY → YAY/MAYBE, note that in your report and
    treat the original smoke as a false alarm. If it confirms NAY, proceed
-   to step 9.
+   to step 9 and paste the deep-bench table into the rejection comment.
 
 ## Output format
 

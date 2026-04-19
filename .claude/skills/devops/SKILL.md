@@ -97,10 +97,19 @@ just bench-report    # snapshot + chart + verdict
 
 ## 6. Benchmark report + verdict
 
-`just bench-report` consumes `benchmark/output/benchmark.db` from the last `just bench`, snapshots it to `./benchmarks/<YYYYMMDDTHHMMSS>__<branch>__<sha7>.db`, finds the most recent `*__main__*.db` in that folder as the baseline, and emits:
+`just bench-report` consumes `benchmark/output/benchmark.db` from the last `just bench`, names it using the PR number, and emits:
 
-- `.png` — bar chart, one bar per TPC-H query, height = % speedup on pgx (up = PR faster, green; down = regression, red; gray for <±1% noise).
-- `.md` — verdict header + summary block + per-query table with **PG reference column** (so reviewers see absolute context, not just %-deltas).
+- `benchmarks/pr-<N>-spec-<NN>-<slug>.db` — raw data (one per PR, committed to the feature branch only).
+- `benchmarks/pr-<N>-spec-<NN>-<slug>.png` — bar chart: one bar per TPC-H query, up = PR faster than baseline (green), down = regression (red), gray inside ±1% noise.
+- `benchmarks/pr-<N>-spec-<NN>-<slug>.md` — verdict header + summary + per-query table with **PG reference column**.
+
+Naming rules:
+- Spec branch `spec-NN-<slug>` → `pr-<N>-spec-<NN>-<slug>.db`
+- Non-spec branch → `pr-<N>-<slug>.db`
+
+**Ordering matters:** `just bench-report` needs an open PR to know its PR number. Call order is `just bench → just pr → just bench-report → paste the .md into the PR body`.
+
+The **baseline** db is pulled on the fly from `origin/main:benchmarks/` (the alphanumerically latest `pr-*.db` there, i.e. the most recently merged PR's db). Feature branches never commit the baseline — each PR adds exactly one `.db` (its own). When this PR merges, its db lands on main and becomes the baseline for future PRs.
 
 **Verdict lines are auto-computed** and go at the top of the `.md`:
 
@@ -110,24 +119,26 @@ just bench-report    # snapshot + chart + verdict
 | 🔴 NAY    | geomean ≤ −3% OR any query regresses worse than −10% |
 | 🟡 MAYBE  | everything in between (inside noise band, or mixed) |
 
-If the verdict is NAY, **stop and tell the user before opening the PR.** Don't paper over regressions. If MAYBE, it's your call — if the change is correctness-motivated (and bench is just the CI), proceed; if it's supposed to be a perf win, investigate first.
-
-**Baseline freshness.** The baseline is whatever the most recent `*__main__*.db` in `./benchmarks/` is. Refresh it by running `just bench && just bench-report` on the main checkout when main has moved meaningfully (schema change, lowering change, runtime change).
+If the verdict is NAY, **stop and tell the user before marking the PR ready.** Don't paper over regressions. If MAYBE, it's your call — if the change is correctness-motivated (bench is just a regression gate), proceed; if it's supposed to be a perf win, run `just bench-merge` for trustworthy signal first.
 
 ## 7. Pull request
 
-Commit everything — code, tests, **and the `./benchmarks/<prefix>.{db,png,md}` triplet** that `just bench-report` produced. The `.db` is the raw data so reviewers can reconstruct any other chart; the `.png` is what the PR body embeds; the `.md` is the verdict + table.
+Because `just bench-report` needs the PR number to name its artifacts, the PR is opened *first*, then the bench artifacts are committed in a follow-up commit on the same branch:
 
 ```
-git add -A
+git add -A                           # code + tests only at this point
 git commit -m "$ARGUMENTS: <one-line>"
 git push -u origin $ARGUMENTS
-just pr "<title>"
+just pr "<title>"                    # PR opens — now you know N
+just bench-report                    # emits benchmarks/pr-N-spec-NN-<slug>.{db,png,md}
+git add benchmarks/pr-${N}-*
+git commit -m "Benchmark report for PR #${N}"
+git push
 ```
 
-Then edit the PR body to paste in the contents of `./benchmarks/<prefix>.md` — that supplies the chart, verdict, and per-query table. Add a **Summary** section above it (what changed, why), and keep the auto-generated `## Test plan` checklist.
+Then edit the PR body to paste in the contents of `benchmarks/pr-<N>-spec-<NN>-<slug>.md` — that supplies the chart (via raw.githubusercontent URL), verdict, and per-query table. Add a **Summary** section above it (what changed, why), and keep the `## Test plan` checklist from the `just pr` template.
 
-If you ran `just bench-merge` too, paste its chart link alongside the main one and label which is which.
+If you ran `just bench-merge` too, run `just bench-report` again afterwards — it overwrites the `.db/.png/.md` triplet with the higher-SF numbers, so the PR body picks up the authoritative verdict.
 
 Capture the PR number from `gh pr view --json number -q .number` or from the URL `gh pr create` printed.
 

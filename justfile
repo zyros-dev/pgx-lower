@@ -74,33 +74,59 @@ bench: _preflight
 bench-merge: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/tpch/run.py 0.16 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 3") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
-# Generate the PR benchmark report: snapshots the current benchmark.db into
-# ./benchmarks/<ts>__<branch>__<sha7>.db, picks the most recent *__main__*.db
-# in that folder as the baseline, and emits matching .png + .md. Prints the
-# markdown body to stdout so `just pr` can consume it.
+# Generate the PR benchmark report. Requires an open PR (the PR number
+# becomes part of the filename). Snapshots the current benchmark.db to
+# ./benchmarks/pr-<N>-spec-<NN>-<slug>.db (or pr-<N>-<slug>.db for
+# non-spec branches), pulls the baseline db directly from origin/main (not
+# committed to feature branches), and emits matching .png + .md.
+#
+# Naming rules:
+#   spec branch   (spec-NN-<slug>) → pr-<N>-spec-<NN>-<slug>.db
+#   non-spec      (<slug>)         → pr-<N>-<slug>.db
+#
+# Baseline: the alphanumerically latest .db in origin/main:benchmarks/
+# (which is the most recently merged PR's db). Baseline dbs never land on
+# feature branches — each PR commits exactly one .db (its own).
 bench-report:
     #!/usr/bin/env bash
     set -euo pipefail
     branch=$(git rev-parse --abbrev-ref HEAD)
-    sha=$(git rev-parse --short=7 HEAD)
-    ts=$(date -u +%Y%m%dT%H%M%S)
-    prefix="${ts}__${branch}__${sha}"
-    mkdir -p benchmarks
-    # Snapshot the db produced by `just bench`.
-    src="{{_wdir}}/benchmark/output/benchmark.db"
-    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/benchmarks/${prefix}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
-    # Pick most recent main-branch baseline.
-    baseline=$(ls -1 benchmarks/*__main__*.db 2>/dev/null | sort | tail -1 || true)
-    if [ -z "${baseline}" ]; then
-        echo "ERROR: no baseline in benchmarks/. Run 'just bench && just bench-report' on main first." >&2
+    pr=$(gh pr view --json number -q .number 2>/dev/null || true)
+    if [ -z "${pr}" ]; then
+        echo "ERROR: no PR found for branch '${branch}'. Run 'just pr' first, then 'just bench-report'." >&2
         exit 1
     fi
-    baseline_name=$(basename "${baseline}")
+    # Derive artifact slug from branch name.
+    if [[ "${branch}" =~ ^spec-([0-9]+)-(.+)$ ]]; then
+        slug="pr-${pr}-spec-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+    else
+        slug="pr-${pr}-${branch}"
+    fi
+    mkdir -p benchmarks
+    # Snapshot the run's db into the branch under the final name.
+    src="{{_wdir}}/benchmark/output/benchmark.db"
+    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/benchmarks/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
+    # Fetch the baseline from origin/main without polluting the feature branch.
+    git fetch origin main --quiet
+    baseline_path=$(git ls-tree -r --name-only origin/main -- 'benchmarks/pr-*.db' | sort -V | tail -1 || true)
+    if [ -z "${baseline_path}" ]; then
+        echo "ERROR: no baseline on origin/main:benchmarks/. Merge at least one PR first." >&2
+        exit 1
+    fi
+    baseline_name=$(basename "${baseline_path}")
+    # Stage the baseline on thor (not committed here — just in /tmp for report.py).
+    git show "origin/main:${baseline_path}" > /tmp/${baseline_name}
+    scp -q /tmp/${baseline_name} {{_thor}}:/tmp/${baseline_name}
+    rm /tmp/${baseline_name}
+    ssh {{_thor}} "docker cp /tmp/${baseline_name} {{_ctr}}:/tmp/${baseline_name}"
     ssh {{_thor}} "docker exec {{_ctr}} python3 {{_wdir}}/benchmark/report.py \
-        --baseline {{_wdir}}/benchmarks/${baseline_name} \
-        --current {{_wdir}}/benchmarks/${prefix}.db \
-        --out {{_wdir}}/benchmarks/${prefix} \
-        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/benchmarks/${prefix}.png\""
+        --baseline /tmp/${baseline_name} \
+        --current {{_wdir}}/benchmarks/${slug}.db \
+        --out {{_wdir}}/benchmarks/${slug} \
+        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/benchmarks/${slug}.png\""
+    echo ""
+    echo "Artifacts: benchmarks/${slug}.{db,png,md}"
+    echo "Baseline : ${baseline_name} (from origin/main)"
 
 # --- Queue ops ------------------------------------------------------------
 
