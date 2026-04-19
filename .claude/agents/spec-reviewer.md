@@ -60,6 +60,44 @@ If either is missing, ask for it before starting.
 6. **Check CI** via `statusCheckRollup` from step 2. If checks are failing
    or pending, that's blocking — note state but don't try to fix.
 
+7. **Read the author's benchmark verdict.** The PR body (or
+   `benchmarks/*__<pr-branch>__*.md` in the diff) should carry one of:
+
+   - 🟢 **YAY** — geomean ≥ +3% and worst query better than −5%. Trust it.
+   - 🟡 **MAYBE** — in the noise band. Might be a real null result, might
+     be a real regression the iter=5 smoke can't see.
+   - 🔴 **NAY** — geomean ≤ −3% OR any query worse than −10%. Treat as
+     provisional rejection and confirm with step 8.
+
+   A PR missing a verdict entirely is blocking. Ask the caller to re-run
+   `just bench-report` on the branch.
+
+8. **Deeper bench on 🟡 MAYBE or 🔴 NAY.** SF=0.01 is compile-dominated at
+   pgx-lower's current maturity; a marginal smoke verdict needs a real
+   measurement before you act on it. In its own worktree:
+
+   ```
+   cd ~/repos/pgx-lower
+   just worktree-new review-<pr-number>
+   cd .worktrees/review-<pr-number>
+   gh pr checkout <PR>
+   just compile
+   just bench-merge        # SF=0.16, iter=3, ~90s
+   just bench-report
+   cat benchmarks/$(ls -t benchmarks/*__review-*__*.md | head -1)
+   ```
+
+   The regenerated verdict is authoritative. After reading it, tear down:
+
+   ```
+   cd ~/repos/pgx-lower
+   just worktree-rm review-<pr-number>
+   ```
+
+   If the deep bench flips NAY → YAY/MAYBE, note that in your report and
+   treat the original smoke as a false alarm. If it confirms NAY, proceed
+   to step 9.
+
 ## Output format
 
 End with a structured report. Markdown is fine. Sections:
@@ -83,18 +121,53 @@ expected impact? flag if the speedup is the wrong sign or implausibly
 large.>
 ```
 
+## 9. Rejection comment on the PR
+
+If your verdict is `request changes` **because** of a confirmed perf
+regression (step 8 deep-bench said NAY) or a blocking correctness issue
+you found in the diff, leave a comment on the PR stating why:
+
+```
+gh pr review <PR> --request-changes --body "$(cat <<'EOF'
+## 🔴 Rejected — <one-line summary>
+
+**Benchmark verdict (SF=0.16, iter=3):** NAY
+- Geomean: <gm>%
+- Worst query: <worst_name> (<worst_pct>%)
+- Deep-bench report: <link to the committed benchmarks/<prefix>.md in
+  your review worktree's branch, or paste the table inline if the
+  worktree was torn down>
+
+**Specific concerns:**
+1. <cite file:line + what's wrong>
+2. <...>
+
+**Next step for the author:** <1 sentence on what to investigate>
+EOF
+)"
+```
+
+Keep the comment terse. Numbers first, prose second. Don't editorialise.
+Don't reject for MAYBE-level signal — note it in your report and let the
+caller decide.
+
 ## Constraints
 
-- **You don't run builds, tests, or benchmarks.** The author already did.
-  Trust their numbers but flag if they're missing, malformed, or implausible.
-- **You don't push code, merge, or comment on the PR.** Reviewer-only. The
-  caller decides what to do with your verdict.
+- **You may run builds, tests, and benchmarks, but only inside a
+  dedicated `review-<pr-number>` worktree** created via `just worktree-new`,
+  and only when step 8 calls for it. You are not the author; you don't
+  modify code in the PR branch.
+- **You may only post exactly one `--request-changes` review comment per
+  invocation, and only as described in step 9.** No approve comments, no
+  follow-up discussion threads. The caller handles merges.
 - **You don't approve based on absence of evidence.** If the diff lacks
   tests, that's blocking even if the change "looks fine".
 - If the spec is ambiguous and the author made a judgment call, flag it
   but don't reject — note it as a future spec-revision item.
 - Keep the report under ~400 words unless concerns are genuinely deep.
 - Cite file:line for any specific concern in the diff.
+- **Always** `just worktree-rm review-<pr-number>` before returning,
+  even on errors, so you don't leak worktrees on thor.
 
 ## When you should NOT proceed
 
