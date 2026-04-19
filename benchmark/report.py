@@ -208,6 +208,43 @@ def render_markdown(rows, baseline_meta, current_meta, chart_url: str,
                     validation: dict[str, bool] | None = None) -> str:
     validation = validation or {}
     invalid_queries = sorted(q for q, v in validation.items() if not v)
+
+    # Bail out early if baseline and current were captured at different
+    # scale factors. Comparing pgx times across SFs is arithmetic
+    # nonsense — exec time scales roughly linearly with SF, so the diff
+    # reflects "data size changed" not "code changed". This happens
+    # automatically the first time the canonical bench SF changes, when
+    # the new PR diffs against a baseline from the old regime.
+    bsf = baseline_meta.get('scale_factor')
+    csf = current_meta.get('scale_factor')
+    if bsf is not None and csf is not None and abs(bsf - csf) > 1e-9:
+        lines = []
+        lines.append(f"## 🟡 BASELINE-SF-MISMATCH — unable to compare")
+        lines.append("")
+        lines.append(f"- **Baseline scale factor:** {bsf}")
+        lines.append(f"- **Current scale factor:**  {csf}")
+        lines.append("")
+        lines.append(f"![bench diff]({chart_url})")
+        lines.append("")
+        lines.append("> The baseline and this run used different TPC-H scale factors, "
+                     "so per-query percentages reflect data-size change (exec time "
+                     "scales linearly with SF), not code change. Verdict withheld. "
+                     "Once at least one PR at the current SF merges to main, future "
+                     "PRs will have a same-SF baseline.")
+        lines.append("")
+        lines.append("| Query | PG (ms) | pgx baseline (ms) | pgx current (ms) | ✓ |")
+        lines.append("|-------|--------:|------------------:|-----------------:|:--|")
+        for q, pg, b, c, _ in rows:
+            pg_str = f"{pg:.1f}" if pg == pg else "—"
+            if q not in validation:
+                check = "—"
+            elif validation[q]:
+                check = "✅"
+            else:
+                check = "❌"
+            lines.append(f"| {q} | {pg_str} | {b:.1f} | {c:.1f} | {check} |")
+        return "\n".join(lines) + "\n"
+
     gm = geomean_speedup(rows)
     gm_label = f"{gm:+.1f}%" + (" 🟢" if gm > 1 else " 🔴" if gm < -1 else " ⚪")
     _, verdict_label = verdict(rows, invalid_queries=invalid_queries)
