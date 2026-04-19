@@ -1,0 +1,8 @@
+CREATE EXTENSION IF NOT EXISTS pgx_lower;
+NOTICE:  extension "pgx_lower" already exists, skipping
+SELECT pgx_lower_version();
+ pgx_lower_version 
+-------------------
+ 1.0
+(1 row)
+
