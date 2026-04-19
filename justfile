@@ -80,22 +80,80 @@ ccache-stats:
 check: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_check_q}}.sock && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && make fcheck") && echo "[job $id queued on {{_check_q}}]" && tsp -c $id'
 
-# clang-format dry-run restricted to files changed vs origin/main, so a PR's
-# check signal is about *its own* diff instead of the whole-tree debt.
-# Exits non-zero only if your changes introduce formatting violations.
-# Safe on both main and worktree branches.
+# clang-format-diff on the exact hunks changed vs origin/main — the real PR
+# gate. Unlike `just check`, which flags hundreds of pre-existing violations
+# on any file you touch, this only surfaces formatting issues in lines your
+# diff actually added/modified. Prints "check-diff: clean" and exits 0 when
+# your hunks are properly formatted; prints the specific lines and exits 1
+# otherwise. Safe to run from any branch.
 check-diff: _preflight
+    #!/usr/bin/env bash
+    set -eo pipefail
+    git fetch origin main --quiet
+    base=$(git merge-base origin/main HEAD)
+    diff=$(git diff -U0 "$base" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/*.c' 'tests/*.cc' 'tests/*.cpp' 'tests/*.h' 'tests/*.hpp' 'extension/*.c' 'extension/*.h' 2>/dev/null || true)
+    if [ -z "$diff" ]; then
+        echo "No C/C++ hunks changed vs origin/main — nothing to check."
+        exit 0
+    fi
+    echo "Checking hunks changed vs origin/main..."
+    # clang-format-diff reads a unified diff on stdin, applies style only
+    # within the added/modified line ranges, and prints a replacement diff
+    # for any lines that don't match the style. Empty output = clean.
+    # `<<<` adds a trailing newline that clang-format-diff wants; pure
+    # printf '%s' doesn't, and the upstream can SIGPIPE us before finishing.
+    # Capture via file rather than $(...) so `set -e` doesn't abort on a
+    # harmless non-zero exit from something downstream.
+    ssh {{_thor}} "docker exec -i {{_ctr}} bash -c 'cd {{_wdir}} && clang-format-diff-20 -p1 -style=file'" <<<"$diff" > /tmp/check-diff.out || true
+    if [ ! -s /tmp/check-diff.out ]; then
+        echo "check-diff: clean (your hunks match the project style)"
+        exit 0
+    fi
+    cat /tmp/check-diff.out
+    echo ""
+    echo "check-diff: your hunks need reformatting. Run \`just ffix-diff\` to auto-fix, or hand-edit the specific lines above."
+    exit 1
+
+# Apply clang-format-diff to the hunks this PR changed, in place. Fixes
+# formatting inside your added/modified line ranges without touching
+# pre-existing violations elsewhere in the file — safe to run on files with
+# pre-existing debt because it scopes to your diff, not the whole file.
+ffix-diff: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
     git fetch origin main --quiet
     base=$(git merge-base origin/main HEAD)
-    files=$(git diff --name-only --diff-filter=ACMR "$base" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/**/*.c' 'tests/**/*.cpp' 'tests/**/*.h' 2>/dev/null | tr '\n' ' ')
-    if [ -z "$files" ]; then
-        echo "No C/C++ files changed vs origin/main — nothing to check."
+    diff=$(git diff -U0 "$base" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/*.c' 'tests/*.cc' 'tests/*.cpp' 'tests/*.h' 'tests/*.hpp' 'extension/*.c' 'extension/*.h' 2>/dev/null || true)
+    if [ -z "$diff" ]; then
+        echo "No C/C++ hunks to fix."
         exit 0
     fi
-    echo "Checking ${files}"
-    ssh {{_thor}} "export TS_SOCKET=/tmp/{{_check_q}}.sock && id=\$(tsp docker exec {{_ctr}} bash -c 'cd {{_wdir}} && clang-format --dry-run --Werror ${files} 2>&1 | grep -E \"error:|warning:\" || echo \"check-diff: clean\"') && echo \"[job \$id queued on {{_check_q}}]\" && tsp -c \$id"
+    # Ensure files are synced (mutagen lag) then run fixer in-place on thor.
+    ssh {{_thor}} "docker exec -i {{_ctr}} bash -c 'cd {{_wdir}} && clang-format-diff-20 -p1 -i -style=file'" <<<"$diff"
+    echo "ffix-diff: formatted hunks in place. Review with 'git diff' and re-stage."
+
+# Copy the authoritative pg_regress output for a test into tests/expected/,
+# overwriting any hand-written version. This is the right way to build the
+# .out file for a new regression test — don't write it by hand, because
+# pg_regress's format (SQL echo lines, NOTICE messages, trailing whitespace
+# on column headers) isn't what a plain psql session looks like, and most
+# editors strip the trailing spaces on save anyway.
+#
+# Usage: just expected-from-results 43_version
+# Requires: `just compile && just test` already ran for this branch — the
+# recipe reads build-docker-ptest/extension/results/<name>.out on thor.
+expected-from-results TEST:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src="{{_bdir}}/extension/results/{{TEST}}.out"
+    if ! ssh {{_thor}} "docker exec {{_ctr}} test -f ${src}"; then
+        echo "ERROR: ${src} not found on thor. Run 'just test' first so pg_regress generates the result." >&2
+        exit 1
+    fi
+    mkdir -p tests/expected
+    ssh {{_thor}} "docker exec {{_ctr}} cat ${src}" > "tests/expected/{{TEST}}.out"
+    echo "Wrote tests/expected/{{TEST}}.out ($(wc -l <tests/expected/{{TEST}}.out) lines, $(wc -c <tests/expected/{{TEST}}.out) bytes)."
+    echo "Re-run 'just test' — it should now pass for this case."
 
 # Run PostgreSQL regression tests (queued), gated against
 # tests/pg_regress_baseline.txt. Exits non-zero only on *delta* vs the
@@ -197,6 +255,22 @@ bench-report:
     echo ""
     echo "Artifacts: benchmarks/${slug}.{db,png,md}"
     echo "Baseline : ${baseline_name} (from origin/main)"
+    # Auto-inject the .md into the PR body, replacing the stats-summary
+    # placeholder that `just pr` left. The agent still fills in Summary by
+    # hand; everything else is assembled. Safe to re-run — idempotent
+    # because we only replace the literal placeholder string (if absent,
+    # nothing happens).
+    current_body=$(gh pr view "${pr}" --json body -q .body)
+    placeholder="<paste the stats summary block here — required>"
+    if printf '%s' "${current_body}" | grep -qF "${placeholder}"; then
+        # Use python for the replacement so bench report content isn't
+        # subject to sed's metachar quirks.
+        new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('benchmarks/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
+        gh pr edit "${pr}" --body "${new_body}" >/dev/null
+        echo "PR  body  : PR #${pr} updated with bench report block."
+    else
+        echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste benchmarks/${slug}.md manually if needed."
+    fi
 
 # --- Queue ops ------------------------------------------------------------
 
