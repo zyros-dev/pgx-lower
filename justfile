@@ -363,9 +363,9 @@ worktree-new NAME:
         --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
         --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
         .worktrees/{{NAME}} {{_thor}}:/home/zel/repos/pgx-lower/.worktrees/{{NAME}}
-    @echo ""
-    @echo "Worktree ready. On mac: cd .worktrees/{{NAME}}"
-    @echo "Mutagen session: pgx-lower-{{NAME}}"
+    echo ""
+    echo "Worktree ready. On mac: cd .worktrees/{{NAME}}"
+    echo "Mutagen session: pgx-lower-{{NAME}}"
 
 # Tear down a worktree and its sync.
 worktree-rm NAME:
