@@ -95,15 +95,17 @@ just check           # whole-tree; for reference only (noisy)
 ## 5. Benchmark
 
 ```
-just bench           # SF=0.01, iter=5, ~40s. Default for every PR.
-just bench-report    # snapshot + chart + verdict
+just bench           # SF=0.5, iter=1. ~5 min cold, ~3 min cached. Default for every PR.
+just bench-report    # snapshot + chart + verdict + auto-inject into PR body
 ```
 
-`just bench` runs 5 iterations per query per mode because at SF=0.01 pgx-lower's JIT compile dominates execution (q02: PG 8ms vs pgx 570ms — essentially all compile). One iteration has ~±8% run-to-run variance; iter=5's median gets that down to ~±3%, which is what the verdict thresholds below are calibrated against.
+`just bench` runs TPC-H at **SF=0.5, 1 iteration**. SF=0.5 puts us in the execution-dominated regime (~88% of each query's wall time is real work, ~12% is JIT compile), which drops per-query variance from the ~50% bimodal chaos we saw at SF=0.01 to honest 5–10% execution noise. Medianing iterations doesn't meaningfully reduce execution-scale variance; iter=1 is correct at this SF.
 
-**When to also run `just bench-merge`.** Before merging anything that claims a performance improvement. It runs SF=0.16 with iter=3 (~60-120s) so query execution starts mattering and the numbers aren't compile-noise. Paste both chart links into the PR body if you run it.
+**Idempotent caching.** `run.py` auto-detects whether TPC-H is already loaded at the target SF (via the `customer` row count — exactly `150_000 * SF`, no jitter) and skips the ~3-minute dbgen + psql-load step when it is. First `just bench` on a fresh container takes ~5 min; subsequent runs land in ~3 min. No flag, no sentinel — the check runs every time. Cache state lives in the `postgres-data` docker volume so it persists across container restarts.
 
-**Skipped queries.** q17 and q20 are skipped by default — pathologically slow without indexes at small SF. If your change touches code paths they exercise, run the `full` profile in `benchmark-config.yaml` separately and call it out.
+**When to also run `just bench-merge`.** Before merging anything claiming a perf improvement where SF=0.5 numbers feel marginal. It runs SF=1 iter=1 (~10 min cold, ~6 min cached) — per-query wall times are seconds, so ±5% is real signal.
+
+**Skipped queries.** q17 and q20 are skipped by default — pathologically slow without indexes. If your change touches code paths they exercise, run the `full` profile in `benchmark-config.yaml` separately and call it out.
 
 ## 6. Benchmark report + verdict
 
@@ -188,9 +190,9 @@ just worktree-rm <slug>
 | `just compile` fails with errors you can't diagnose | Tell user; include the last 30 lines of output. |
 | `just test` shows a failure that's the test you wrote (Red phase) | Continue to Green. |
 | `just test` shows unrelated failures | Don't proceed. Tell user; don't paper over. |
-| `just bench-report` emits 🔴 NAY | Real regression (geomean down ≥3% OR multiple queries past -10%, OR correctness failure). Stop; tell the user. Do not mark the PR ready until understood. |
-| `just bench-report` emits 🟡 MAYBE — suspected JIT-compile-noise outlier | One high-compile-time query (>100ms pgx) regressed past -10% while geomean is positive and everything else is clean. Run `just bench-merge` once to confirm — if that lands MAYBE/YAY, proceed; if it also flags the same query, treat as real. |
-| `just bench-report` emits 🟡 MAYBE on a perf-claiming change | Run `just bench-merge` for a trustworthy signal before marking the PR ready. |
+| `just bench-report` emits 🔴 NAY | Real regression (geomean down ≥3% OR any query past −10%, OR correctness failure). At SF=0.5 this is execution-scale signal, not compile noise — treat as real. Stop; tell the user. Do not mark the PR ready until understood. |
+| `just bench-report` emits 🟡 MAYBE on a perf-claiming change | Run `just bench-merge` (SF=1) for a trustworthy signal before marking the PR ready. |
+| `just bench-report` emits 🟡 BASELINE-SF-MISMATCH — unable to compare | Baseline and current were captured at different scale factors; per-query percentages are meaningless. Happens automatically when the canonical bench SF changes on main. Not an error; note it in the PR body and proceed. Subsequent PRs will have a same-SF baseline. |
 | `just bench-report` says "no baseline on origin/main" | **First-PR bootstrap case.** The recipe auto-falls-back to a self-compare — your PR will show 0% deltas but validates the full pipeline and seeds the baseline for future PRs. Not an error; note it in the PR body and proceed. |
 | Mutagen sync conflict | `mutagen sync flush pgx-lower-<slug>`; resolve manually; commit. |
 | Spec genuinely ambiguous | Ask user; if they don't know either, run `just spec-block NN "<reason>"` and stop. |
