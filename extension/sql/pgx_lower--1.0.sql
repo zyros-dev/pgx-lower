@@ -21,3 +21,8 @@ END $$;
 CREATE FUNCTION pgx_lower_test_relalg(text) RETURNS SETOF record
     AS 'pgx_lower.so', 'pgx_lower_test_relalg'
     LANGUAGE C STRICT;
+
+CREATE OR REPLACE FUNCTION pgx_lower_version()
+RETURNS text
+AS '$libdir/pgx_lower', 'pgx_lower_version'
+LANGUAGE C IMMUTABLE STRICT;
