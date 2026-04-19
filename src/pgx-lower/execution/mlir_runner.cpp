@@ -56,7 +56,6 @@ extern "C" {
 
 namespace mlir_runner {
 
-bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 

@@ -79,14 +79,17 @@ void install_diagnostic_handler(mlir::MLIRContext& context) {
         diag.print(os);
         os.flush();
 
+        const char* loc = locStr.empty() ? "unknown" : locStr.c_str();
         switch (diag.getSeverity()) {
             case mlir::DiagnosticSeverity::Error:
+                PGX_ERROR("MLIR Error at %s: %s", loc, diagStr.c_str());
+                break;
             case mlir::DiagnosticSeverity::Warning:
+                PGX_WARNING("MLIR Warning at %s: %s", loc, diagStr.c_str());
+                break;
             case mlir::DiagnosticSeverity::Note:
             case mlir::DiagnosticSeverity::Remark:
-                PGX_WARNING("MLIR Note at %s: %s",
-                            locStr.empty() ? "unknown" : locStr.c_str(),
-                            diagStr.c_str());
+                PGX_LOG(GENERAL, DEBUG, "MLIR Note at %s: %s", loc, diagStr.c_str());
                 break;
         }
 
