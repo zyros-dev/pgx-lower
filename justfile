@@ -50,16 +50,52 @@ bootstrap-tsp:
 # Incremental build of the pgx_lower extension (queued). First run in a worktree
 # configures cmake with ccache compiler launcher; later runs are incremental
 # ninja + ccache, so new worktrees with no code changes link in <1min.
+# Emits a one-line "BUILD OK" / "BUILD FAILED" verdict at the end so agents
+# don't have to infer success by reading the full cmake/ninja scroll.
 compile: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    #!/usr/bin/env bash
+    set -o pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-compile.out
+    rc=${PIPESTATUS[0]}
+    if [ "$rc" -eq 0 ]; then
+        ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' /tmp/pgx-compile.out 2>/dev/null || echo 0)
+        echo ""
+        echo "BUILD OK — ${ninja_targets} ninja step(s), pgx_lower.so installed"
+    else
+        errs=$(grep -cE 'error:|FAILED:' /tmp/pgx-compile.out 2>/dev/null || echo 0)
+        echo ""
+        echo "BUILD FAILED — ${errs} error line(s), exit $rc. Last 30 lines:"
+        tail -n 30 /tmp/pgx-compile.out
+        exit "$rc"
+    fi
 
 # Print ccache statistics from the dev container.
 ccache-stats:
     @ssh {{_thor}} 'docker exec {{_ctr}} ccache --show-stats | head -20'
 
-# Fast static analysis: clang-format dry-run over src/ (parallel-safe).
+# Fast static analysis: clang-format dry-run over the whole src/ tree.
+# Parallel-safe — runs on the check queue, not the build queue.
+# NOTE: the repo has hundreds of pre-existing violations. For gating PRs,
+# prefer `just check-diff` which scopes to files you actually changed.
 check: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_check_q}}.sock && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && make fcheck") && echo "[job $id queued on {{_check_q}}]" && tsp -c $id'
+
+# clang-format dry-run restricted to files changed vs origin/main, so a PR's
+# check signal is about *its own* diff instead of the whole-tree debt.
+# Exits non-zero only if your changes introduce formatting violations.
+# Safe on both main and worktree branches.
+check-diff: _preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch origin main --quiet
+    base=$(git merge-base origin/main HEAD)
+    files=$(git diff --name-only --diff-filter=ACMR "$base" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/**/*.c' 'tests/**/*.cpp' 'tests/**/*.h' 2>/dev/null | tr '\n' ' ')
+    if [ -z "$files" ]; then
+        echo "No C/C++ files changed vs origin/main — nothing to check."
+        exit 0
+    fi
+    echo "Checking ${files}"
+    ssh {{_thor}} "export TS_SOCKET=/tmp/{{_check_q}}.sock && id=\$(tsp docker exec {{_ctr}} bash -c 'cd {{_wdir}} && clang-format --dry-run --Werror ${files} 2>&1 | grep -E \"error:|warning:\" || echo \"check-diff: clean\"') && echo \"[job \$id queued on {{_check_q}}]\" && tsp -c \$id"
 
 # Run PostgreSQL regression tests (queued), gated against
 # tests/pg_regress_baseline.txt. Exits non-zero only on *delta* vs the
@@ -83,14 +119,18 @@ test-record-baseline: _preflight
 # Smoke benchmark: SF=0.01, 5 iterations per query, pgx ON vs OFF. ~40s total.
 # iter=5 damps JIT-compile variance which is the dominant noise source at
 # small SF — the chart would be useless with iter=1 (±8% run-to-run).
+# Recreates the benchmark/output/ dir before starting — a partial interrupted
+# earlier run can leave sqlite journal/lock state that makes subsequent
+# connects open readonly and bomb mid-run with "attempt to write a readonly
+# database". Wiping the whole dir (not just *.db) is the reliable reset.
 bench: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/tpch/run.py 0.01 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 5") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.01 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 5") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Trustworthy-signal benchmark: SF=0.16, 3 iterations. ~60-120s. Run before
 # merging anything that claims a performance improvement — SF=0.01 is
 # compile-dominated and can't distinguish real speedups from noise.
 bench-merge: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/tpch/run.py 0.16 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 3") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.16 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 3") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Generate the PR benchmark report. Requires an open PR (the PR number
 # becomes part of the filename). Snapshots the current benchmark.db to
@@ -235,8 +275,55 @@ spec-claim NN BRANCH OWNER='':
     OWNER="{{OWNER}}" python3 scripts/spec_status.py claim "{{NN}}" "{{BRANCH}}"
 
 # Release a claim (e.g. abandoning the work). Sets state back to available.
+# Use when the claim is still "just a row on the board" — no branch pushed,
+# no PR open, no worktree on disk. For in-between messes (in_review with a
+# closed PR, zombie worktree, dangling remote branch), use `spec-abandon` —
+# it does the full tear-down, including closing the PR and renaming it so
+# future agents don't resurrect it.
 spec-release NN:
     python3 scripts/spec_status.py release "{{NN}}"
+
+# Full tear-down recovery path for a zombie in_progress / in_review spec.
+# Closes the PR (if open), renames it so it doesn't look implement-able,
+# deletes the remote branch, removes the worktree on mac + thor, terminates
+# the mutagen session, and flips the STATUS row back to available. Idempotent
+# — missing pieces just skip, it never hard-fails on "already gone".
+#
+# Usage: just spec-abandon NN "<reason>"
+spec-abandon NN REASON:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    branch=$(python3 scripts/spec_status.py read_branch "{{NN}}" 2>/dev/null || true)
+    if [ -z "$branch" ]; then
+        echo "Spec {{NN}} has no branch recorded on STATUS; releasing claim only."
+        python3 scripts/spec_status.py release "{{NN}}"
+        exit 0
+    fi
+    echo "Tearing down spec {{NN}} (branch: ${branch})"
+    # Close the PR if one exists, and rewrite its title so future agents
+    # don't re-open it thinking it's implementable work.
+    pr=$(gh pr list --head "${branch}" --state all --json number,state -q '.[] | select(.state=="OPEN") | .number' | head -1)
+    if [ -n "$pr" ]; then
+        gh pr edit "$pr" --title "[abandoned] spec {{NN}} — {{REASON}}" >/dev/null 2>&1 || true
+        gh pr close "$pr" --delete-branch --comment "Abandoned: {{REASON}}. Do not re-open — use \`just spec-claim {{NN}} <new-branch>\` to start fresh." >/dev/null 2>&1 || true
+        echo "  PR #${pr} closed + renamed."
+    else
+        # Also rewrite any already-closed PR's title as a breadcrumb, per the
+        # feedback rule: abandoned PRs should read as abandoned so an agent
+        # skimming gh pr list doesn't try to resurrect them.
+        closed=$(gh pr list --head "${branch}" --state closed --json number,title -q '.[].number' | head -1)
+        if [ -n "$closed" ]; then
+            gh pr edit "$closed" --title "[abandoned] spec {{NN}} — {{REASON}}" >/dev/null 2>&1 || true
+            echo "  Previously-closed PR #${closed} retitled as abandoned."
+        fi
+    fi
+    # Delete remote branch if it still exists.
+    git push origin --delete "${branch}" 2>/dev/null && echo "  remote branch ${branch} deleted." || echo "  remote branch ${branch} already gone."
+    # Tear down the worktree (does mutagen sync terminate + worktree remove on both sides; all idempotent via `-`).
+    just worktree-rm "${branch}" || true
+    # Flip STATUS.md back to available.
+    python3 scripts/spec_status.py release "{{NN}}"
+    echo "Spec {{NN}} abandoned and released."
 
 # Mark a spec done after its PR merges. PR is the PR number.
 spec-complete NN PR:

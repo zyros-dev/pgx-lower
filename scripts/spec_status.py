@@ -117,6 +117,19 @@ def cmd_release(nn: str) -> None:
     commit_and_push(f"release spec {nn}")
 
 
+def cmd_read_branch(nn: str) -> None:
+    """Print the branch recorded on the STATUS row for spec NN (or nothing).
+
+    Used by `just spec-abandon` to discover what worktree + remote branch
+    need tearing down before releasing the claim.
+    """
+    text = STATUS.read_text()
+    m = find_row(text, nn)
+    branch = m["branch"].strip()
+    if branch and branch != "—":
+        print(branch)
+
+
 def cmd_in_review(nn: str, pr: str) -> None:
     text = STATUS.read_text()
     m = find_row(text, nn)
@@ -159,11 +172,12 @@ def main() -> None:
     sub = sys.argv[1]
     args = sys.argv[2:]
     handlers = {
-        "claim":     (2, cmd_claim),
-        "release":   (1, cmd_release),
-        "in_review": (2, cmd_in_review),
-        "complete":  (2, cmd_complete),
-        "block":     (2, cmd_block),
+        "claim":       (2, cmd_claim),
+        "release":     (1, cmd_release),
+        "in_review":   (2, cmd_in_review),
+        "complete":    (2, cmd_complete),
+        "block":       (2, cmd_block),
+        "read_branch": (1, cmd_read_branch),
     }
     if sub not in handlers:
         die(f"unknown subcommand {sub!r}", code=2)

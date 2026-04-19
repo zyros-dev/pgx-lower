@@ -62,28 +62,52 @@ LANGUAGE C IMMUTABLE STRICT;
 
 ### 3. Regression test (RED first — the test must fail before implementation)
 
-Pick the next free test number — current registered tests in
-`extension/CMakeLists.txt:39-85` go up to `42_*` plus the `tpch*` set.
-Use **`16_version`** if free; otherwise the next available NN.
+Pick the **next available NN** — run `ls tests/sql/ | sort -n | tail -5`
+to see the current high-water mark. Don't hard-code a number; the test
+directory grows and slot suggestions drift. Substitute `<NN>` everywhere
+below.
 
-`tests/sql/16_version.sql`:
+`tests/sql/<NN>_version.sql`:
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgx_lower;
 SELECT pgx_lower_version();
 ```
 
-`tests/expected/16_version.out`:
+`tests/expected/<NN>_version.out`:
 ```
-CREATE EXTENSION
- pgx_lower_version
+CREATE EXTENSION IF NOT EXISTS pgx_lower;
+NOTICE:  extension "pgx_lower" already exists, skipping
+SELECT pgx_lower_version();
+ pgx_lower_version 
 -------------------
  1.0
 (1 row)
 
 ```
 
-(Match the exact pg_regress output format — a trailing blank line, the
-column-header gutter alignment, the row count line.)
+pg_regress output format is NOT what you'd paste from a fresh `psql`
+session. Specifically:
+
+- **Input SQL is echoed.** Both the `CREATE EXTENSION` and `SELECT` lines
+  show up before their results.
+- **`NOTICE: ... already exists, skipping`** fires because pg_regress
+  pre-loads the extension when the test schema uses it, so the `CREATE
+  EXTENSION IF NOT EXISTS` is a no-op second load and emits the notice.
+  This line IS part of the expected output.
+- **Trailing space on the column header** — `pgx_lower_version ` has a
+  single trailing space to pad to the widest row. Most editors strip
+  trailing whitespace on save.
+- **One blank line** at the very end.
+
+Safest way to produce this file: let pg_regress generate it. Run
+`just test` once (it fails and writes the actual result to
+`extension/results/<NN>_version.out`), then copy it back:
+
+```
+ssh comfy 'docker exec pgx-lower-dev cat /workspace/.worktrees/<slug>/extension/results/<NN>_version.out' > tests/expected/<NN>_version.out
+```
+
+This sidesteps the trailing-whitespace and SQL-echo footguns entirely.
 
 ### 4. Test registration
 
@@ -92,7 +116,8 @@ Add `16_version` to the `REGRESS` list in `extension/CMakeLists.txt`
 
 ## Acceptance criteria
 
-- `just check` clean.
+- `just check-diff` clean (scoped to files this PR touches; `just check`
+  whole-tree has pre-existing violations that aren't this PR's to fix).
 - `just test` passes — including the new `16_version` regression test.
 - All existing regression tests still pass (no collateral breakage).
 - `just bench` produces a report; the chart should show **no meaningful
