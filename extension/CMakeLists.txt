@@ -79,6 +79,7 @@ if(NOT BUILDING_UNIT_TESTS)
             40_tpch_not_lowered
             41_sorts
             42_test_relalg_function
+            43_decode_at_scan
             init_tpch
             tpch_no_lower
             tpch

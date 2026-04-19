@@ -199,6 +199,15 @@ auto read_next_tuple_from_table(void* tableHandle) -> int64_t;
 auto add_tuple_to_result(int64_t value) -> bool;
 auto open_postgres_table(const char* tableName) -> void*;
 void close_postgres_table(void* tableHandle);
+// Returns the TupleDesc held by an open PostgreSQLTableHandle. Use this in
+// place of casting the opaque handle to a duplicated layout struct — the
+// real layout lives in tuple_access.cpp and the field order is not part of
+// the public ABI.
+#ifdef POSTGRESQL_EXTENSION
+auto get_table_handle_tupledesc(void* tableHandle) -> TupleDesc;
+#else
+auto get_table_handle_tupledesc(void* tableHandle) -> void*;
+#endif
 
 // C Interface - Field Access
 auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
