@@ -73,53 +73,82 @@ CREATE EXTENSION IF NOT EXISTS pgx_lower;
 SELECT pgx_lower_version();
 ```
 
-`tests/expected/<NN>_version.out`:
-```
-CREATE EXTENSION IF NOT EXISTS pgx_lower;
-NOTICE:  extension "pgx_lower" already exists, skipping
-SELECT pgx_lower_version();
- pgx_lower_version 
--------------------
- 1.0
-(1 row)
+**Do NOT write `tests/expected/<NN>_version.out` by hand.** pg_regress's
+output format has footguns that almost always bite on the first attempt:
 
-```
+- Input SQL gets echoed before results.
+- `NOTICE: ... already exists, skipping` fires because pg_regress
+  pre-loads the extension, so `CREATE EXTENSION IF NOT EXISTS` is a
+  no-op second load — the NOTICE IS part of the expected output.
+- Column headers have trailing whitespace (`pgx_lower_version ` pads
+  to the widest row), which editors strip on save.
+- One blank line at the very end.
 
-pg_regress output format is NOT what you'd paste from a fresh `psql`
-session. Specifically:
+Generate the file from pg_regress directly. Run `just test` once (it
+fails because the expected file doesn't exist, but writes the actual
+result to `extension/results/<NN>_version.out`), then copy that back:
 
-- **Input SQL is echoed.** Both the `CREATE EXTENSION` and `SELECT` lines
-  show up before their results.
-- **`NOTICE: ... already exists, skipping`** fires because pg_regress
-  pre-loads the extension when the test schema uses it, so the `CREATE
-  EXTENSION IF NOT EXISTS` is a no-op second load and emits the notice.
-  This line IS part of the expected output.
-- **Trailing space on the column header** — `pgx_lower_version ` has a
-  single trailing space to pad to the widest row. Most editors strip
-  trailing whitespace on save.
-- **One blank line** at the very end.
-
-Safest way to produce this file: let pg_regress generate it. Run
-`just test` once (it fails and writes the actual result to
-`extension/results/<NN>_version.out`), then copy it back:
-
-```
-ssh comfy 'docker exec pgx-lower-dev cat /workspace/.worktrees/<slug>/extension/results/<NN>_version.out' > tests/expected/<NN>_version.out
+```sh
+ssh comfy 'docker exec pgx-lower-dev cat /workspace/.worktrees/<slug>/extension/results/<NN>_version.out' \
+  > tests/expected/<NN>_version.out
 ```
 
-This sidesteps the trailing-whitespace and SQL-echo footguns entirely.
+Or equivalently, `just expected-from-results <NN>_version` (same thing
+wrapped).
+
+This is the ONLY recommended path. The inline-described format above
+(trailing space, NOTICE line, etc.) is for reference only — use it to
+sanity-check what pg_regress wrote, not to construct the file yourself.
 
 ### 4. Test registration
 
 Add `<NN>_version` to the `REGRESS` list in `extension/CMakeLists.txt`
 (around line 39-85, in numeric order).
 
+### 5. Unit test (mandatory — this spec exercises the utest path)
+
+Spec 14 is a harness smoke test: **both** test paths (pg_regress and
+gtest) need to be exercised so the harness itself is verified, not just
+the code change. The regression test above covers pg_regress; add a
+gtest for the function too.
+
+Create `tests/unit/test_lowerings/test_version_function.cpp`:
+
+```cpp
+#include <gtest/gtest.h>
+#include <string>
+
+// pgx_lower_version returns a constant version string. The C wrapper
+// hands it to PG via PG_RETURN_TEXT_P(cstring_to_text(...)), which
+// requires a live PG backend. For the unit-test build we test the
+// constant itself — trivial, but proves the utest path works
+// end-to-end for this spec's pattern (function returns a literal string).
+namespace {
+constexpr const char* PGX_LOWER_VERSION = "1.0";
+}
+
+TEST(VersionFunctionTest, ReturnsOneDotZero) {
+    EXPECT_STREQ(PGX_LOWER_VERSION, "1.0");
+    EXPECT_EQ(std::string(PGX_LOWER_VERSION).size(), 3u);
+}
+```
+
+Wire it into `tests/unit/test_lowerings/CMakeLists.txt` by mirroring an
+existing small test block (`test_type_mapping` is the closest shape).
+`just utest` must pass with this test registered.
+
+If this feels like ceremony for a one-line constant return: it is, and
+that's the point. Spec 14's whole job is exercising the harness, not
+producing meaningful functionality. A future spec with real logic will
+get a more substantive test using the same pattern.
+
 ## Acceptance criteria
 
 - `just check-diff` clean (scoped to files this PR touches; `just check`
   whole-tree has pre-existing violations that aren't this PR's to fix).
+- `just utest` passes — including the new `VersionFunctionTest`.
 - `just test` passes — including the new `<NN>_version` regression test.
-- All existing regression tests still pass (no collateral breakage).
+- All existing regression / unit tests still pass (no collateral breakage).
 - `just bench` produces a report; the chart should show **no meaningful
   movement** on any query (this spec doesn't touch any code path the TPC-H
   queries exercise). A YAY/NAY/MAYBE verdict of MAYBE (within the noise
@@ -140,8 +169,10 @@ Add `<NN>_version` to the `REGRESS` list in `extension/CMakeLists.txt`
 | `src/pgx-lower/execution/postgres/executor_c.c` | Add `PG_FUNCTION_INFO_V1` + impl |
 | `extension/sql/pgx_lower--1.0.sql` | Add `CREATE FUNCTION` |
 | `tests/sql/<NN>_version.sql` (new) | Two-line regression test |
-| `tests/expected/<NN>_version.out` (new) | Matching expected output |
+| `tests/expected/<NN>_version.out` (new) | Expected output — **generated by pg_regress, not hand-written** |
 | `extension/CMakeLists.txt` | Add `<NN>_version` to `REGRESS` list |
+| `tests/unit/test_lowerings/test_version_function.cpp` (new) | Unit test — mandatory; exercises the utest path |
+| `tests/unit/test_lowerings/CMakeLists.txt` | Register the new unit test (mirror `test_type_mapping` block) |
 | `./benchmarks/<prefix>.{db,png,md}` | Bench-report triplet from `just bench-report` |
 
 ## Risks
