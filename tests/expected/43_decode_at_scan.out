@@ -1,0 +1,77 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS decode_at_scan_t;
+NOTICE:  table "decode_at_scan_t" does not exist, skipping
+CREATE TABLE decode_at_scan_t
+(
+    id          SERIAL PRIMARY KEY,
+    quantity    DECIMAL(10, 2) NOT NULL,
+    price       DECIMAL(12, 2) NOT NULL,
+    ship_date   DATE           NOT NULL,
+    status      VARCHAR(8)     NOT NULL,
+    note        TEXT           NOT NULL
+);
+INSERT INTO decode_at_scan_t (quantity, price, ship_date, status, note)
+SELECT (i % 50 + 1)::DECIMAL(10,2),
+       (1000 + i * 7)::DECIMAL(12,2),
+       DATE '1997-01-01' + (i % 365),
+       CASE WHEN i % 3 = 0 THEN 'A' WHEN i % 3 = 1 THEN 'B' ELSE 'C' END,
+       'item-note-' || LPAD(i::TEXT, 4, '0')
+FROM generate_series(1, 200) AS s(i);
+-- Wide scan: read every column type on every tuple.
+SELECT id, quantity, price, ship_date, status, note
+FROM decode_at_scan_t
+WHERE id <= 5
+ORDER BY id;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | quantity | price | ship_date  | status |      note      
+----+----------+-------+------------+--------+----------------
+  1 |        2 |  1007 | 01-02-1997 | B      | item-note-0001
+  2 |        3 |  1014 | 01-03-1997 | C      | item-note-0002
+  3 |        4 |  1021 | 01-04-1997 | A      | item-note-0003
+  4 |        5 |  1028 | 01-05-1997 | B      | item-note-0004
+  5 |        6 |  1035 | 01-06-1997 | C      | item-note-0005
+(5 rows)
+
+-- Date-predicate filter + decimal projection across the full table.
+SELECT id, quantity * price AS total, ship_date
+FROM decode_at_scan_t
+WHERE ship_date >= DATE '1997-12-15'
+  AND ship_date <= DATE '1997-12-20'
+ORDER BY id;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | total | ship_date 
+----+-------+-----------
+(0 rows)
+
+-- Group-by exercising decimal aggregation + string grouping.
+SELECT status, sum(quantity * price) AS revenue
+FROM decode_at_scan_t
+WHERE ship_date >= DATE '1997-06-01'
+  AND ship_date <  DATE '1997-09-01'
+GROUP BY status
+ORDER BY status;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ status | revenue 
+--------+---------
+ A      |  966304
+ B      | 1009154
+ C      |  930192
+(3 rows)
+
+-- Scan that touches a high-index column (forces walk past most attributes).
+SELECT note
+FROM decode_at_scan_t
+WHERE id BETWEEN 100 AND 105
+ORDER BY id;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+      note      
+----------------
+ item-note-0100
+ item-note-0101
+ item-note-0102
+ item-note-0103
+ item-note-0104
+ item-note-0105
+(6 rows)
+
+DROP TABLE decode_at_scan_t;

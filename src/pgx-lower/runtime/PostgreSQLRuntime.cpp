@@ -85,6 +85,24 @@ struct ColumnSpec {
     ColumnType type;
 };
 
+// Per-column decode metadata cached at iterator-start time so the per-row hot
+// loop in process_tuple_into_batch avoids TupleDescAttr lookups, type-OID
+// re-checks, and atttypmod→scale arithmetic on every tuple. See spec 05.
+enum class DecodeKind : uint8_t {
+    STRING, // VARDATA_ANY + length, datumTransfer
+    NUMERIC, // numeric_to_i128 with cached scale
+    INTERVAL, // Interval struct → microseconds
+    DATUM_BYVAL, // pass-through Datum, no copy
+    DATUM_BYREF, // datumTransfer to batch context
+};
+
+struct ColumnDecodeMeta {
+    DecodeKind kind;
+    bool attbyval;
+    int16 attlen;
+    int32_t numeric_scale; // only meaningful when kind == NUMERIC
+};
+
 struct BatchStorage {
     MemoryContext batchContext;
     TupleDesc tupleDesc;
@@ -110,6 +128,7 @@ struct DataSourceIterator {
     std::string table_name;
     std::vector<ColumnSpec> columns;
     std::vector<int32_t> column_positions;
+    std::vector<ColumnDecodeMeta> column_decode_meta;
 
     BatchStorage* batch;
     size_t current_row_in_batch;
@@ -611,6 +630,50 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
         PGX_LOG(RUNTIME, DEBUG, "Cached column '%s' at position %d", col_spec.name.c_str(), pg_idx);
     }
 
+    // Pre-resolve per-column decode metadata once. The per-row hot loop in
+    // process_tuple_into_batch reads from this vector instead of doing a
+    // TupleDescAttr lookup + type-OID re-dispatch + atttypmod→scale on every
+    // tuple. The table_handle's third field is the TupleDesc (kept in sync
+    // with the layout in tuple_access.cpp's open_postgres_table).
+    {
+        struct TableHandleLayout {
+            void* rel;
+            void* scanDesc;
+            void* tupleDesc;
+            bool isOpen;
+        };
+        const auto* th = static_cast<TableHandleLayout*>(iter->table_handle);
+        const TupleDesc tupleDesc = static_cast<TupleDesc>(th->tupleDesc);
+        iter->column_decode_meta.reserve(iter->columns.size());
+        for (size_t i = 0; i < iter->columns.size(); i++) {
+            ColumnDecodeMeta meta{};
+            const int32_t pg_idx = iter->column_positions[i];
+            if (pg_idx < 0 || !tupleDesc || pg_idx >= tupleDesc->natts) {
+                meta.kind = DecodeKind::DATUM_BYVAL;
+                iter->column_decode_meta.push_back(meta);
+                continue;
+            }
+            const Form_pg_attribute attr = TupleDescAttr(tupleDesc, pg_idx);
+            meta.attbyval = attr->attbyval;
+            meta.attlen = attr->attlen;
+            if (iter->columns[i].type == ::ColumnType::STRING) {
+                meta.kind = DecodeKind::STRING;
+            } else if (attr->atttypid == NUMERICOID) {
+                meta.kind = DecodeKind::NUMERIC;
+                if (attr->atttypmod >= 0) {
+                    meta.numeric_scale = (attr->atttypmod - 4) & 0xFFFF;
+                } else {
+                    meta.numeric_scale = 6;
+                }
+            } else if (attr->atttypid == INTERVALOID) {
+                meta.kind = DecodeKind::INTERVAL;
+            } else {
+                meta.kind = attr->attbyval ? DecodeKind::DATUM_BYVAL : DecodeKind::DATUM_BYREF;
+            }
+            iter->column_decode_meta.push_back(meta);
+        }
+    }
+
     g_current_iterator = iter;
     return reinterpret_cast<DataSourceIteration*>(iter);
 }
@@ -655,99 +718,67 @@ namespace {
 
         heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
         const size_t row_idx = iter->batch->num_rows;
+        const size_t num_cols = iter->columns.size();
+        const ColumnDecodeMeta* metas = iter->column_decode_meta.data();
+        const int32_t* positions = iter->column_positions.data();
 
-        for (size_t json_col_idx = 0; json_col_idx < iter->columns.size(); json_col_idx++) {
-            const auto& col_spec = iter->columns[json_col_idx];
-            const int pg_col_idx = iter->column_positions[json_col_idx];
+        for (size_t json_col_idx = 0; json_col_idx < num_cols; json_col_idx++) {
+            const ColumnDecodeMeta& meta = metas[json_col_idx];
+            const int pg_col_idx = positions[json_col_idx];
+            const bool is_null = temp_nulls[pg_col_idx];
+            const Datum value = temp_values[pg_col_idx];
 
-            if (pg_col_idx < 0 || pg_col_idx >= tupleDesc->natts) {
-                PGX_ERROR("Column %s not found in table %s", col_spec.name.c_str(), iter->table_name.c_str());
-                iter->batch->column_nulls[json_col_idx][row_idx] = true;
-                continue;
-            }
-
-            const Form_pg_attribute attr = TupleDescAttr(tupleDesc, pg_col_idx);
-
-            if (col_spec.type == ::ColumnType::STRING) {
-                if (temp_nulls[pg_col_idx]) {
+            switch (meta.kind) {
+            case DecodeKind::STRING: {
+                if (is_null) {
                     iter->batch->string_lengths[json_col_idx][row_idx] = 0;
                     iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
                 } else {
-                    const Datum transferred_datum = datumTransfer(temp_values[pg_col_idx], attr->attbyval, attr->attlen);
+                    const Datum transferred_datum = datumTransfer(value, meta.attbyval, meta.attlen);
                     const auto pg_text = DatumGetTextPP(transferred_datum);
-                    const char* str_data = VARDATA_ANY(pg_text);
-                    const int str_len = VARSIZE_ANY_EXHDR(pg_text);
-
-                    iter->batch->string_lengths[json_col_idx][row_idx] = str_len;
-                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(const_cast<char*>(str_data));
+                    iter->batch->string_lengths[json_col_idx][row_idx] = VARSIZE_ANY_EXHDR(pg_text);
+                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(
+                        const_cast<char*>(VARDATA_ANY(pg_text)));
                     iter->batch->column_values[json_col_idx][row_idx] = transferred_datum;
-
-                    PGX_HOT_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
-                            col_spec.name.c_str(), str_len, str_data);
                 }
-            } else if (attr->atttypid == NUMERICOID) {
-                if (temp_nulls[pg_col_idx]) {
-                    iter->batch->decimal_values[json_col_idx][row_idx] = 0;
-                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC is NULL",
-                            row_idx, json_col_idx, col_spec.name.c_str());
-                } else {
-                    int32_t type_scale = 0;
-                    if (attr->atttypmod >= 0) {
-                        const int32_t adjusted = attr->atttypmod - 4;
-                        type_scale = adjusted & 0xFFFF;
-                    } else {
-                        type_scale = 6;
-                    }
-
-                    __int128 scaled_value = numeric_to_i128(temp_values[pg_col_idx], type_scale);
-
-                    iter->batch->decimal_values[json_col_idx][row_idx] = scaled_value;
-                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' NUMERIC->i128: scale=%d, value=%lld",
-                            row_idx, json_col_idx, col_spec.name.c_str(), type_scale,
-                            static_cast<long long>(scaled_value));
-                }
-            } else if (attr->atttypid == INTERVALOID) {
-                if (temp_nulls[pg_col_idx]) {
+                break;
+            }
+            case DecodeKind::NUMERIC: {
+                iter->batch->decimal_values[json_col_idx][row_idx] = is_null
+                                                                         ? __int128{0}
+                                                                         : numeric_to_i128(value, meta.numeric_scale);
+                break;
+            }
+            case DecodeKind::INTERVAL: {
+                if (is_null) {
                     iter->batch->column_values[json_col_idx][row_idx] = 0;
                     iter->batch->column_nulls[json_col_idx][row_idx] = false;
-                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL is NULL",
-                            row_idx, json_col_idx, col_spec.name.c_str());
                 } else {
-                    Interval* interval = DatumGetIntervalP(temp_values[pg_col_idx]);
-
+                    Interval* interval = DatumGetIntervalP(value);
                     int64_t totalMicroseconds = interval->time +
                         (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
-
                     if (interval->month != 0) {
                         constexpr int64_t AVERAGE_DAYS_PER_MONTH = 30;
-                        int64_t monthMicroseconds = static_cast<int64_t>(
-                            interval->month * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
-                        totalMicroseconds += monthMicroseconds;
+                        totalMicroseconds += static_cast<int64_t>(interval->month) * AVERAGE_DAYS_PER_MONTH
+                                             * USECS_PER_DAY;
                     }
-
                     iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
-
-                    PGX_HOT_LOG(RUNTIME, DEBUG, "Row %zu: col[%zu]='%s' INTERVAL: time=%lld, day=%d, month=%d → total_us=%lld",
-                            row_idx, json_col_idx, col_spec.name.c_str(),
-                            static_cast<long long>(interval->time), interval->day, interval->month,
-                            static_cast<long long>(totalMicroseconds));
                 }
-            } else {
-                if (temp_nulls[pg_col_idx]) {
-                    iter->batch->column_values[json_col_idx][row_idx] = 0;
-                    PGX_HOT_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] is NULL", row_idx,
-                            json_col_idx, col_spec.name.c_str(), pg_col_idx);
-                } else {
-                    iter->batch->column_values[json_col_idx][row_idx] = datumTransfer(temp_values[pg_col_idx], attr->attbyval,
-                                                                                  attr->attlen);
-
-                    PGX_HOT_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu", row_idx,
-                            json_col_idx, col_spec.name.c_str(), pg_col_idx,
-                            static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]));
-                }
+                break;
+            }
+            case DecodeKind::DATUM_BYVAL: {
+                iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0} : value;
+                break;
+            }
+            case DecodeKind::DATUM_BYREF: {
+                iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0}
+                                                                            : datumTransfer(value, meta.attbyval,
+                                                                                            meta.attlen);
+                break;
+            }
             }
 
-            iter->batch->column_nulls[json_col_idx][row_idx] = !temp_nulls[pg_col_idx];
+            iter->batch->column_nulls[json_col_idx][row_idx] = !is_null;
         }
 
         iter->batch->num_rows++;
