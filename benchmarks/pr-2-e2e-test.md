@@ -5,7 +5,7 @@
 - **Baseline:** `814150e` (2026-04-18T23:58:52.803908)
 - **Current:**  `unknown` (2026-04-18T23:41:06.842601)
 
-![bench diff](https://raw.githubusercontent.com/zyros-dev/pgx-lower/e2e-test/benchmarks/20260419T100013__e2e-test__a8a9329.png)
+![bench diff](https://raw.githubusercontent.com/zyros-dev/pgx-lower/e2e-test/benchmarks/pr-2-e2e-test.png)
 
 PG column is PostgreSQL-only runtime from the current run — reference for absolute pgx-lower cost, not part of the A/B.
 
