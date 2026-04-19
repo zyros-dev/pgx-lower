@@ -1,0 +1,7 @@
+# pg_regress baseline: tests expected to fail on main.
+# Produced by `just test-record-baseline`. Review before committing.
+# A PR that adds a test name here must justify why (in the PR
+# description). A PR that removes a name — good, that test is
+# passing now — can do so freely.
+
+

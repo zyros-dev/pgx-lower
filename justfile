@@ -10,7 +10,11 @@ _ctr  := "pgx-lower-dev"
 # Working directory inside the container. Main repo maps to /workspace; a
 # worktree at .worktrees/<name> on the host maps to /workspace/.worktrees/<name>
 # (the container mounts the whole repo, so worktrees are visible automatically).
-_rel  := replace_regex(invocation_directory(), "^" + justfile_directory() + "/?", "")
+# Derived from the main repo root (parent of --git-common-dir) so it works
+# whether just is invoked from the main checkout or a worktree with its own
+# justfile copy.
+_main_root := shell('dirname "$(git rev-parse --path-format=absolute --git-common-dir)"')
+_rel  := replace_regex(invocation_directory(), "^" + _main_root + "/?", "")
 _wdir := if _rel == "" { "/workspace" } else { "/workspace/" + _rel }
 _bdir := _wdir + "/build-docker-ptest"
 
@@ -57,10 +61,24 @@ ccache-stats:
 check: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_check_q}}.sock && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && make fcheck") && echo "[job $id queued on {{_check_q}}]" && tsp -c $id'
 
-# Run PostgreSQL regression tests (queued). ctest runs as the postgres user so
-# pg_regress's default "whoami" connection works.
+# Run PostgreSQL regression tests (queued), gated against
+# tests/pg_regress_baseline.txt. Exits non-zero only on *delta* vs the
+# baseline (new failures, or previously-failing tests that now pass).
+# ctest runs as the postgres user so pg_regress's default "whoami"
+# connection works.
 test: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod o+rx {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && su postgres -c \"ctest --output-on-failure\"") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Re-record the pg_regress baseline. Run only when you have consciously
+# accepted a new set of red tests on main — each entry that gets added
+# here must be justified in the PR body. Removing entries is free (those
+# tests are now passing).
+test-record-baseline: _preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt --record)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Smoke benchmark: SF=0.01, 5 iterations per query, pgx ON vs OFF. ~40s total.
 # iter=5 damps JIT-compile variance which is the dominant noise source at
