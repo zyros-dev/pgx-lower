@@ -43,7 +43,15 @@ cd .worktrees/<slug>
 git checkout -b <slug>
 ```
 
-If `just spec-claim` fails because the spec is already claimed, tell the user. Don't double-claim.
+If `just spec-claim` fails because the spec is already claimed, first check whether the claim is stale:
+
+- `gh pr view <PR-from-status> --json state,title` — PR OPEN, CLOSED, or MERGED?
+- `gh pr list --head <branch-from-status>` — any activity?
+- `mutagen sync list pgx-lower-<branch>` — session still live?
+
+If the answer is "PR is CLOSED unmerged and the worktree/branch/session are dangling" (zombie state), recover atomically with `just spec-abandon NN "<reason>"`. That closes the PR if still open, retitles it `[abandoned] spec NN — <reason>` so future agents don't try to resurrect it, deletes the remote branch, tears down the worktree on mac + thor, terminates the mutagen session, and flips STATUS back to `available`. Then re-run `just spec-claim`. Do **not** piece this together by hand — `spec-abandon` is idempotent and handles the "already gone" cases gracefully.
+
+If the claim is live (PR open and recent, or another agent actively working), stop and tell the user. Don't double-claim.
 
 ## 2. Red — write a failing test first
 
@@ -77,10 +85,11 @@ just test       # runs regression tests once compile succeeds
 ## 4. Static analysis
 
 ```
-just check
+just check-diff      # PR gate: only files changed vs origin/main
+just check           # whole-tree; for reference only (noisy)
 ```
 
-Fast clang-format dry-run. Runs on a separate queue so it doesn't block builds. Fix any hits with `ffix` inside the container if needed (open `just` for the full list).
+**Use `just check-diff` for the PR gate.** The whole-tree `just check` emits hundreds of pre-existing violations that aren't this PR's to fix — `check-diff` scopes to files changed vs `origin/main` so its output is actually about your diff. Clean → you're good to proceed. Hits → `ffix` inside the container, or fix the specific lines by hand.
 
 ## 5. Benchmark
 
@@ -167,7 +176,8 @@ just worktree-rm <slug>
 
 | Situation | What you do |
 |-----------|-------------|
-| `just spec-claim` says spec is already claimed | Stop, tell user; don't override. |
+| `just spec-claim` says spec is already claimed, PR is CLOSED/unmerged, worktree dangling | Zombie state — `just spec-abandon NN "<reason>"` cleans everything atomically, then re-claim. |
+| `just spec-claim` says spec is already claimed, PR live | Stop, tell user; don't override. |
 | `just compile` fails with errors you can fix | Fix and re-run. |
 | `just compile` fails with errors you can't diagnose | Tell user; include the last 30 lines of output. |
 | `just test` shows a failure that's the test you wrote (Red phase) | Continue to Green. |
