@@ -381,22 +381,54 @@ cancel ID:
 
 # Create a git worktree on mac + thor and a mutagen sync session between them.
 # Usage: just worktree-new feat-foo
+#
+# Fully retry-idempotent: if a previous attempt aborted partway and left
+# detritus behind (a `.worktrees/<NAME>/` directory git no longer tracks,
+# a local `<NAME>` branch without a matching worktree, a thor-side
+# `.worktrees/<NAME>/` left by container-root writes, etc.), this recipe
+# cleans it up and proceeds. The clean-ops are wrapped in `|| true` so
+# a fresh invocation with nothing to clean no-ops through them. The
+# thor-side cleanup uses `docker exec` first (to delete container-root-
+# owned build artifacts) then a plain ssh rm -rf for anything else.
+# Mirrors the same rationale as `worktree-rm`'s cleanup comments.
+#
+# Rationale for not just erroring out: earlier versions refused to
+# reuse a slug when the local branch existed, which left agents having
+# to hand-run `rm -rf` + `git branch -D` to recover from a failed
+# worktree-new. `spec-abandon` wasn't the right tool either when the
+# spec had already been re-claimed — running abandon would undo the
+# claim. Making worktree-new self-healing removes the manual-recovery
+# path entirely: you re-run the recipe and it converges.
 worktree-new NAME:
     #!/usr/bin/env bash
     set -euo pipefail
     test -n "{{NAME}}" || { echo "NAME required"; exit 1; }
-    # Refuse to silently reuse an existing local branch. If it exists, the
-    # previous work on it is still there (even after worktree-rm); `git
-    # worktree add` without -b would quietly check that out, and an agent
-    # expecting a fresh branch would get the abandoned implementation back.
-    # Best recovery: `just spec-abandon` for specs (nukes local branch too),
-    # or `git branch -D {{NAME}}` if you really want to reuse the name.
-    if git show-ref --verify --quiet "refs/heads/{{NAME}}"; then
-        echo "ERROR: local branch '{{NAME}}' already exists." >&2
-        echo "  For specs: run 'just spec-abandon NN \"<reason>\"' to clean up atomically." >&2
-        echo "  Otherwise: 'git branch -D {{NAME}}' to discard it, then retry." >&2
-        exit 1
-    fi
+    # --- preflight cleanup (idempotent) ------------------------------
+    # Prune stale worktree bookkeeping entries first. If a previous
+    # .worktrees/<NAME>/ was deleted behind git's back (manual rm -rf,
+    # crashed `git worktree add`), git still thinks it owns that path
+    # and will refuse `add` with "already exists". `prune` clears it.
+    git worktree prune 2>/dev/null || true
+    # Remove any leftover directory on mac. `git worktree add` hard-
+    # fails with "'.worktrees/<NAME>' already exists" if the path
+    # exists on disk but isn't a registered worktree.
+    rm -rf ".worktrees/{{NAME}}" 2>/dev/null || true
+    # Delete any dangling local branch. Without this, `git worktree add
+    # -b` fails with "a branch named '<NAME>' already exists". -D
+    # (force) is intentional: if we're here, either the branch was
+    # never pushed (safe to drop) or it was pushed and the caller knows
+    # they're throwing it away to restart.
+    git branch -D "{{NAME}}" 2>/dev/null || true
+    # Same cleanup on thor: prune its worktree bookkeeping, then
+    # delete any leftover .worktrees/<NAME>/ directory. Container-root-
+    # owned files inside build-docker-*/ subdirs can't be removed by
+    # the ssh user (uid 1000), so do the rm inside the container as
+    # root first; anything left over gets swept by the outer ssh rm.
+    # All four ops tolerate missing state.
+    ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree prune 2>/dev/null || true'
+    ssh {{_thor}} 'docker exec {{_ctr}} rm -rf /workspace/.worktrees/{{NAME}} 2>/dev/null || true'
+    ssh {{_thor}} 'rm -rf ~/repos/pgx-lower/.worktrees/{{NAME}} 2>/dev/null || true'
+    # --- create fresh state ------------------------------------------
     git fetch origin main --quiet
     git worktree add -b "{{NAME}}" ".worktrees/{{NAME}}" origin/main
     ssh {{_thor}} 'cd ~/repos/pgx-lower && git fetch origin && git worktree add .worktrees/{{NAME}} 2>/dev/null || true'
@@ -432,11 +464,23 @@ worktree-new NAME:
 # "path already exists," and a subsequent mutagen create sees stale
 # files that don't correspond to any branch. Removing it on the way
 # out guarantees re-creation works without manual `rm -rf`.
+#
+# The thor-side rm is done TWICE, in this order: first via `docker
+# exec` as container-root (uid 0), then via plain ssh as zel (uid
+# 1000). build-docker-ptest/ and build-docker-utest/ contain files
+# chowned to `postgres:postgres` by `cmake --install` + ctest inside
+# the container — the outer ssh rm can't unlink those and fails with
+# "Permission denied". The inner docker rm nukes the whole .worktrees/
+# <NAME>/ including the container-owned files; the outer rm mops up
+# anything the container didn't see (e.g. if the container had been
+# stopped or the mount wasn't active). Either alone may leave residue
+# depending on runtime state, so we run both.
 worktree-rm NAME:
     -mutagen sync terminate pgx-lower-{{NAME}}
     -ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree remove --force .worktrees/{{NAME}}'
     -git worktree remove --force .worktrees/{{NAME}}
     -rm -rf .worktrees/{{NAME}}
+    -ssh {{_thor}} 'docker exec {{_ctr}} rm -rf /workspace/.worktrees/{{NAME}} 2>/dev/null || true'
     -ssh {{_thor}} 'rm -rf ~/repos/pgx-lower/.worktrees/{{NAME}}'
 
 # Terminate + recreate the main-repo mutagen session (name `pgx-lower`)
@@ -593,9 +637,15 @@ pr TITLE SUMMARY='<what and why>':
     #!/usr/bin/env bash
     set -euo pipefail
     summary="{{SUMMARY}}"
+    # Track which source the Summary body came from so we can print an
+    # operator-facing diagnostic at the end. Saves the caller a follow-
+    # up `gh pr view` to confirm whether `<what and why>` was replaced.
+    source="arg"
     if [ "${summary}" = '<what and why>' ]; then
+        source="placeholder"
         if [ -n "${BODY_FILE:-}" ] && [ -r "${BODY_FILE}" ]; then
             summary=$(cat "${BODY_FILE}")
+            source="BODY_FILE"
         else
             # Pull the body of the last commit (%b = body only, no subject).
             # Drop any trailing Co-Authored-By trailer block — that's a
@@ -610,10 +660,26 @@ pr TITLE SUMMARY='<what and why>':
             commit_body=$(printf '%s' "${commit_body}" | awk '{a[NR]=$0} END {last=NR; while(last>0 && a[last]=="") last--; for(i=1;i<=last;i++) print a[i]}')
             if [ -n "${commit_body}" ]; then
                 summary="${commit_body}"
+                source="commit body"
             fi
         fi
     fi
-    gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n%s\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n' "${summary}")"
+    url=$(gh pr create --base main --head "$(git rev-parse --abbrev-ref HEAD)" --title "{{TITLE}}" --body "$(printf '## Summary\n\n%s\n\n<paste the stats summary block here — required>\n\n## Test plan\n- [ ] just check\n- [ ] just test\n- [ ] just bench\n' "${summary}")")
+    # Diagnostic block: tells the operator at a glance whether the
+    # Summary body was populated from the expected source and whether
+    # the `<what and why>` placeholder is still sitting in the PR body
+    # waiting for manual replacement. Previously `just pr` only echoed
+    # the PR URL, forcing a follow-up `gh pr view` to confirm the
+    # state — these three lines eliminate that round-trip.
+    pr_num=$(printf '%s' "${url}" | grep -oE '[0-9]+$' | tail -1)
+    placeholder_present="no"
+    if printf '%s' "${summary}" | grep -qF '<what and why>'; then
+        placeholder_present="yes"
+    fi
+    echo "PR #${pr_num} opened"
+    echo "Summary resolved from: ${source}"
+    echo "<what and why> still in body: ${placeholder_present}"
+    echo "${url}"
 
 # Replace the `<what and why>` Summary placeholder on the current branch's
 # open PR in a single gh-pr-edit call. Idempotent — if the placeholder is
@@ -656,6 +722,22 @@ spec-status:
 # worktree name you'll use. Owner defaults to <git user.email username>-MMDD;
 # override via OWNER=...
 # Usage: just spec-claim 03 spec-03-cache
+#
+# Note on preflight: earlier iterations considered adding a check here
+# for local detritus (`.worktrees/<BRANCH>/` already on disk, local
+# branch already exists) so the claim wouldn't succeed-then-leave-you-
+# in-limbo if the follow-up `just worktree-new` failed. That preflight
+# is intentionally NOT done here; it lives in `worktree-new`, which is
+# now fully retry-idempotent: if you re-run it after a prior aborted
+# attempt, it prunes git's stale bookkeeping, removes leftover
+# directories on mac + thor (including container-root-owned files via
+# `docker exec`), and deletes dangling local branches before creating
+# fresh state. Net result: a failed claim→worktree-new sequence is
+# recoverable by simply re-running `just worktree-new <BRANCH>` — no
+# need to `spec-abandon` (which would undo the claim) and no need to
+# hand-run `rm -rf` + `git branch -D`. Keeping spec-claim as a pure
+# STATUS.md mutation means the two concerns stay separable: the claim
+# row reflects board state, worktree-new owns filesystem state.
 spec-claim NN BRANCH OWNER='':
     OWNER="{{OWNER}}" python3 scripts/spec_status.py claim "{{NN}}" "{{BRANCH}}"
 
