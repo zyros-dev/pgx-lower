@@ -672,9 +672,17 @@ pr TITLE SUMMARY='<what and why>':
     # the PR URL, forcing a follow-up `gh pr view` to confirm the
     # state — these three lines eliminate that round-trip.
     pr_num=$(printf '%s' "${url}" | grep -oE '[0-9]+$' | tail -1)
-    placeholder_present="no"
-    if printf '%s' "${summary}" | grep -qF '<what and why>'; then
+    # The `<what and why>` placeholder is the DEFAULT summary value; it
+    # only survives to the rendered PR body when `source == placeholder`
+    # (i.e. nothing else populated the Summary). Derive the diagnostic
+    # from `source` rather than grepping the summary text itself, to
+    # avoid false positives when the summary legitimately discusses the
+    # placeholder by name (e.g. a commit body describing this very
+    # recipe).
+    if [ "${source}" = "placeholder" ]; then
         placeholder_present="yes"
+    else
+        placeholder_present="no"
     fi
     echo "PR #${pr_num} opened"
     echo "Summary resolved from: ${source}"
