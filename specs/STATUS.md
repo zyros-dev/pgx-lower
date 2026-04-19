@@ -21,8 +21,8 @@ atomically against `main` so concurrent agents can't claim the same spec.
 
 | Spec | State | Owner | Branch | PR | Notes |
 |------|-------|-------|--------|----|-------|
-| 01-hoist-mlir-context | available | — | — | — | |
-| 02-enable-llvm-vectorization | available | — | — | — | |
+| 01-hoist-mlir-context | in_progress |  zyros.dev-0420  |  spec-01-hoist  |  —  | |
+| 02-enable-llvm-vectorization | in_progress |  zyros.dev-0420  |  spec-02-vectorization  |  —  | |
 | 03-plan-shape-compile-cache | available | — | — | — | blocked by 01 per DAG |
 | 04-cost-gate-small-queries | available | — | — | — | blocked by 03 per DAG |
 | 05-decode-at-scan | available | — | — | — | |
