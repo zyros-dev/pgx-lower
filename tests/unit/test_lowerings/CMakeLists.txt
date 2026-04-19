@@ -257,3 +257,68 @@ set_tests_properties(AstConstTranslationTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;ast;translation"
 )
+
+# ----------------------------------------------------------------------------
+# Spec 02 — LLVM auto-vectorization.
+# Verifies that JITEngine::optimize_llvm_module runs the vectorizer on a
+# canonical sum-reduction loop and produces vector instructions in the
+# output IR. RED when PTO vector flags are false and the optimizer uses
+# the manual FPM; GREEN once buildPerModuleDefaultPipeline(O2) runs with
+# LoopVectorization + SLPVectorization enabled.
+
+add_executable(test_vectorization
+    test_vectorization.cpp
+    pg_stubs.cpp
+
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/mlir_logging.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
+    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
+)
+
+target_compile_definitions(test_vectorization PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_vectorization PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_vectorization
+    gtest
+    ${MLIR_ALL_LIBS}
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    ${LLVM_LIBRARIES}
+    ${llvm_libs}
+)
+
+# Additional LLVM components that optimize_llvm_module needs: the native
+# target backend for TargetMachine, the pass builder pipeline, analysis
+# libs, and the IR-parser (for parseAssemblyString).
+llvm_map_components_to_libnames(llvm_vec_libs
+    support core irreader asmparser
+    passes analysis
+    instcombine scalaropts vectorize transformutils
+    target nativecodegen native
+)
+target_link_libraries(test_vectorization ${llvm_vec_libs})
+
+target_compile_features(test_vectorization PRIVATE cxx_std_20)
+
+add_test(NAME VectorizationTest COMMAND test_vectorization)
+
+set_tests_properties(VectorizationTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;jit;vectorization"
+)
