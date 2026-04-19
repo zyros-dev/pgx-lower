@@ -16,8 +16,8 @@ For any code change that ends in a PR, follow the **`/devops` skill** (`.claude/
 
 | Trigger | Skill | What you do |
 |---------|-------|-------------|
-| `start spec NN` / `implement spec NN` | `/devops` | Claim, worktree, TDD loop, open PR, mark in_review |
-| `merge spec NN` / `review pending PRs` / `merge ready PRs` | `/merge` | Spawn `spec-reviewer` subagent, handle conflicts, confirm with user once, merge, mark done, remove worktree |
+| `/pgx:do-spec NN` (or natural language: `start spec NN`) | `/devops` | Claim, worktree, TDD loop, open PR, mark in_review |
+| `/pgx:review-open-prs` (or natural language: `review pending PRs`) | `/merge` | Spawn `spec-reviewer`, handle conflicts, confirm once per PR, merge, mark done, remove worktree |
 | `spec NN merged` (manual case) | inline | `just spec-complete NN <PR>` + `just worktree-rm <slug>` |
 
 Don't ask the user for branch names, slugs, PR numbers you can derive, worktree details, or permission to run recipes. Pick sensible defaults from the spec filename and proceed. Escalate only when something genuinely blocks (claim conflict, build broken in a way you can't diagnose, spec ambiguous, conflicts on rebase). The merge skill has one mandatory user-confirmation pause: just before `gh pr merge`. Everything else is autonomous.
