@@ -1,18 +1,25 @@
 ---
-description: Review every open spec PR (one by one), handle conflicts, merge after one user confirmation per PR, mark spec done. No args.
+description: Autonomously review every open spec PR. Merge the clean ones; leave a PR comment on the rest. No args, no pauses, no user confirmation.
 argument-hint: ""
-allowed-tools: "Bash(just *) Bash(git *) Bash(gh *) Bash(ssh comfy *) Bash(cd *)"
+allowed-tools: "Bash(just *) Bash(git *) Bash(gh *) Bash(ssh comfy *) Bash(cd *) Agent"
 ---
 
-Review and (where appropriate) merge every open PR whose head branch matches `spec-NN-*`, oldest first.
+Review every open PR whose head branch matches `spec-NN-*`, oldest first.
 
 Follow the `/merge` skill exactly. For each PR:
 
-1. Spawn the `spec-reviewer` subagent for an independent review.
-2. Act on the verdict per the skill's decision table.
-3. Handle rebase/conflicts per the skill (try rebase; if conflicts, comment on the PR and stop on that PR — never auto-resolve).
-4. Pause once for user confirmation immediately before `gh pr merge`. Do not pause anywhere else.
-5. After merge: `just spec-complete NN <PR>` and `just worktree-rm spec-NN-<keyword>` from the main checkout.
-6. Move to the next PR with a one-line summary ("✓ #42 spec 02 merged" / "✗ #45 spec 05 needs changes").
+1. Spawn the `spec-reviewer` subagent for an independent review (background).
+2. Binary decision: **merge** (clean `approve` + `MERGEABLE/CLEAN` + CI green) or **comment** (everything else). No middle ground.
+3. Comment format: mirror the reviewer's structure (blocking / should-fix / optional / A/B sanity). Post via `gh pr comment`. Don't editorialize.
+4. For the merge path only: after `gh pr merge --squash --delete-branch`, run `just spec-complete NN <PR>` and `just worktree-rm spec-NN-<keyword>` from the main checkout.
+5. Move to the next PR. Do not pause for user input between PRs.
 
-Do not ask the user which PRs to review, or whether to spawn the reviewer, or whether to rebase. The only mandatory pause is the per-PR pre-merge confirmation. End with a final tally across all PRs handled.
+Spawn reviewers in parallel (background `run_in_background:true`) when you have multiple PRs — they're independent.
+
+End with a final tally:
+- `✓ #NN spec XX — merged`
+- `✗ #NN spec XX — commented (one-line reason)`
+
+If any PR got commented on, tell the user they can invoke `/pgx:read-pr-feedback` to see the accumulated feedback and decide whether to redispatch implementers.
+
+Do not ask the user for anything — not which PRs to review, not whether to spawn the reviewer, not whether to merge. The binary merge-or-comment rule replaces the old pre-merge confirmation pause.

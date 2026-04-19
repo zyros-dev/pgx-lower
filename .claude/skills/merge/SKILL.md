@@ -14,9 +14,19 @@ update the status board.
 
 **The user does not orchestrate.** They say "merge spec NN" or "review
 pending PRs" and you do every step below. Don't ask which PR, don't ask
-whether to spawn the reviewer, don't ask permission to rebase. The only
-mandatory pause is **before merging** — get explicit confirmation, since
-merging is hard to reverse.
+whether to spawn the reviewer, don't ask permission to rebase, don't
+pause before merge. Every PR ends in one of two terminal actions:
+
+1. **Merge** — clean approval, no blocking concerns, no should-fix items.
+2. **Comment** — any hesitation at all (should-fix items, spec drift,
+   unticked test-plan boxes, missing microbench, mergeability issues,
+   CI failures, rebase conflicts). Post the full reviewer concerns as a
+   PR comment, leave the PR open, move on.
+
+There is no middle ground, no "approve with comments then merge", no
+"merge after user confirms the should-fix is acceptable". The user
+redispatches work later via `/pgx:read-pr-feedback` — your job is to
+get the review signal onto each PR cleanly and move to the next one.
 
 ## 0. Preflight
 
@@ -54,58 +64,73 @@ Subagent returns a structured report. Read the verdict + concerns. Do not
 re-do the review yourself — your job is to act on the verdict, not
 duplicate it.
 
-## 3. Decide
+## 3. Decide: merge or comment
 
-Branch on the verdict:
+Binary decision. No middle ground.
 
-| Verdict | Action |
-|---------|--------|
-| `approve` | Proceed to step 4. |
-| `approve with comments` | Post the optional/future items as a single PR comment via `gh pr comment <PR> --body "<text>"`, then proceed to step 4. |
-| `request changes` | Post the blocking + should-fix items as a PR review (`gh pr review <PR> --request-changes --body "<text>"`). Mark the spec back to `in_progress` via `just spec-claim NN <slug>` (forces a re-claim signal). Tell the user; do not merge. |
-| `blocked — awaiting X` | Post a comment explaining what's blocked. Run `just spec-block NN "<reason>"`. Tell the user. |
+**Merge** (proceed to step 4) when ALL of these hold:
+- Reviewer verdict is `approve` with no should-fix items listed.
+- Mergeability is `MERGEABLE / CLEAN`.
+- Every CI check reports `SUCCESS` (or no blocking checks are configured).
 
-If the subagent's verdict is `approve` but you spot something it missed
-that's clearly blocking (e.g. CI red, mergeable=CONFLICTING with a clearly
-broken rebase), override and treat as `request changes`. Cite the specific
-evidence.
+**Comment and move on** (skip to step 5) for every other case:
+- Reviewer returned `approve with comments`, `request changes`, or
+  `blocked` → comment with the full concern list.
+- Reviewer said `approve` but you spot something it missed that's
+  clearly blocking (CI red, `CONFLICTING / DIRTY`, merge-state
+  `BLOCKED`/`UNSTABLE`) → comment citing the evidence and override to
+  comment-and-move-on. Don't merge over a clearly-broken state.
+- `UNKNOWN / *` mergeability → wait 5s, re-check once; if still
+  unknown, comment ("GitHub hasn't computed mergeability — check back
+  shortly") and move on.
 
-## 4. Pre-merge: handle conflicts
-
-```
-gh pr view <PR> --json mergeable,mergeStateStatus -q '.mergeable + " / " + .mergeStateStatus'
-```
-
-| State | Meaning | Action |
-|-------|---------|--------|
-| `MERGEABLE / CLEAN` | Ready. | Skip to step 5. |
-| `MERGEABLE / UNSTABLE` | Mergeable but CI failing. | Stop. Don't merge against red CI. Tell user. |
-| `MERGEABLE / BLOCKED` | Required reviews missing. | Stop. Tell user (they may need to add a review). |
-| `CONFLICTING / DIRTY` | Conflicts with main. | Try a rebase — see below. |
-| `UNKNOWN / *` | GitHub hasn't computed yet. | Wait 5s and re-check once. If still unknown, tell user. |
-
-### Rebase attempt
+The comment format is:
 
 ```
-git fetch origin
-git checkout <head-branch>
-git rebase origin/main
+gh pr comment <PR> --body "$(cat <<'EOF'
+Independent review (spec-reviewer subagent) — verdict: <verdict>.
+
+## Blocking
+<items or "none">
+
+## Should-fix before merge
+<items or "none">
+
+## Optional / future
+<items or "none">
+
+## A/B sanity
+<one paragraph>
+EOF
+)"
 ```
 
-- **Clean rebase**: `git push --force-with-lease`, then re-check mergeability. If now `CLEAN`, proceed.
-- **Conflicts**: do not auto-resolve. Stop, run `git rebase --abort`, post a PR comment explaining where conflicts are, and tell the user. The implementing agent (or user) handles the resolution.
+Mirror the structure the reviewer produced. Don't editorialize. If the
+reviewer flagged a concern, it goes in the comment even if you think
+it's minor — the user sorts priority via `/pgx:read-pr-feedback`.
 
-## 5. Confirm with user before merging
+Additionally:
+- If the reviewer returned `request changes`, also run `just
+  spec-claim NN <slug>` to flip the board back to `in_progress` (this
+  nudges the status board so future agents see re-work is needed).
+- If the reviewer returned `blocked — awaiting X`, run `just
+  spec-block NN "<reason>"`.
 
-This is the only mandatory pause. Show the user:
-- PR number, title, branch.
-- Reviewer verdict (one line).
-- Mergeability state.
-- Any optional concerns the reviewer noted.
+## 4. Rebase before merging (merge path only)
 
-Wait for "yes", "merge", "go ahead", or equivalent. Anything ambiguous → ask again. "no" or "wait" → stop.
+If the merge path was selected in step 3 and mergeability is already
+`CLEAN`, skip this step.
 
-## 6. Merge
+If mergeability is `CONFLICTING / DIRTY` but the reviewer gave a clean
+`approve`: don't try to rebase. Comment-and-move-on with a rebase
+request — the human judgment needed to resolve conflicts belongs on
+the implementing agent, not on this loop.
+
+(The old "try a rebase here" path is gone. Rebase conflicts are now
+always a comment-and-move-on signal, which matches the binary
+merge-or-comment rule.)
+
+## 5. Merge (merge path only)
 
 ```
 gh pr merge <PR> --squash --delete-branch
@@ -117,7 +142,7 @@ the user asks for a merge commit.
 
 `--delete-branch` cleans up the remote branch.
 
-## 7. Post-merge: status board + worktree cleanup
+## 6. Post-merge: status board + worktree cleanup
 
 Capture the PR number you just merged. Then from the **main checkout**:
 
@@ -131,14 +156,24 @@ just worktree-rm spec-NN-<keyword>
 If `worktree-rm` fails because the worktree doesn't exist on this machine
 (e.g. another agent created it), that's fine — it'll error harmlessly.
 
-## 8. Loop or stop
+## 7. Loop or stop
 
-If the trigger was `review pending PRs` / `merge ready PRs` and there are
-more open PRs, return to step 2 with the next one. Tell the user a
-one-line summary per PR as you go ("✓ #42 spec 02 merged, ✗ #45 spec 05
-needs changes").
+If the trigger was `review pending PRs` / `merge ready PRs` and there
+are more open PRs, return to step 2 with the next one. Don't pause
+between PRs — the binary merge-or-comment rule gives every PR a
+terminal action without user input. At the end, tell the user a
+one-line tally:
 
-If the trigger was `merge spec NN`, you're done. Report the final state.
+```
+✓ #42 spec 02 — merged
+✗ #45 spec 05 — commented (fragile struct layout, unticked test plan)
+✗ #48 spec 07 — commented (MERGEABLE/UNSTABLE, CI red on utest)
+```
+
+Point them at `/pgx:read-pr-feedback` if any PR got commented on.
+
+If the trigger was `merge spec NN`, you're done. Report the final
+state.
 
 ## When things go wrong
 
@@ -147,16 +182,17 @@ If the trigger was `merge spec NN`, you're done. Report the final state.
 | `gh` auth error | Stop, tell user to run `gh auth login`. Don't try to authenticate. |
 | Spec NN has no open PR | Tell user; don't invent one. |
 | Multiple open PRs match `spec-NN-*` | Stop, ask user which. |
-| spec-reviewer subagent times out / errors | Try once more. If it fails again, tell user; don't fall back to your own review. |
-| CI is red and reviewer missed it | Override to `request changes` per step 3. |
-| Rebase produces conflicts | `git rebase --abort`, comment on PR, tell user. Never auto-resolve. |
-| `gh pr merge` fails with "branch protection" | Tell user; don't try to bypass. |
+| spec-reviewer subagent times out / errors | Try once more. If it fails again, post a PR comment saying "automated review failed twice — human review needed" and move on. Don't fall back to your own review. |
+| CI is red and reviewer missed it | Override to comment-and-move-on. Cite the failing check by name in the PR comment. |
+| Mergeability is `CONFLICTING / DIRTY` | Comment on the PR with a rebase request. Don't auto-rebase — the binary merge-or-comment rule removes the old try-a-rebase path. |
+| `gh pr merge` fails with "branch protection" | Post a PR comment explaining the protection rule hit and tell the user; don't try to bypass. |
 | `just spec-complete` fails | Probably push race. Re-run once. If still failing, tell user. |
-| User says "merge ready PRs" but none qualify | Tell them what's open and why each is disqualified. |
+| User says "merge ready PRs" but none qualify | Tell them what's open and that each got a PR comment instead. |
 
 ## What this skill does NOT do
 
 - It does not re-implement the reviewer's logic. The subagent is canonical.
 - It does not approve PRs in GitHub's UI on the user's behalf (`gh pr review --approve`). Skip that step; the merge itself is the approval signal.
 - It does not handle non-spec PRs. Those go through manual review.
-- It does not modify code. Only `git rebase` (which is recoverable) and `gh pr merge` (which is not — hence the mandatory pause).
+- It does not modify code. Only `gh pr merge` (which is irreversible, but now gated by the binary rule: only truly clean PRs get merged, and anything less gets a comment).
+- It does not pause for user confirmation. The reviewer subagent is the second pair of eyes; the binary merge-or-comment rule is the safety rail.
