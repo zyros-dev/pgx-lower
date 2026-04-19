@@ -12,7 +12,15 @@ Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md
 
 For any code change that ends in a PR, follow the **`/devops` skill** (`.claude/skills/devops/SKILL.md`). It covers worktree → test → implement → build → check → bench → report → PR, all via `justfile` recipes that queue through `tsp` on thor so concurrent agents don't collide. Run `just --list` for the recipe surface.
 
-**The user only types "start spec NN" or "implement spec NN" or "spec NN merged"**. Everything else — claiming the spec on the board, creating the worktree, running TDD, opening the PR, marking it in_review, marking it done after merge — is on you, the agent. Read `/devops` and execute it. Don't ask the user for branch names, slugs, worktree details, or permission to run recipes; pick sensible defaults from the spec filename and proceed. Escalate only when something genuinely blocks (claim conflict, build broken in a way you can't diagnose, spec ambiguous).
+**The user only types short trigger phrases.** Everything else is on the agent.
+
+| Trigger | Skill | What you do |
+|---------|-------|-------------|
+| `start spec NN` / `implement spec NN` | `/devops` | Claim, worktree, TDD loop, open PR, mark in_review |
+| `merge spec NN` / `review pending PRs` / `merge ready PRs` | `/merge` | Spawn `spec-reviewer` subagent, handle conflicts, confirm with user once, merge, mark done, remove worktree |
+| `spec NN merged` (manual case) | inline | `just spec-complete NN <PR>` + `just worktree-rm <slug>` |
+
+Don't ask the user for branch names, slugs, PR numbers you can derive, worktree details, or permission to run recipes. Pick sensible defaults from the spec filename and proceed. Escalate only when something genuinely blocks (claim conflict, build broken in a way you can't diagnose, spec ambiguous, conflicts on rebase). The merge skill has one mandatory user-confirmation pause: just before `gh pr merge`. Everything else is autonomous.
 
 ## Red/green TDD is required
 
@@ -35,6 +43,7 @@ Until you're given a spec, work from the user's task description.
 Skills are the primary knowledge layer. Each is loaded on demand.
 
 - **`/devops`** — implement-and-ship workflow (worktree → red → green → check → bench → PR).
+- **`/merge`** — review-and-merge workflow for spec PRs (spawns spec-reviewer subagent, handles conflicts, merges).
 - **`/architecture-overview`** — top-level map; entry point if you're disoriented.
 - **`/architecture-execution-path`** — PG executor hook → MLIR runner → JIT chain.
 - **`/architecture-ast-translation`** — PG plan tree → MLIR RelAlg.
