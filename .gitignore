@@ -141,6 +141,7 @@ postgres-debug.tar.gz
 perf-host
 *.tar.gz
 build-docker-ptest-profile
+build-docker-rwdi
 build-ptest-profile
 gmon.out
 gmout.out
