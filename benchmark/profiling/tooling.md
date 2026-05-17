@@ -43,9 +43,16 @@ insufficient for Task 5, install `AMDuProf` from
 
 ## Blocker: perf_event_paranoid=4 on thor
 
-**Status: BLOCKED as of 2026-05-17.**
+**Status: RESOLVED as of 2026-05-17.**
 
-Thor's kernel has `kernel.perf_event_paranoid = 4`.  Ubuntu's 6.14 kernel
+**Resolution:** A human with sudo access to thor ran the one-time fix documented
+below.  `kernel.perf_event_paranoid=1` is now set and persisted in
+`/etc/sysctl.d/99-perf.conf`.  perf 6.8.1 is functional in-container.
+The dry-run completed successfully (see "Dry-run status" below).
+
+### Historical context (why it was blocked)
+
+Thor's kernel had `kernel.perf_event_paranoid = 4`.  Ubuntu's 6.14 kernel
 extends the standard paranoid range (-1 … 2) with a value of 4 that denies
 `perf_event_open(2)` to ALL processes, including those holding
 `CAP_PERFMON`, `CAP_SYS_ADMIN`, and `CAP_SYS_PTRACE`.  The error observed
@@ -60,7 +67,7 @@ without CAP_PERFMON, CAP_SYS_PTRACE or CAP_SYS_ADMIN Linux capability.
 perf_event_paranoid setting is 4
 ```
 
-### What was tried
+### What was tried before the fix
 
 | Attempt | Result |
 |---------|--------|
@@ -77,20 +84,27 @@ write to host-namespace `/proc/sys` entries.  `perf_event_paranoid=4` is a
 host-kernel parameter that cannot be changed without an interactive root
 session or a passwordless sudoers rule.
 
-### Fix required (one-time, by a human with sudo access to thor)
+### Fix applied (one-time, by a human with sudo access to thor)
 
 ```bash
 # Lower paranoid to 1: allows kernel profiling by processes with CAP_PERFMON.
 sudo sysctl -w kernel.perf_event_paranoid=1
 
-# Make it permanent across reboots:
+# Made permanent across reboots:
 echo 'kernel.perf_event_paranoid=1' | sudo tee /etc/sysctl.d/99-perf.conf
 sudo sysctl -p /etc/sysctl.d/99-perf.conf
 ```
 
-After lowering paranoid, `just profile-exec QUERY=q01 SF=1` will run without
-modification — the recipe already has `cap_add: [SYS_ADMIN, PERFMON]` and
-`security_opt: [seccomp:unconfined]` in docker-compose.yml for the dev service.
+`/etc/sysctl.d/99-perf.conf` now contains `kernel.perf_event_paranoid=1`.
+
+### Rootless Docker attach constraint (paranoid=1 residual)
+
+With `paranoid=1`, `perf record -p <pid>` is blocked for processes owned by a
+**different user** — even from the container's "root" (which is not real host
+root in rootless Docker).  The postgres backend runs as user `postgres`
+(uid=1001); perf must be launched **as the postgres user** to attach to it.
+The `run_perf_profile.py` helper was updated to use `su postgres` for the
+attach step.  `perf record -- <child>` (tracing own child) works unrestricted.
 
 ---
 
@@ -115,26 +129,74 @@ FFI entry-points (e.g. `extract_field`, `get_int32_field_mlir`,
 `get_int64_field_mlir`, `get_date_field_mlir`, `get_decimal_field_mlir`)
 via `-Wl,--export-dynamic` on the `pgx_lower.so` link.
 
-**Named-symbol (`extract_field` / `get_*_field_mlir`) resolution**: `perf
-record -g --call-graph dwarf` on the PG backend process resolves these symbols
-via the ELF symbol table in the `.so` at the time of profiling.  Because the
-`.so` is loaded with `RTLD_GLOBAL` (via `LOAD 'pgx_lower.so'` or
-`shared_preload_libraries`) and exported dynamic, `perf report` should show
-these names directly without extra steps.
+**Named-symbol (`extract_field` / `get_*_field_mlir`) resolution**:
+Confirmed functional as of 2026-05-17.  `perf record -g --call-graph dwarf`
+on the postgres backend resolves symbols from `pgx_lower.so` ELF table
+directly.  The per-tuple decode path symbols that DID appear (with sample %):
+
+| Symbol | % samples |
+|--------|-----------|
+| `runtime::DataSourceIteration::access(...)` | 4.21% |
+| `process_tuple_into_batch` | 2.18% |
+| `read_next_tuple_from_table` | 0.83% |
+| `runtime::DataSourceIteration::next()` | 0.32% |
+| `read_and_fill_batch` | 0.29% |
+| `check_batch_validity` | 0.23% |
+| `runtime::DataSourceIteration::isValid()` | 0.25% |
+
+`extract_field` and `get_*_field_mlir` did **NOT** appear in the report,
+meaning they are not independently sampled hot functions.  The FFI-wall
+hypothesis (those functions dominating per-tuple decode) is **not confirmed
+by this profile**.  The actual dominant cost is the logging subsystem
+(see Dry-run status below for details).
 
 **JITed-frame symbolization (perf jitdump / `perf inject --jit`)**: LLVM's
 MCJIT can write a `jit-<pid>.dump` file that `perf inject --jit` uses to
-annotate JITed frames with source-line information.  This is nice-to-have and
-not required for the FFI-wall hypothesis.  Status: **not attempted** (blocked
-by `perf_event_paranoid=4`).  If perf becomes available after the sysctl fix,
-enable LLVM's jit-dump via `export ENABLE_JITDUMP=1` before running the query
-and then `perf inject --jit -i perf.data -o perf.jit.data` before reporting.
+annotate JITed frames with source-line information.  This is nice-to-have.
+Status: JITed frames appear as `[JIT] tid 865 [.] 0x0000705010a021b6` (two
+raw-address JIT entries totalling ~0.09% of samples).  JIT execution time
+is negligible in this profile — the hot path is entirely in `pgx_lower.so`
+C++ code, not in the JITed MLIR-generated LLVM IR.  `perf inject --jit`
+was not attempted; not needed given the JIT share is < 0.1%.
 
 ---
 
 ## Dry-run status
 
-**NOT COMPLETED** — blocked by `perf_event_paranoid=4` (see above).
+**COMPLETED** — 2026-05-17, paranoid=1, perf 6.8.1.
 
-The `just profile-exec QUERY=q01 SF=1` recipe is wired and correct.  It will
-produce artifacts once a human runs the one-time `sudo sysctl` fix on thor.
+`just profile-exec QUERY=q01 SF=1` ran successfully.  Artifacts at
+`benchmark/profiling/perf-exec/q01-sf1/`:
+
+| File | Size | Notes |
+|------|------|-------|
+| `perf-backend.data` | 789 MB | 94,033 samples from postgres backend (not committed — see .gitignore) |
+| `perf-report.txt` | 127 KB | committed |
+| `perf-stat.txt` | 1.4 KB | committed; backend process counters |
+
+### Key findings from the profile
+
+The dominant hot path is the **logging subsystem**, not FFI field decode:
+
+| Symbol group | Approx. % |
+|---|---|
+| `pgx_lower::log::should_log` + `std::_Rb_tree::find` (log category set) | ~38% |
+| `std::_Rb_tree` helpers (lower_bound, _S_key, end, begin, etc.) | ~17% |
+| `std::optional<ScopeLogger>` ctor/dtor | ~6% |
+| `runtime::DataSourceIteration::access` | ~4% |
+| `numeric_to_i128` | ~3.5% |
+| `process_tuple_into_batch` | ~2.2% |
+| postgres binary (`heap_deform_tuple`, `AllocSetAlloc`, etc.) | ~8% |
+
+**Total logging-related symbols: ~55–65% of execution samples.**
+
+The 47% frontend stall rate in `perf stat` (43B stalled cycles out of 91B
+total) is consistent with pointer-chasing in the RB-tree that backs the log
+category filter set: each `should_log()` call traverses a `std::set<Category>`
+whose nodes are heap-allocated and not cache-friendly at 4.4M tuples/query.
+
+**Implication for Task 5:** The FFI-wall hypothesis (execution dominated by
+`extract_field`/`get_*_field_mlir` per-tuple FFI overhead) is NOT confirmed.
+The real bottleneck is the logging guard `pgx_lower::log::should_log()` called
+on every per-tuple operation.  Disabling or short-circuiting the logging check
+in production builds is the high-priority fix, not FFI restructuring.

@@ -67,6 +67,13 @@ extension/results/
 
 # TableGen generated files (MLIR)
 *.cpp.inc
+
+# perf profiling raw data — large binary, never commit
+# Textual artifacts (perf-report.txt, perf-stat.txt) ARE committed.
+# perf.data lives on disk on thor at benchmark/profiling/perf-exec/<experiment>/
+benchmark/profiling/**/perf.data
+benchmark/profiling/**/perf-backend.data
+benchmark/profiling/**/*.data
 *.h.inc
 
 
