@@ -248,6 +248,22 @@ test-record-baseline: _preflight
 bench: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.5 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
+# Phase-timing report: runs all 20 TPC-H queries at SF=1, 5 iterations each,
+# capturing the 5-field PGXL_PHASE_TIMING log line (setup/translate/lowering/
+# jit/exec) emitted at DEBUG1 by pgx-lower. Also times PostgreSQL baseline
+# (pgx_lower.enabled=off). Writes benchmark/profiling/phase-timing/sf1-report.md.
+#
+# Exact invocation (run inside container):
+#   python3 benchmark/profiling/phase-timing/run_phase_timing.py \
+#       --sf 1 --port 5432 --iterations 5 \
+#       --output benchmark/profiling/phase-timing/sf1-report.md
+#
+# Runtime: ~30-60 min at SF=1 × 20 queries × 2 modes × 5 iterations.
+# Uses idempotent TPC-H caching from tpch/run.py (customer row count sentinel).
+# If SF=1 data is not loaded, run 'just bench-merge' first to populate it.
+bench-phase-timing SF='1' ITERS='5': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/phase-timing/run_phase_timing.py --sf {{SF}} --port 5432 --iterations {{ITERS}} --output benchmark/profiling/phase-timing/sf{{SF}}-report.md") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
 # Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
 # cached. Run before merging anything that claims a performance improvement
 # where SF=0.5's numbers feel marginal. At SF=1 the per-query wall time is
