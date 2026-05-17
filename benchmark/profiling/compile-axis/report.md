@@ -6,7 +6,7 @@
 
 ## CONTEXT: compile vs execution scale
 
-The Phase-2 gate already established that **execution dominates compile by ~70–175× at SF=1** (exec/compile ratio: median ~82×, range 12×–206×). This report characterises only the *internal composition of the small compile cost* — it does not imply compile is a dominant or performance-critical path at SF=1.
+Execution dominates compile at SF=1: the exec/compile ratio has a **median ≈ 69×** across the 20 queries (range ≈ 12×–206×). (For reference, the Phase-2 gate's 71× / 175× figures were exec/**lowering** for q01/q18 — a different ratio.) This report characterises only the *internal composition of that small compile cost* — it does not imply compile is a dominant or performance-critical path at SF=1.
 
 ---
 
@@ -81,6 +81,6 @@ Individual fractions range from **0.845** (q03) to **0.896** (q01) — tight ban
 | jit share of compile | ~14% (minor) |
 | setup share of compile | ~1% (negligible) |
 | translate share of compile | ~2% (negligible) |
-| exec/compile ratio (context) | 12x–206x, median ~82x |
+| exec/compile ratio (context) | 12×–206×, median ≈69× |
 
 The H1 hypothesis — "MLIR-side phases >> LLVM/JIT phase" — is validated at SF=1. MLIR lowering is the primary compile-time cost; LLVM/JIT is secondary. This characterises the *composition* of a cost (compile) that is itself minor relative to execution.
