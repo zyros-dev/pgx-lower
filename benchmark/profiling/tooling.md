@@ -377,3 +377,21 @@ Full analysis: `benchmark/profiling/exec-axis/findings.md`.
 JIT is now symbolized and shows only 4.28% self — not dominated by FFI overhead.
 
 Full analysis: `benchmark/profiling/exec-axis/findings.md`.
+
+---
+
+## Stock-PG Control Set (Differential Profiling) — 2026-05-17
+
+**Artifacts:** `benchmark/profiling/differential/report.md` + `perf-exec/q{01,03,05,06,12,18}-sf1-baseline-pg/`
+
+**Method:** `run_perf_profile.py --baseline-pg --timeout-s <3x_pgx_latency>`. Extension NOT loaded, no pgx_lower GUCs set. Same perf tooling, same SF=1, same RelWithDebInfo build installed (PG binary unchanged; only the `.so` is conditionally loaded).
+
+**Timeout rule:** 3x pgx-lower SF=1 median latency per query. No queries timed out for this query set.
+
+**Key findings (see differential/report.md for full detail):**
+
+- No queries timed out -- stock PG is within 3x of pgx-lower wall-time at SF=1. Stock PG is IO-bound; pgx-lower is CPU-bound at similar wall-clock.
+- pgx-lower uses 2-25x MORE CPU cycles than stock PG (perf record event count: q05 is 24.7x, q03 is 13x, q01 is 2.25x).
+- `heap_deform_tuple` is pgx-elevated (11-20% self-time in pgx, 0-0.12% in stock PG). NOT PG-intrinsic. DO chase.
+- `numeric_to_i128` (3.5-11%) alone exceeds stock PG's entire NUMERIC arithmetic budget for q06 and q12. The "convert once to i128, compute fast" approach costs MORE absolute cycles than stock PG NUMERIC for all three tested queries (q01: 1.4x; q06: 61x; q18: 4.2x).
+- `PGX_IO` overhead (`should_log` + `log::log`, 12-18%) is entirely absent in stock PG profiles. Gating on `#ifndef PGX_RELEASE_MODE` is high-leverage.

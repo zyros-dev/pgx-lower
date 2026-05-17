@@ -326,6 +326,24 @@ profile-exec QUERY='q01' SF='1': _preflight
 profile-exec-rwdi QUERY='q01' SF='1': _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}-relwithdebinfo") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
+# Profile a TPC-H query under STOCK PostgreSQL (no extension loaded).
+# This is the control set for differential profiling vs pgx-lower.
+#
+# TIMEOUT (required for stock PG to avoid multi-hour hangs on heavy queries):
+#   Pass TIMEOUT_S = 3 × pgx-lower latency for the same query (from sf1-report.md).
+#   If the query exceeds the deadline → no profile captured; a terminated.txt
+#   marker is written recording "PG ≥ 3× pgx (terminated at {TIMEOUT_S}s)".
+#
+# The extension is NOT loaded; no pgx_lower GUCs are set.
+# reset_system_gucs() still runs to clear any ALTER SYSTEM SET residuals.
+# Outputs to benchmark/profiling/perf-exec/<QUERY>-sf<SF>-baseline-pg/.
+#
+# Usage:
+#   just profile-exec-baseline-pg QUERY=q01 SF=1 TIMEOUT_S=72
+#   just profile-exec-baseline-pg QUERY=q06 SF=1 TIMEOUT_S=43
+profile-exec-baseline-pg QUERY='q01' SF='1' TIMEOUT_S='300': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --baseline-pg --timeout-s {{TIMEOUT_S}} --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}-baseline-pg") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
 # Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
 # cached. Run before merging anything that claims a performance improvement
 # where SF=0.5's numbers feel marginal. At SF=1 the per-query wall time is

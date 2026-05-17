@@ -29,6 +29,15 @@ Logging GUCs:
   production-representative profile.  Do NOT add phase-timing GUCs here.
   If you need a logging-ON profile for debugging, use --log-enable explicitly.
 
+--baseline-pg mode:
+  When --baseline-pg is given, the extension is NOT loaded and pgx_lower GUCs
+  are not set.  The query runs under stock PostgreSQL with no extension present.
+  This produces a control-set profile to compare against pgx-lower profiles.
+  perf inject --jit is still run (it is a no-op when no jitdump exists, which
+  is correct — the absence of JIT frames is part of the baseline signal).
+  reset_system_gucs() still runs to prevent contamination from prior ALTER
+  SYSTEM SET calls.
+
 Artifacts written to benchmark/profiling/perf-exec/<experiment>/:
   perf.data          — raw sampling data (perf record; gitignored)
   perf-stat.txt      — hardware counter summary (perf stat)
@@ -38,6 +47,11 @@ Usage (inside the pgx-lower-dev container):
     python3 benchmark/profiling/perf-exec/run_perf_profile.py \\
         --query q01 --sf 1 --port 5432 \\
         --output benchmark/profiling/perf-exec/q01-sf1-nolog
+
+    # Baseline (stock PG, no extension):
+    python3 benchmark/profiling/perf-exec/run_perf_profile.py \\
+        --query q01 --sf 1 --port 5432 --baseline-pg \\
+        --output benchmark/profiling/perf-exec/q01-sf1-baseline-pg
 
 Requires:
   - perf binary at /usr/local/bin/perf (installed in container by hand or
@@ -172,33 +186,46 @@ def get_backend_pid(conn: psycopg2.extensions.connection) -> int:
         return cur.fetchone()[0]
 
 
-def run_query_background(port: int, query_sql: str, log_enable: bool = False) -> tuple:
+def run_query_background(
+    port: int, query_sql: str, log_enable: bool = False, baseline_pg: bool = False
+) -> tuple:
     """
     Execute the query in a background thread.
 
-    Returns (thread, conn, result_holder).
-    The thread loads pgx_lower, optionally enables logging GUCs, then executes
-    the query.  The caller should attach perf AFTER the thread has started and
-    the backend PID is known.
+    Returns (thread, conn, backend_pid, result_holder).
+    The thread optionally loads pgx_lower (unless baseline_pg=True), optionally
+    enables logging GUCs, then executes the query.  The caller should attach
+    perf AFTER the thread has started and the backend PID is known.
 
     IMPORTANT: log_enable defaults to False — this is the production-representative
     profile.  Do NOT set it True unless you specifically want a logging-ON profile.
+
+    When baseline_pg=True:
+      - pgx_lower.so is NOT loaded.
+      - No pgx_lower.* GUCs are set.
+      - The query runs under stock PostgreSQL with no extension present.
+      - This is the control-set mode for differential profiling.
     """
     result_holder = {"elapsed_ms": None, "error": None}
 
     conn = pg_connect(port)
-    with conn.cursor() as cur:
-        cur.execute("LOAD 'pgx_lower.so'")
-        cur.execute("SET pgx_lower.enabled = on")
-        # Explicitly ensure logging GUCs are off (belt-and-suspenders: the GUC
-        # defaults are false, but set explicitly to guard against session residuals).
-        if log_enable:
-            cur.execute("SET pgx_lower.log_enable = on")
-            cur.execute("SET pgx_lower.log_io = on")
-            print("  WARNING: log_enable=on — this is a LOGGING-ON profile (contaminated for perf)")
-        else:
-            cur.execute("SET pgx_lower.log_enable = off")
-            cur.execute("SET pgx_lower.log_io = off")
+    if baseline_pg:
+        # Stock PG baseline: do NOT load the extension or set any pgx_lower GUCs.
+        # The extension must not influence the execution plan or executor hooks.
+        print("  [baseline-pg] Extension NOT loaded — stock PostgreSQL execution path")
+    else:
+        with conn.cursor() as cur:
+            cur.execute("LOAD 'pgx_lower.so'")
+            cur.execute("SET pgx_lower.enabled = on")
+            # Explicitly ensure logging GUCs are off (belt-and-suspenders: the GUC
+            # defaults are false, but set explicitly to guard against session residuals).
+            if log_enable:
+                cur.execute("SET pgx_lower.log_enable = on")
+                cur.execute("SET pgx_lower.log_io = on")
+                print("  WARNING: log_enable=on — this is a LOGGING-ON profile (contaminated for perf)")
+            else:
+                cur.execute("SET pgx_lower.log_enable = off")
+                cur.execute("SET pgx_lower.log_io = off")
 
     backend_pid = get_backend_pid(conn)
 
@@ -218,14 +245,20 @@ def run_query_background(port: int, query_sql: str, log_enable: bool = False) ->
     return t, conn, backend_pid, result_holder
 
 
-def run_query_sync(port: int, query_sql: str, log_enable: bool = False) -> float:
+def run_query_sync(
+    port: int, query_sql: str, log_enable: bool = False, baseline_pg: bool = False
+) -> float:
     """Execute the query synchronously and return elapsed ms."""
     conn = pg_connect(port)
     with conn.cursor() as cur:
-        cur.execute("LOAD 'pgx_lower.so'")
-        cur.execute("SET pgx_lower.enabled = on")
-        cur.execute(f"SET pgx_lower.log_enable = {'on' if log_enable else 'off'}")
-        cur.execute(f"SET pgx_lower.log_io = {'on' if log_enable else 'off'}")
+        if baseline_pg:
+            # Stock PG: no extension, no pgx_lower GUCs.
+            pass
+        else:
+            cur.execute("LOAD 'pgx_lower.so'")
+            cur.execute("SET pgx_lower.enabled = on")
+            cur.execute(f"SET pgx_lower.log_enable = {'on' if log_enable else 'off'}")
+            cur.execute(f"SET pgx_lower.log_io = {'on' if log_enable else 'off'}")
         t0 = time.perf_counter()
         cur.execute(query_sql)
         cur.fetchall()
@@ -303,6 +336,32 @@ def main() -> None:
         help="Enable pgx_lower.log_enable and log_io (produces a LOGGING-ON profile, "
              "useful for isolating logging overhead but NOT production-representative)",
     )
+    parser.add_argument(
+        "--baseline-pg", action="store_true",
+        help=(
+            "Stock PostgreSQL control-set mode: do NOT load pgx_lower.so and do NOT "
+            "set any pgx_lower.* GUCs.  The query runs under the stock executor with no "
+            "extension present.  Use this to establish a baseline profile for differential "
+            "comparison against pgx-lower profiles.  reset_system_gucs() still runs to "
+            "prevent contamination from prior ALTER SYSTEM SET calls. "
+            "perf inject --jit is still invoked (it is a no-op when no jitdump exists, "
+            "which is the expected and correct baseline behaviour — the absence of JIT "
+            "frames is part of the control-set signal)."
+        ),
+    )
+    parser.add_argument(
+        "--timeout-s", type=float, default=None,
+        metavar="SECONDS",
+        help=(
+            "Per-query wall-clock timeout in seconds.  If the query does not complete "
+            "within this deadline the backend is killed, perf is stopped cleanly, and "
+            "the result is recorded as TIMED_OUT in a 'terminated.txt' marker file.  "
+            "A timed-out query is a DATA POINT (the true latency is ≥ timeout), NOT an "
+            "error — the script exits 0 after writing the marker.  "
+            "Default: 300 s (5 min) for pgx-lower; for --baseline-pg, always set "
+            "this to 3× the pgx-lower latency for the same query."
+        ),
+    )
     args = parser.parse_args()
 
     check_perf(args.perf_bin)
@@ -351,20 +410,38 @@ def main() -> None:
 
     query_sql = query_sql_path.read_text()
 
+    # Resolve the effective per-query timeout (default 300 s).
+    effective_timeout_s = args.timeout_s if args.timeout_s is not None else 300.0
+    print(f"\n=== Per-query timeout: {effective_timeout_s:.1f} s ===")
+    if args.baseline_pg and args.timeout_s is None:
+        print("  WARNING: --baseline-pg without --timeout-s; defaulting to 300 s.")
+        print("  For control-set runs, pass --timeout-s <3x_pgx_latency> to prevent hangs.")
+
+    # Keep a reference to the connection so we can kill the backend if timeout fires.
+    # The connection object is held by run_query_background via _conn_ref[].
+    _conn_ref: list = []  # will hold the conn object after run_query_background returns
+
     if not args.skip_warmup:
         print(f"\n=== Warm-up run ({args.query} @ SF={args.sf}) ===")
-        elapsed = run_query_sync(args.port, query_sql, log_enable=args.log_enable)
+        elapsed = run_query_sync(
+            args.port, query_sql,
+            log_enable=args.log_enable,
+            baseline_pg=args.baseline_pg,
+        )
         print(f"  warm-up: {elapsed:.0f} ms")
 
     # ── perf record (attach to backend) ──────────────────────────────────────
     print(f"\n=== perf record ({args.query} @ SF={args.sf}) ===")
     print(f"  method: attach to postgres backend PID (not psql client)")
-    print(f"  logging: {'ON (--log-enable)' if args.log_enable else 'OFF (production-representative)'}")
+    mode_tag = "stock-PG (baseline)" if args.baseline_pg else ("LOGGING-ON" if args.log_enable else "pgx-lower OFF logging")
+    print(f"  mode: {mode_tag}")
     print(f"  output: {perf_data}")
 
     # Start query on background thread; get backend PID before query starts
     thread, conn_unused, backend_pid, result = run_query_background(
-        args.port, query_sql, log_enable=args.log_enable
+        args.port, query_sql,
+        log_enable=args.log_enable,
+        baseline_pg=args.baseline_pg,
     )
     print(f"  backend PID: {backend_pid}")
 
@@ -378,12 +455,66 @@ def main() -> None:
     t0 = time.perf_counter()
     thread.start()
 
-    # Wait for query to complete
-    thread.join(timeout=300)
+    # Wait for query to complete, subject to the per-query wall-clock timeout.
+    thread.join(timeout=effective_timeout_s)
     elapsed_total = time.perf_counter() - t0
 
     if thread.is_alive():
-        sys.exit("ERROR: query thread timed out after 300 s")
+        # ── TIMEOUT PATH ──────────────────────────────────────────────────────
+        # The query exceeded the deadline.  This is a DATA POINT, not an error:
+        # true latency ≥ timeout_s.  Kill the backend, stop perf cleanly, write
+        # a marker file, and exit 0.  The caller records this as "PG ≥ 3× pgx".
+        print(f"\n=== QUERY TIMED OUT after {effective_timeout_s:.1f} s ===")
+        print(f"  This is a DATA POINT: true latency ≥ {effective_timeout_s:.1f} s")
+        print(f"  Killing backend PID {backend_pid} via pg_terminate_backend() ...")
+        try:
+            kill_conn = pg_connect(args.port)
+            kill_conn.autocommit = True
+            with kill_conn.cursor() as kcur:
+                kcur.execute(f"SELECT pg_terminate_backend({backend_pid})")
+            kill_conn.close()
+        except Exception as ke:
+            print(f"  WARNING: pg_terminate_backend failed: {ke}; sending SIGKILL to PID {backend_pid} ...")
+            try:
+                import os as _os
+                _os.kill(backend_pid, signal.SIGKILL)
+            except Exception:
+                pass
+        thread.join(timeout=5)  # let the thread notice the backend died
+
+        # Stop perf cleanly so no partial artifact is left.
+        try:
+            perf_proc.send_signal(signal.SIGINT)
+        except ProcessLookupError:
+            pass
+        perf_proc.wait()
+
+        # Write the terminated marker so the differential report can read it.
+        terminated_txt = str(out_dir / "terminated.txt")
+        with open(terminated_txt, "w") as tf:
+            import datetime
+            tf.write(
+                f"TIMED_OUT\n"
+                f"query: {args.query}\n"
+                f"sf: {args.sf}\n"
+                f"mode: {mode_tag}\n"
+                f"timeout_s: {effective_timeout_s:.1f}\n"
+                f"elapsed_s: {elapsed_total:.1f}\n"
+                f"finding: PG latency >= {effective_timeout_s:.1f} s (>= 3x pgx latency for this query)\n"
+                f"date: {datetime.date.today()}\n"
+            )
+        print(f"  terminated.txt written: {terminated_txt}")
+        print(f"  Exiting 0 — timed-out query recorded as data point.")
+        # Remove partial perf.data (it may be corrupt / empty from abrupt kill)
+        try:
+            pd = Path(perf_data)
+            if pd.exists():
+                pd.unlink()
+                print(f"  Removed partial perf.data (invalid for timed-out run).")
+        except Exception:
+            pass
+        sys.exit(0)
+
     if result["error"]:
         perf_proc.send_signal(signal.SIGINT)
         perf_proc.wait()
@@ -446,7 +577,9 @@ def main() -> None:
 
     # Run the query on a background thread; attach perf stat via -p + sleep
     thread2, conn2_unused, backend_pid2, result2 = run_query_background(
-        args.port, query_sql, log_enable=args.log_enable
+        args.port, query_sql,
+        log_enable=args.log_enable,
+        baseline_pg=args.baseline_pg,
     )
     print(f"  backend PID: {backend_pid2}")
 
