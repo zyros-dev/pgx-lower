@@ -59,7 +59,7 @@ which is the direct cause of the 2.42% `__divti3` cost.
 |------|------|-------|--------------|
 | Batch store | `src/pgx-lower/runtime/PostgreSQLRuntime.cpp:774` | `process_tuple_into_batch` | `iter->batch->column_nulls[col][row_idx] = !is_null;` — PG `is_null=true` stored as `false`; LingoDB reads buffer as a "valid" flag (1=valid, 0=null) |
 | Output | `src/pgx-lower/runtime/tuple_access.cpp:141-147` | `table_builder_add<T>` | Receives LingoDB `is_valid` (true=non-null), negates to `is_null` for PG storage |
-| INTERVAL special | `src/pgx-lower/runtime/PostgreSQLRuntime.cpp:748` | `process_tuple_into_batch` (INTERVAL case) | Sets `column_nulls[col][row_idx] = false` for non-null interval — LingoDB valid=true convention, consistent |
+| INTERVAL special | `src/pgx-lower/runtime/PostgreSQLRuntime.cpp:748` | `process_tuple_into_batch` (INTERVAL case) | Sets `column_nulls[col][row_idx] = false` for null interval (inside `if (is_null)` branch) — LingoDB valid=true convention, consistent |
 
 The inversion is handled correctly in both directions today. The risk is structural:
 any new consumer of `column_nulls` that treats the buffer as a PG-style null flag
