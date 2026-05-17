@@ -195,8 +195,72 @@ total) is consistent with pointer-chasing in the RB-tree that backs the log
 category filter set: each `should_log()` call traverses a `std::set<Category>`
 whose nodes are heap-allocated and not cache-friendly at 4.4M tuples/query.
 
-**Implication for Task 5:** The FFI-wall hypothesis (execution dominated by
-`extract_field`/`get_*_field_mlir` per-tuple FFI overhead) is NOT confirmed.
-The real bottleneck is the logging guard `pgx_lower::log::should_log()` called
-on every per-tuple operation.  Disabling or short-circuiting the logging check
-in production builds is the high-priority fix, not FFI restructuring.
+**THIS PROFILE WAS CONTAMINATED — see section below.**
+
+---
+
+## Profile Contamination (Task 5 finding)
+
+**Root cause:** `postgresql.auto.conf` had `pgx_lower.log_enable='on'` and
+`pgx_lower.enabled_categories='general'` set by a prior phase-timing run
+(`ALTER SYSTEM SET`).  These persist across sessions.  The dry-run profile
+above was run with logging ON, making the RB-tree set lookup fire on every
+`should_log()` call — 4.4M tuples × multiple calls per tuple.
+
+**`should_log()` verdict:** The `!log_enable` bool DOES short-circuit before
+the `std::set::find()` call.  With `log_enable=false`, the RB-tree is NOT reached.
+The 55–65% logging dominance in the dry-run was 100% GUC-ON contamination.
+
+**Before any production profile, always reset system GUCs:**
+```sql
+ALTER SYSTEM RESET pgx_lower.log_enable;
+ALTER SYSTEM RESET pgx_lower.log_io;
+ALTER SYSTEM RESET pgx_lower.enabled_categories;
+SELECT pg_reload_conf();
+```
+
+---
+
+## Clean profile (logging OFF) — Task 5
+
+**Artifacts:** `benchmark/profiling/perf-exec/q01-sf1-nolog/`
+
+| File | Size | Notes |
+|------|------|-------|
+| `perf.data` | 3.6 MB | fp call-graph, 34,276 samples (gitignored) |
+| `perf-report.txt` | 306 KB | committed |
+| `perf-stat.txt` | 1.4 KB | committed |
+
+**Call-graph method:** `--call-graph fp` (frame pointer).
+- Prior: `--call-graph dwarf` → 289MB perf.data, hours of `perf report` processing on Debug build (123MB DWARF)
+- Now: `--call-graph fp` → 3.6MB, ~60s report processing
+- Use `dwarf` only for specific call-chain investigations; `fp` is the default.
+
+**Key hardware counters (logging OFF):**
+
+| Metric | Logging ON | Logging OFF |
+|--------|-----------|-------------|
+| Cycles | 91.8B | 34.2B |
+| IPC | 1.38 | 1.60 |
+| Frontend stalls | 47.05% | 36.15% |
+
+**2.67× cycle reduction** by turning logging off.
+
+**True hot path (logging OFF):**
+
+| Symbol | % |
+|--------|---|
+| `DataSourceIteration::access` | 8.49% |
+| `numeric_to_i128` | 7.67% |
+| `process_tuple_into_batch` | 5.73% |
+| `pgx_lower::log::should_log` (PGX_IO per-tuple cost) | ~6.1% |
+| `heap_deform_tuple` (postgres) | 4.94% |
+| `pgx_lower::log::log` (fp misattrib + PGX_IO) | ~5.0% |
+| ScopeLogger optional ctor/dtor | ~5-6% |
+| `AllocSetAlloc` (postgres) | 2.30% |
+| `__divti3` (128-bit division) | 1.22% |
+
+**FFI-wall hypothesis: NOT confirmed.**  `extract_field`/`get_*_field_mlir` not in profile.
+True bottleneck: numeric conversion + per-column batch fill + PGX_IO overhead.
+
+Full analysis: `benchmark/profiling/exec-axis/findings.md`.

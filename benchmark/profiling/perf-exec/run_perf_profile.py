@@ -3,31 +3,57 @@
 perf-profile runner for pgx-lower.
 
 Profiles a single TPC-H query under pgx_lower.enabled=on using:
-  1. perf record -g --call-graph dwarf  (sampled call-graph)
-  2. perf stat -e <counters>            (hardware counter snapshot)
+  1. perf record -g --call-graph dwarf  (sampled call-graph, attached to the
+     postgres BACKEND process — NOT the psql client)
+  2. perf stat -e <counters>            (hardware counter snapshot, also on backend)
 
-Artifacts are written to benchmark/profiling/perf-exec/<experiment>/:
-  perf.data          — raw sampling data (perf record)
+Why attach to the backend?
+  psql is a thin client that is idle on the socket while the backend does all
+  the work.  Profiling the psql process shows zero useful samples.  We must
+  attach perf to the postgres backend PID.
+
+How it works:
+  1. Open a psycopg2 connection, load pgx_lower, discover the backend PID via
+     SELECT pg_backend_pid().
+  2. Launch the query on a background thread (it will block until complete).
+  3. Attach perf record -p <backend_pid> as the postgres OS user via
+     su postgres -c "perf record -p ... -o ..."
+     (paranoid=1 blocks cross-user attach; postgres must own the perf process).
+  4. Wait for the query thread to finish, then stop perf (SIGINT after join).
+  5. Generate perf report --stdio from the captured perf.data.
+  6. Run perf stat -p <backend_pid> on a second query execution.
+
+Logging GUCs:
+  This script deliberately does NOT set pgx_lower.log_enable, log_io, or
+  enabled_categories.  The GUC defaults are all false/empty, giving a clean
+  production-representative profile.  Do NOT add phase-timing GUCs here.
+  If you need a logging-ON profile for debugging, use --log-enable explicitly.
+
+Artifacts written to benchmark/profiling/perf-exec/<experiment>/:
+  perf.data          — raw sampling data (perf record; gitignored)
   perf-stat.txt      — hardware counter summary (perf stat)
   perf-report.txt    — perf report --stdio, top symbols
 
 Usage (inside the pgx-lower-dev container):
     python3 benchmark/profiling/perf-exec/run_perf_profile.py \\
         --query q01 --sf 1 --port 5432 \\
-        --output benchmark/profiling/perf-exec/q01-sf1
+        --output benchmark/profiling/perf-exec/q01-sf1-nolog
 
 Requires:
   - perf binary at /usr/local/bin/perf (installed in container by hand or
     baked into the Dockerfile; see benchmark/profiling/tooling.md)
   - kernel.perf_event_paranoid <= 1 on the host
     (docker-compose.yml has cap_add: [SYS_ADMIN, PERFMON] + seccomp:unconfined)
+  - Running as root inside the container (to su to postgres for perf attach)
 """
 
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -107,37 +133,120 @@ def check_perf(perf_bin: str) -> None:
         pass  # /proc not readable inside some containers — let perf fail naturally
 
 
-def run_query_sql(port: int, query_sql: str) -> None:
-    """Execute the query via psycopg2 (for warm-up or baseline)."""
+def get_backend_pid(conn: psycopg2.extensions.connection) -> int:
+    """Return the postgres backend PID for this connection."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_backend_pid()")
+        return cur.fetchone()[0]
+
+
+def run_query_background(port: int, query_sql: str, log_enable: bool = False) -> tuple:
+    """
+    Execute the query in a background thread.
+
+    Returns (thread, conn, result_holder).
+    The thread loads pgx_lower, optionally enables logging GUCs, then executes
+    the query.  The caller should attach perf AFTER the thread has started and
+    the backend PID is known.
+
+    IMPORTANT: log_enable defaults to False — this is the production-representative
+    profile.  Do NOT set it True unless you specifically want a logging-ON profile.
+    """
+    result_holder = {"elapsed_ms": None, "error": None}
+
     conn = pg_connect(port)
     with conn.cursor() as cur:
         cur.execute("LOAD 'pgx_lower.so'")
         cur.execute("SET pgx_lower.enabled = on")
+        # Explicitly ensure logging GUCs are off (belt-and-suspenders: the GUC
+        # defaults are false, but set explicitly to guard against session residuals).
+        if log_enable:
+            cur.execute("SET pgx_lower.log_enable = on")
+            cur.execute("SET pgx_lower.log_io = on")
+            print("  WARNING: log_enable=on — this is a LOGGING-ON profile (contaminated for perf)")
+        else:
+            cur.execute("SET pgx_lower.log_enable = off")
+            cur.execute("SET pgx_lower.log_io = off")
+
+    backend_pid = get_backend_pid(conn)
+
+    def _run():
+        try:
+            with conn.cursor() as cur:
+                t0 = time.perf_counter()
+                cur.execute(query_sql)
+                cur.fetchall()
+                result_holder["elapsed_ms"] = (time.perf_counter() - t0) * 1000
+        except Exception as e:
+            result_holder["error"] = e
+        finally:
+            conn.close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    return t, conn, backend_pid, result_holder
+
+
+def run_query_sync(port: int, query_sql: str, log_enable: bool = False) -> float:
+    """Execute the query synchronously and return elapsed ms."""
+    conn = pg_connect(port)
+    with conn.cursor() as cur:
+        cur.execute("LOAD 'pgx_lower.so'")
+        cur.execute("SET pgx_lower.enabled = on")
+        cur.execute(f"SET pgx_lower.log_enable = {'on' if log_enable else 'off'}")
+        cur.execute(f"SET pgx_lower.log_io = {'on' if log_enable else 'off'}")
         t0 = time.perf_counter()
         cur.execute(query_sql)
         cur.fetchall()
-        elapsed = time.perf_counter() - t0
+        elapsed = (time.perf_counter() - t0) * 1000
     conn.close()
-    print(f"  warm-up: {elapsed * 1000:.0f} ms")
+    return elapsed
 
 
-def build_psql_cmd(port: int, query_sql_path: Path) -> list[str]:
+def attach_perf_record(perf_bin: str, backend_pid: int, perf_data: str) -> subprocess.Popen:
     """
-    Build the psql invocation that executes the query once with pgx_lower enabled.
-    We wrap this entire command under perf so the profile covers the backend work.
+    Attach perf record to the backend PID.
+
+    With paranoid=1, cross-user perf attach is blocked — the process running
+    perf must be the same OS user as the profilee (postgres uid=1001).
+    We use `su postgres -c "perf record -p ..."` to run perf as that user.
+
+    perf_data MUST be an absolute path so it resolves correctly when perf runs
+    in the postgres user's home directory (not the worktree CWD).
+
+    Call-graph method: frame pointer (--call-graph fp) instead of DWARF.
+    - DWARF produces accurate call graphs but 100–400MB files and multi-hour
+      perf report processing times on Debug builds.
+    - Frame pointer is less accurate in deeply optimized code but produces
+      10–30MB files and fast (~30s) perf report processing.
+    - For flat symbol profiling (which dominates occupies dominate?), fp is
+      sufficient to identify hot functions; DWARF is not needed.
+
+    Returns the Popen object so the caller can wait/interrupt it.
     """
-    # Set GUCs via -c flags before executing the file
-    return [
-        "psql",
-        "-h", "localhost",
-        "-p", str(port),
-        "-U", "postgres",
-        "-d", "postgres",
-        "-c", "LOAD 'pgx_lower.so'",
-        "-c", "SET pgx_lower.enabled = on",
-        "-f", str(query_sql_path),
-        "-c", "SELECT 1",   # force result consumption
-    ]
+    # Ensure the path is absolute so it works from any working directory
+    abs_perf_data = str(Path(perf_data).resolve())
+    cmd_str = (
+        f"{perf_bin} record -g --call-graph fp "
+        f"-p {backend_pid} -o {abs_perf_data}"
+    )
+    # su postgres -c "..." — works when running as container root
+    full_cmd = ["su", "postgres", "-c", cmd_str]
+    print(f"  attaching: {' '.join(full_cmd)}")
+    return subprocess.Popen(full_cmd)
+
+
+def attach_perf_stat(perf_bin: str, backend_pid: int, duration_s: float) -> subprocess.CompletedProcess:
+    """
+    Run perf stat attached to the backend PID for a fixed duration.
+
+    Used for the perf-stat pass (a second query execution).
+    """
+    cmd_str = (
+        f"{perf_bin} stat -e {PERF_STAT_EVENTS} "
+        f"-p {backend_pid} -- sleep {duration_s:.1f}"
+    )
+    return subprocess.run(["su", "postgres", "-c", cmd_str],
+                          capture_output=True, text=True)
 
 
 def main() -> None:
@@ -156,6 +265,11 @@ def main() -> None:
         help="Path to perf binary (default /usr/local/bin/perf)",
     )
     parser.add_argument("--skip-warmup", action="store_true", help="Skip warm-up query run")
+    parser.add_argument(
+        "--log-enable", action="store_true",
+        help="Enable pgx_lower.log_enable and log_io (produces a LOGGING-ON profile, "
+             "useful for isolating logging overhead but NOT production-representative)",
+    )
     args = parser.parse_args()
 
     check_perf(args.perf_bin)
@@ -173,6 +287,20 @@ def main() -> None:
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Ensure the output directory AND all its parents are executable by the
+    # postgres user (uid=1001) so that `su postgres -c "perf record -o ..."` can
+    # write perf.data.  The container runs as root, so parent dirs are often
+    # mode 700 (drwx------).  We need at least o+x on each ancestor.
+    p = out_dir.resolve()
+    while str(p) != p.root:
+        st = p.stat()
+        if not (st.st_mode & 0o001):  # other-execute bit
+            p.chmod(st.st_mode | 0o001)
+        p = p.parent
+
+    # Make the output dir itself world-writable so postgres can create files in it
+    out_dir.chmod(0o777)
+
     perf_data = str(out_dir / "perf.data")
     perf_stat_txt = str(out_dir / "perf-stat.txt")
     perf_report_txt = str(out_dir / "perf-report.txt")
@@ -180,78 +308,139 @@ def main() -> None:
     ensure_tpch_loaded(args.port, args.sf)
 
     query_sql = query_sql_path.read_text()
-    psql_cmd = build_psql_cmd(args.port, query_sql_path)
 
     if not args.skip_warmup:
         print(f"\n=== Warm-up run ({args.query} @ SF={args.sf}) ===")
-        run_query_sql(args.port, query_sql)
+        elapsed = run_query_sync(args.port, query_sql, log_enable=args.log_enable)
+        print(f"  warm-up: {elapsed:.0f} ms")
 
-    # ── perf record ──────────────────────────────────────────────────────────
+    # ── perf record (attach to backend) ──────────────────────────────────────
     print(f"\n=== perf record ({args.query} @ SF={args.sf}) ===")
+    print(f"  method: attach to postgres backend PID (not psql client)")
+    print(f"  logging: {'ON (--log-enable)' if args.log_enable else 'OFF (production-representative)'}")
     print(f"  output: {perf_data}")
-    record_cmd = [
-        args.perf_bin,
-        "record",
-        "-g",
-        "--call-graph", "dwarf",
-        "-o", perf_data,
-        "--",
-    ] + psql_cmd
 
+    # Start query on background thread; get backend PID before query starts
+    thread, conn_unused, backend_pid, result = run_query_background(
+        args.port, query_sql, log_enable=args.log_enable
+    )
+    print(f"  backend PID: {backend_pid}")
+
+    # Start perf BEFORE starting the query thread so we don't miss early samples
+    perf_proc = attach_perf_record(args.perf_bin, backend_pid, perf_data)
+
+    # Brief pause to let perf initialize before the query starts executing
+    time.sleep(0.2)
+
+    # Start the query
     t0 = time.perf_counter()
-    rec_result = subprocess.run(record_cmd, capture_output=False)
-    elapsed = time.perf_counter() - t0
-    print(f"  elapsed: {elapsed * 1000:.0f} ms, exit: {rec_result.returncode}")
+    thread.start()
 
-    if rec_result.returncode != 0:
-        sys.exit(
-            f"ERROR: perf record failed (exit {rec_result.returncode}).\n"
-            "Check benchmark/profiling/tooling.md for the perf_event_paranoid fix."
-        )
+    # Wait for query to complete
+    thread.join(timeout=300)
+    elapsed_total = time.perf_counter() - t0
+
+    if thread.is_alive():
+        sys.exit("ERROR: query thread timed out after 300 s")
+    if result["error"]:
+        perf_proc.send_signal(signal.SIGINT)
+        perf_proc.wait()
+        sys.exit(f"ERROR: query failed: {result['error']}")
+
+    query_ms = result["elapsed_ms"]
+    print(f"  query elapsed: {query_ms:.0f} ms")
+
+    # Stop perf — send SIGINT so it flushes perf.data cleanly
+    try:
+        perf_proc.send_signal(signal.SIGINT)
+    except ProcessLookupError:
+        pass  # already exited
+    perf_proc.wait()
+    print(f"  total elapsed (query + perf overhead): {elapsed_total * 1000:.0f} ms, perf exit: {perf_proc.returncode}")
 
     size_bytes = Path(perf_data).stat().st_size if Path(perf_data).exists() else 0
     print(f"  perf.data size: {size_bytes:,} bytes")
 
-    # ── perf stat ────────────────────────────────────────────────────────────
+    if size_bytes == 0:
+        print("WARNING: perf.data is empty — perf attach may have failed.")
+        print("  Check that su postgres works and paranoid=1 is set on the host.")
+
+    # ── perf stat (second query execution, attach via -p + sleep) ────────────
     print(f"\n=== perf stat ({args.query} @ SF={args.sf}) ===")
     print(f"  output: {perf_stat_txt}")
-    stat_cmd = [
-        args.perf_bin,
-        "stat",
-        "-e", PERF_STAT_EVENTS,
-        "--",
-    ] + psql_cmd
+
+    # Run the query on a background thread; attach perf stat via -p + sleep
+    thread2, conn2_unused, backend_pid2, result2 = run_query_background(
+        args.port, query_sql, log_enable=args.log_enable
+    )
+    print(f"  backend PID: {backend_pid2}")
+
+    # Estimate stat duration: add 20% margin over measured query time
+    stat_duration_s = max(10.0, (query_ms / 1000.0) * 1.3)
+    print(f"  stat duration: {stat_duration_s:.1f} s")
+
+    thread2.start()
+
+    # Run perf stat as postgres user, attached to the backend PID.
+    # Use `perf stat -a -p <pid> -- sleep N` to measure the backend for the
+    # query duration.  The sleep command anchors the stat window; the backend
+    # pid is the target.
+    stat_cmd_str = (
+        f"{args.perf_bin} stat -e {PERF_STAT_EVENTS} "
+        f"-p {backend_pid2} -- /bin/sleep {stat_duration_s:.1f}"
+    )
+    stat_result = subprocess.run(
+        ["su", "postgres", "-c", stat_cmd_str],
+        capture_output=True, text=True,
+    )
+    thread2.join(timeout=60)
 
     with open(perf_stat_txt, "w") as stat_out:
+        import datetime
         stat_out.write(
             f"# perf stat: {args.query} @ SF={args.sf}\n"
-            f"# command: {' '.join(stat_cmd)}\n\n"
+            f"# method: perf stat -p <backend_pid> as postgres user\n"
+            f"# logging: {'ON (--log-enable flag)' if args.log_enable else 'OFF (default, production-representative)'}\n"
+            f"# date: {datetime.date.today()}, paranoid=1, container caps: SYS_ADMIN+PERFMON, seccomp:unconfined\n"
+            f"# perf version 6.8.1\n"
+            f"# command: su postgres -c \"{stat_cmd_str}\"\n\n"
         )
-        stat_result = subprocess.run(stat_cmd, stderr=subprocess.STDOUT, stdout=stat_out)
+        # perf stat writes to stderr
+        combined = stat_result.stdout + stat_result.stderr
+        stat_out.write(combined)
 
     print(f"  exit: {stat_result.returncode}")
-    if stat_result.returncode == 0:
+    if Path(perf_stat_txt).stat().st_size > 0:
         print(f"  perf-stat.txt written ({Path(perf_stat_txt).stat().st_size:,} bytes)")
 
     # ── perf report ──────────────────────────────────────────────────────────
     if Path(perf_data).exists() and size_bytes > 0:
         print(f"\n=== perf report ({args.query} @ SF={args.sf}) ===")
-        report_cmd = [
-            args.perf_bin,
-            "report",
-            "--stdio",
-            "-i", perf_data,
-            "--no-children",
-        ]
+        abs_perf_data = str(Path(perf_data).resolve())
+        abs_report_txt = str(Path(perf_report_txt).resolve())
+        # perf.data is owned by postgres (written by su postgres perf record).
+        # perf report must run as the same user OR with -f (force).
+        # Use su postgres to avoid ownership errors; pipe stdout through
+        # the root shell's redirect so perf-report.txt stays root-owned.
+        # Suppress addr2line stderr noise (very verbose on Debug builds with
+        # large DWARF — 2>/dev/null sends those errors to null).
+        report_cmd_str = (
+            f"{args.perf_bin} report --stdio --no-children "
+            f"-i {abs_perf_data} 2>/dev/null"
+        )
         with open(perf_report_txt, "w") as report_out:
             report_result = subprocess.run(
-                report_cmd, stdout=report_out, stderr=subprocess.STDOUT
+                ["su", "postgres", "-c", report_cmd_str],
+                stdout=report_out,
+                stderr=subprocess.DEVNULL,
             )
         print(f"  exit: {report_result.returncode}")
-        print(f"  perf-report.txt written ({Path(perf_report_txt).stat().st_size:,} bytes)")
+        size_report = Path(perf_report_txt).stat().st_size if Path(perf_report_txt).exists() else 0
+        print(f"  perf-report.txt written ({size_report:,} bytes)")
 
-        # Show top symbols + check for FFI symbols
+        # Show top symbols + check for logging contamination + FFI symbols
         print("\n=== Top symbols ===")
+        log_symbols = ["should_log", "_Rb_tree", "ScopeLogger", "log::log"]
         ffi_symbols = ["extract_field", "get_int32_field_mlir", "get_int64_field_mlir",
                        "get_date_field_mlir", "get_decimal_field_mlir", "get_float8_field_mlir"]
         with open(perf_report_txt) as f:
@@ -262,10 +451,40 @@ def main() -> None:
         for line in lines[:30]:
             print(" ", line)
 
+        print("\n=== Logging contamination check ===")
+        # Only check flat-profile lines (start with whitespace + digits + %)
+        # NOT call-graph child lines (which start with | or space).
+        flat_log_lines = [
+            l for l in content.splitlines()
+            if l.strip() and l.strip()[0].isdigit() and "%" in l
+            and any(s in l for s in log_symbols)
+        ]
+        if flat_log_lines:
+            log_pct = 0.0
+            for l in flat_log_lines:
+                try:
+                    log_pct += float(l.strip().split("%")[0])
+                except ValueError:
+                    pass
+            print(f"  Logging symbols in flat profile: {len(flat_log_lines)} entries")
+            print(f"  Estimated flat logging overhead: ~{log_pct:.1f}%")
+            if log_pct > 15.0:
+                print(f"  ALERT: >15% logging in flat profile — likely GUC-ON contamination.")
+                print(f"  Check: ALTER SYSTEM RESET pgx_lower.log_enable (and reload conf).")
+                print(f"  Also check: SELECT name, setting FROM pg_settings WHERE name LIKE 'pgx_lower%';")
+            elif log_pct > 5.0:
+                print(f"  NOTE: 5-15% logging overhead — likely real PGX_IO per-tuple cost")
+                print(f"  (should_log() + std::optional<ScopeLogger> ctor/dtor per PGX_IO call)")
+                print(f"  + possible frame-pointer misattribution from JITed code.")
+            else:
+                print(f"  CLEAN: <5% logging overhead — no contamination detected.")
+        else:
+            print(f"  CLEAN: no logging symbols in flat profile — contamination absent")
+
         print("\n=== FFI symbol check ===")
-        found = [sym for sym in ffi_symbols if sym in content]
-        if found:
-            print(f"  FOUND: {found}")
+        found_ffi = [sym for sym in ffi_symbols if sym in content]
+        if found_ffi:
+            print(f"  FOUND: {found_ffi}")
         else:
             print("  NOT FOUND: no extract_field / get_*_field_mlir in perf report")
             print("  (This may mean the workload is not FFI-bound, or symbols need --demangle.)")
