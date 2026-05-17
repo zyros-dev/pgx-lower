@@ -39,6 +39,11 @@ extern "C" {
 #include <atomic>
 #include <chrono>
 
+namespace {
+// Convenience alias used throughout this file for millisecond durations.
+using DMs = std::chrono::duration<double, std::milli>;
+} // namespace
+
 #ifndef BUILDING_UNIT_TESTS
 #ifdef PG_RESTRICT_SAVED
 #define restrict PG_RESTRICT_SAVED
@@ -57,12 +62,13 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 
-// Internal timing struct — populated only when pgx_lower.log_enable is on.
-// setup_ms and jit_ms are filled by executeJITWithDestReceiverTimed;
-// translate_ms and lowering_ms are measured directly in run_mlir_with_dest_receiver.
+// Timing struct for the three phases measured inside executeJITWithDestReceiverTimed.
+// Does NOT include translate_ms or lowering_ms — those are computed as locals in
+// run_mlir_with_dest_receiver and combined with this struct at the log-emission site
+// to produce the full 5-phase PGXL_PHASE_TIMING line.
 // setup_ms covers MLIRContext construction + setupMLIRContextForJIT (14 dialect loads).
 // jit_ms covers JITEngine ctor (setup_llvm_target) + register_dialects + engine.compile().
-struct PhaseTimings {
+struct JITPhaseTimings {
     double setup_ms = 0.0;
     double jit_ms   = 0.0;
     double exec_ms  = 0.0;
@@ -72,7 +78,7 @@ struct PhaseTimings {
 // When timings != nullptr, the setup_start passed in is the time point captured just before
 // MLIRContext construction; setup_ms is computed as (end of setupMLIRContextForJIT - setup_start).
 bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, DestReceiver* dest,
-                                     PhaseTimings* timings,
+                                     JITPhaseTimings* timings,
                                      std::chrono::steady_clock::time_point setup_start,
                                      std::chrono::steady_clock::time_point setup_end);
 
@@ -175,7 +181,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
 
         // Phases 3 + 4: JIT compile then native execution (timed internally when enabled).
         // Pass setup_start/setup_end so executeJITWithDestReceiverTimed can compute setup_ms.
-        PhaseTimings timings;
+        JITPhaseTimings timings;
         if (!executeJITWithDestReceiverTimed(*module, estate, dest,
                                              timing_enabled ? &timings : nullptr,
                                              t0_start, t0_end)) {
@@ -184,7 +190,6 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
 
         // Emit ONE structured log line per query — only when log_enable is on.
         if (timing_enabled) {
-            using DMs = std::chrono::duration<double, std::milli>;
             const double translate_ms = std::chrono::duration_cast<DMs>(t1_end - t1_start).count();
             const double lowering_ms  = std::chrono::duration_cast<DMs>(t2_end - t2_start).count();
             // Use a monotonic query id (simple per-process counter, not persisted across restarts)
@@ -220,12 +225,11 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
 // When timings == nullptr the behaviour is identical to the original function —
 // the null check is branch-predicted and has zero measurable overhead.
 bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, DestReceiver* dest,
-                                     PhaseTimings* timings,
+                                     JITPhaseTimings* timings,
                                      std::chrono::steady_clock::time_point setup_start,
                                      std::chrono::steady_clock::time_point setup_end) {
     // Record setup_ms (MLIRContext ctor + setupMLIRContextForJIT) from caller's measurements.
     if (timings) {
-        using DMs = std::chrono::duration<double, std::milli>;
         timings->setup_ms = std::chrono::duration_cast<DMs>(setup_end - setup_start).count();
     }
 
@@ -243,7 +247,6 @@ bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, De
     }
 
     if (timings) {
-        using DMs = std::chrono::duration<double, std::milli>;
         timings->jit_ms = std::chrono::duration_cast<DMs>(
             std::chrono::steady_clock::now() - t3_start).count();
     }
@@ -258,7 +261,6 @@ bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, De
     }
 
     if (timings) {
-        using DMs = std::chrono::duration<double, std::milli>;
         timings->exec_ms = std::chrono::duration_cast<DMs>(
             std::chrono::steady_clock::now() - t4_start).count();
     }
