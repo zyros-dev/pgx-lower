@@ -81,6 +81,36 @@ compile: _preflight
         exit "$rc"
     fi
 
+# RelWithDebInfo build — enables PGX_RELEASE_MODE (compiles out PGX_HOT_LOG and
+# per-tuple ScopeLogger overhead), plus full compiler optimization, while keeping
+# debug info for symbol resolution in perf.  Uses a separate build dir
+# (build-docker-rwdi) to avoid clobbering the Debug build used by `just test`.
+# Installs the resulting pgx_lower.so into PG's extension dir, overwriting the
+# Debug build, so run `just compile` afterwards to restore the Debug build.
+compile-rwdi: _preflight
+    #!/usr/bin/env bash
+    set -o pipefail
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    session="pgx-lower-${branch}"
+    [ "${branch}" = "main" ] && session="pgx-lower"
+    mutagen sync flush "${session}" >/dev/null 2>&1 || true
+    _rwdi_bdir="{{_wdir}}/build-docker-rwdi"
+    ssh {{_thor}} "export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=\$(tsp docker exec {{_ctr}} bash -c 'mkdir -p ${_rwdi_bdir} && cd ${_rwdi_bdir} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .') && echo \"[job \$id queued on {{_build_q}}]\" && tsp -c \$id" 2>&1 | tee /tmp/pgx-compile-rwdi.out
+    rc=${PIPESTATUS[0]}
+    if [ "$rc" -eq 0 ]; then
+        ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' /tmp/pgx-compile-rwdi.out 2>/dev/null || echo 0)
+        echo ""
+        echo "BUILD OK (RelWithDebInfo) — ${ninja_targets} ninja step(s), pgx_lower.so installed"
+        echo "NOTE: PGX_RELEASE_MODE active — PGX_HOT_LOG and ScopeLogger overhead compiled out"
+        echo "      Run 'just compile' to restore the Debug build when done profiling."
+    else
+        errs=$(grep -cE 'error:|FAILED:' /tmp/pgx-compile-rwdi.out 2>/dev/null || echo 0)
+        echo ""
+        echo "BUILD FAILED (RelWithDebInfo) — ${errs} error line(s), exit $rc. Last 30 lines:"
+        tail -n 30 /tmp/pgx-compile-rwdi.out
+        exit "$rc"
+    fi
+
 # Print ccache statistics from the dev container.
 ccache-stats:
     @ssh {{_thor}} 'docker exec {{_ctr}} ccache --show-stats | head -20'
@@ -247,6 +277,72 @@ test-record-baseline: _preflight
 # readonly and bomb mid-run with "attempt to write a readonly database".
 bench: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.5 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Phase-timing report: runs all 20 TPC-H queries at SF=1, 5 iterations each,
+# capturing the 5-field PGXL_PHASE_TIMING log line (setup/translate/lowering/
+# jit/exec) emitted at DEBUG1 by pgx-lower. Also times PostgreSQL baseline
+# (pgx_lower.enabled=off). Writes benchmark/profiling/phase-timing/sf1-report.md.
+#
+# Exact invocation (run inside container):
+#   python3 benchmark/profiling/phase-timing/run_phase_timing.py \
+#       --sf 1 --port 5432 --iterations 5 \
+#       --output benchmark/profiling/phase-timing/sf1-report.md
+#
+# Runtime: ~30-60 min at SF=1 × 20 queries × 2 modes × 5 iterations.
+# Uses idempotent TPC-H caching from tpch/run.py (customer row count sentinel).
+# If SF=1 data is not loaded, run 'just bench-merge' first to populate it.
+bench-phase-timing SF='1' ITERS='5': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/phase-timing/run_phase_timing.py --sf {{SF}} --port 5432 --iterations {{ITERS}} --output benchmark/profiling/phase-timing/sf{{SF}}-report.md") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Profile a single TPC-H query at a given scale factor using perf record
+# (sampled call-graph) and perf stat (hardware counters).
+#
+# Prerequisites (one-time, human action):
+#   On thor: sudo sysctl -w kernel.perf_event_paranoid=1
+#   In container: /usr/local/bin/perf must exist (see benchmark/profiling/tooling.md)
+#
+# The recipe runs the query ONCE under:
+#   perf record -g --call-graph dwarf  →  benchmark/profiling/perf-exec/<QUERY>-sf<SF>/perf.data
+#   perf stat -e cycles,instructions,…  →  …/perf-stat.txt
+# A perf report --stdio dump is also captured at …/perf-report.txt.
+#
+# At SF=1, execution dominates compile by ~70–175× (Q01: exec ~23 s, compile
+# ~134 ms) so the full-query profile is already ~99% execution samples;
+# no gating or two-phase setup is needed.
+#
+# FFI symbols (extract_field, get_*_field_mlir) are exported via
+# -Wl,--export-dynamic on pgx_lower.so and should appear in perf report
+# without extra steps once paranoid is lowered.
+#
+# Usage:
+#   just profile-exec             # q01 at SF=1 (defaults)
+#   just profile-exec QUERY=q18 SF=1
+profile-exec QUERY='q01' SF='1': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Profile query with RelWithDebInfo build (PGX_RELEASE_MODE active, optimized).
+# Outputs to benchmark/profiling/perf-exec/<QUERY>-sf<SF>-relwithdebinfo/.
+# Run `just compile-rwdi` first to install the RelWithDebInfo build.
+profile-exec-rwdi QUERY='q01' SF='1': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}-relwithdebinfo") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Profile a TPC-H query under STOCK PostgreSQL (no extension loaded).
+# This is the control set for differential profiling vs pgx-lower.
+#
+# TIMEOUT (required for stock PG to avoid multi-hour hangs on heavy queries):
+#   Pass TIMEOUT_S = 3 × pgx-lower latency for the same query (from sf1-report.md).
+#   If the query exceeds the deadline → no profile captured; a terminated.txt
+#   marker is written recording "PG ≥ 3× pgx (terminated at {TIMEOUT_S}s)".
+#
+# The extension is NOT loaded; no pgx_lower GUCs are set.
+# reset_system_gucs() still runs to clear any ALTER SYSTEM SET residuals.
+# Outputs to benchmark/profiling/perf-exec/<QUERY>-sf<SF>-baseline-pg/.
+#
+# Usage:
+#   just profile-exec-baseline-pg QUERY=q01 SF=1 TIMEOUT_S=72
+#   just profile-exec-baseline-pg QUERY=q06 SF=1 TIMEOUT_S=43
+profile-exec-baseline-pg QUERY='q01' SF='1' TIMEOUT_S='300': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --baseline-pg --timeout-s {{TIMEOUT_S}} --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}-baseline-pg") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
 # cached. Run before merging anything that claims a performance improvement

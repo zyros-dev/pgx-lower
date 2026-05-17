@@ -1,0 +1,22 @@
+# perf stat: q01 @ SF=1.0
+# method: perf stat -p <backend_pid> as postgres user
+# logging: OFF (default, production-representative)
+# date: 2026-05-17, paranoid=1, container caps: SYS_ADMIN+PERFMON, seccomp:unconfined
+# perf version 6.8.1
+# command: su postgres -c "/usr/local/bin/perf stat -e cycles,instructions,branches,branch-misses,cache-references,cache-misses,stalled-cycles-frontend,stalled-cycles-backend -p 6246 -- /bin/sleep 10.0"
+
+
+ Performance counter stats for process id '6246':
+
+    15,515,718,273      cycles                                                                  (71.40%)
+    34,430,241,241      instructions                     #    2.22  insn per cycle            
+                                                  #    0.08  stalled cycles per insn     (71.40%)
+     6,306,811,801      branches                                                                (71.43%)
+        36,110,937      branch-misses                    #    0.57% of all branches             (71.43%)
+       451,506,861      cache-references                                                        (71.46%)
+        58,559,747      cache-misses                     #   12.97% of all cache refs           (71.45%)
+     2,920,712,944      stalled-cycles-frontend          #   18.82% frontend cycles idle        (71.43%)
+   <not supported>      stalled-cycles-backend                                                
+
+      10.001675399 seconds time elapsed
+

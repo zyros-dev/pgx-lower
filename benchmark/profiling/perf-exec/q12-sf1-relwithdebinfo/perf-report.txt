@@ -1,0 +1,947 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 10K of event 'cycles:P'
+# Event count (approx.): 9554896775
+#
+# Overhead  Command   Shared Object        Symbol                                                                                                                                                                                                                                                      
+# ........  ........  ...................  ............................................................................................................................................................................................................................................................
+#
+    18.57%  postgres  postgres             [.] heap_deform_tuple
+            |          
+            |--7.06%--heap_deform_tuple
+            |          
+            |--4.13%--process_tuple_into_batch
+            |          |          
+            |           --3.12%--0x40103
+            |          
+            |--0.90%--read_next_tuple_from_table
+            |          
+            |--0.89%--pgx_lower::log::should_log(pgx_lower::log::Category, pgx_lower::log::Level)
+            |          
+            |--0.80%--AllocSetAlloc
+            |          |          
+            |           --0.78%--0x40103
+            |          
+             --0.53%--pgx_lower::runtime::check_memory_context_safety()
+
+    11.26%  postgres  pgx_lower.so         [.] runtime::DataSourceIteration::access(runtime::DataSourceIteration::RecordBatchInfo*)
+            |          
+            |--4.43%--runtime::DataSourceIteration::access(runtime::DataSourceIteration::RecordBatchInfo*)
+            |          
+            |--2.76%--pgx_lower::log::should_log(pgx_lower::log::Category, pgx_lower::log::Level)
+            |          |          
+            |           --0.53%--0x6b726f772e2f6563
+            |          
+            |--1.16%--main
+            |          
+             --1.03%--pgx_lower::log::log(pgx_lower::log::Category, pgx_lower::log::Level, char const*, int, char const*, ...)
+                       |          
+                        --0.55%--0x6b726f772e2f6563
+
+     8.92%  postgres  pgx_lower.so         [.] pgx_lower::log::should_log(pgx_lower::log::Category, pgx_lower::log::Level)
+            |          
+            |--2.27%--runtime::DataSourceIteration::access(runtime::DataSourceIteration::RecordBatchInfo*)
+            |          
+            |--1.41%--pgx_lower::log::should_log(pgx_lower::log::Category, pgx_lower::log::Level)
+            |          
+            |--1.03%--heap_deform_tuple
+            |          
+            |--0.91%--main
+            |          
+             --0.66%--pgx_lower::log::log(pgx_lower::log::Category, pgx_lower::log::Level, char const*, int, char const*, ...)
+
+     7.04%  postgres  pgx_lower.so         [.] pgx_lower::log::log(pgx_lower::log::Category, pgx_lower::log::Level, char const*, int, char const*, ...)
+            |          
+            |--1.85%--runtime::DataSourceIteration::access(runtime::DataSourceIteration::RecordBatchInfo*)
+            |          
+            |--1.38%--pgx_lower::log::should_log(pgx_lower::log::Category, pgx_lower::log::Level)
+            |          
+             --0.84%--heap_deform_tuple
+
+     5.47%  postgres  pgx_lower.so         [.] process_tuple_into_batch
+            |          
+            |--1.41%--heap_deform_tuple
+            |          
+             --0.62%--read_next_tuple_from_table
+
+     5.04%  postgres  [unknown]            [k] 0xffffffffa9ad7ce5
+            |          
+            |--2.73%--0xffffffffa9ad7ce5
+            |          0xffffffffa9138e4f
+            |          0xffffffffa8c82392
+            |          0xffffffffa8c83d1b
+            |          0xffffffffa8ec8f50
+            |          |          
+            |           --2.68%--0xffffffffa8dc2187
+            |                     0xffffffffa8dc29f8
+            |                     0xffffffffa8dc2d02
+            |                     0xffffffffa8dc2d71
+            |                     0xffffffffa8884ba6
+            |                     0xffffffffa9adc7fe
+            |                     0xffffffffa860012b
+            |                     preadv64
+            |                     FileReadV
+            |          
+             --1.31%--0xffffffffa9ad7cc4
+                       0xffffffffa9138e4f
+                       0xffffffffa8c82392
+                       0xffffffffa8c83d1b
+                       0xffffffffa8ec8f50
+                       0xffffffffa8dc2187
+                       0xffffffffa8dc29f8
+                       0xffffffffa8dc2d02
+                       0xffffffffa8dc2d71
+                       0xffffffffa8884ba6
+                       0xffffffffa9adc7fe
+                       0xffffffffa860012b
+                       preadv64
+                       FileReadV
+
+     3.12%  postgres  jitted-6745-1.so     [.] main
+            |          
+             --1.17%--runtime::DataSourceIteration::access(runtime::DataSourceIteration::RecordBatchInfo*)
+
+     3.08%  postgres  pgx_lower.so         [.] read_next_tuple_from_table
+            |          
+             --1.84%--heap_deform_tuple
+
+     2.10%  postgres  pgx_lower.so         [.] runtime::DataSourceIteration::isValid()
+     1.75%  postgres  postgres             [.] heapgettup_pagemode
+            |          
+             --1.22%--heap_deform_tuple
+
+     1.64%  postgres  postgres             [.] AllocSetAlloc
+     1.09%  postgres  libstdc++.so.6.0.35  [.] std::ostreambuf_iterator<char, std::char_traits<char> > std::num_put<char, std::ostreambuf_iterator<char, std::char_traits<char> > >::_M_insert_int<long>(std::ostreambuf_iterator<char, std::char_traits<char> >, std::ios_base&, char, long) const
+     1.04%  postgres  pgx_lower.so         [.] pgx_lower::runtime::check_memory_context_safety()
+            |          
+             --0.54%--heap_deform_tuple
+
+     0.99%  postgres  pgx_lower.so         [.] runtime::StringRuntime::compareEq(runtime::VarLen32, runtime::VarLen32)
+     0.81%  postgres  postgres             [.] ExecStoreBufferHeapTuple
+            |          
+             --0.60%--heap_deform_tuple
+
+     0.80%  postgres  libc.so.6            [.] __sigsetjmp
+     0.78%  postgres  pgx_lower.so         [.] runtime::DataSourceIteration::next()
+     0.76%  postgres  postgres             [.] heap_getnextslot
+            |          
+             --0.51%--heap_deform_tuple
+
+     0.75%  postgres  [unknown]            [k] 0xffffffffa91388b4
+     0.74%  postgres  postgres             [.] datumCopy
+     0.74%  postgres  libc.so.6            [.] 0x000000000018840e
+     0.70%  postgres  pgx_lower.so         [.] pgx_lower::log::should_log(pgx_lower::log::Category, pgx_lower::log::Level)@plt
+     0.65%  postgres  pgx_lower.so         [.] pgx_lower::log::log(pgx_lower::log::Category, pgx_lower::log::Level, char const*, int, char const*, ...)@plt
+     0.63%  postgres  postgres             [.] hash_search_with_hash_value
+     0.57%  postgres  [unknown]            [k] 0xffffffffa9ad7577
+     0.57%  postgres  libstdc++.so.6.0.35  [.] std::basic_ostream<char, std::char_traits<char> >& std::__ostream_insert<char, std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*, long)
+     0.56%  postgres  postgres             [.] LWLockAcquire
+     0.51%  postgres  libstdc++.so.6.0.35  [.] std::ostream& std::ostream::_M_insert<long>(long)
+     0.46%  postgres  libstdc++.so.6.0.35  [.] std::basic_streambuf<char, std::char_traits<char> >::xsputn(char const*, long)
+     0.43%  postgres  postgres             [.] ExecFetchSlotHeapTuple
+     0.40%  postgres  postgres             [.] StartReadBuffers
+     0.39%  postgres  [unknown]            [k] 0xffffffffa8c81a46
+     0.33%  postgres  pgx_lower.so         [.] runtime::PgSortState::appendTuple(unsigned char const*)
+     0.27%  postgres  postgres             [.] datumTransfer
+     0.26%  postgres  [unknown]            [k] 0xffffffffa8c81a42
+     0.26%  postgres  postgres             [.] pg_detoast_datum_packed
+     0.25%  postgres  postgres             [.] LWLockRelease
+     0.22%  postgres  libc.so.6            [.] 0x000000000018862e
+     0.22%  postgres  postgres             [.] heap_prepare_pagescan
+     0.21%  postgres  postgres             [.] LockBufHdr
+     0.20%  postgres  [unknown]            [k] 0xffffffffa9af4520
+     0.18%  postgres  postgres             [.] palloc
+     0.17%  postgres  libstdc++.so.6.0.35  [.] std::ostream::sentry::sentry(std::ostream&)
+     0.14%  postgres  pgx_lower.so         [.] runtime::PgSortState::getNextTuple()
+     0.14%  postgres  pgx_lower.so         [.] heap_deform_tuple@plt
+     0.13%  postgres  postgres             [.] ResourceOwnerForget
+     0.13%  postgres  libc.so.6            [.] 0x0000000000188630
+     0.13%  postgres  libc.so.6            [.] 0x0000000000188640
+     0.12%  postgres  libc.so.6            [.] 0x0000000000189509
+     0.12%  postgres  libc.so.6            [.] 0x0000000000188628
+     0.12%  postgres  pgx_lower.so         [.] ExecFetchSlotHeapTuple@plt
+     0.12%  postgres  postgres             [.] tts_buffer_heap_get_heap_tuple
+     0.12%  postgres  libstdc++.so.6.0.35  [.] std::locale::id::_M_id() const
+     0.12%  postgres  pgx_lower.so         [.] bcmp@plt
+     0.12%  postgres  pgx_lower.so         [.] pgx_lower::runtime::check_memory_context_safety()@plt
+     0.11%  postgres  pgx_lower.so         [.] read_next_tuple_from_table@plt
+     0.11%  postgres  libc.so.6            [.] 0x0000000000189517
+     0.11%  postgres  libc.so.6            [.] 0x000000000018950e
+     0.11%  postgres  pgx_lower.so         [.] process_tuple_into_batch@plt
+     0.10%  postgres  postgres             [.] UnpinBufferNoOwner
+     0.10%  postgres  postgres             [.] read_stream_look_ahead
+     0.10%  postgres  libstdc++.so.6.0.35  [.] std::num_put<char, std::ostreambuf_iterator<char, std::char_traits<char> > >::_M_pad(char, long, std::ios_base&, char*, char const*, int&) const
+     0.09%  postgres  postgres             [.] StrategyGetBuffer
+     0.09%  postgres  postgres             [.] ResourceOwnerEnlarge
+     0.09%  postgres  pgx_lower.so         [.] pg_detoast_datum_packed@plt
+     0.09%  postgres  [unknown]            [k] 0xffffffffa8d9d296
+     0.09%  postgres  pgx_lower.so         [.] __sigsetjmp@plt
+     0.09%  postgres  libc.so.6            [.] 0x000000000018840c
+     0.09%  postgres  libc.so.6            [.] 0x0000000000189500
+     0.09%  postgres  [unknown]            [k] 0xffffffffa8601248
+     0.08%  postgres  postgres             [.] hash_bytes
+     0.08%  postgres  libc.so.6            [.] 0x0000000000188643
+     0.08%  postgres  libstdc++.so.6.0.35  [.] std::ostream::operator<<(int)
+     0.08%  postgres  pgx_lower.so         [.] std::basic_ostream<char, std::char_traits<char> >& std::__ostream_insert<char, std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*, long)@plt
+     0.08%  postgres  [unknown]            [k] 0xffffffffa91388a4
+     0.08%  postgres  [unknown]            [k] 0xffffffffa9ad7cc4
+     0.08%  postgres  libc.so.6            [.] 0x00000000001889fb
+     0.08%  postgres  libc.so.6            [.] 0x0000000000044f6d
+     0.07%  postgres  libc.so.6            [.] 0x0000000000044f5c
+     0.07%  postgres  libc.so.6            [.] 0x00000000001889f0
+     0.07%  postgres  libc.so.6            [.] 0x0000000000188320
+     0.07%  postgres  [unknown]            [k] 0xffffffffa9af4500
+     0.07%  postgres  postgres             [.] mdreadv
+     0.07%  postgres  libc.so.6            [.] 0x0000000000188b0b
+     0.07%  postgres  postgres             [.] read_stream_next_buffer
+     0.06%  postgres  libc.so.6            [.] 0x0000000000044f6e
+     0.06%  postgres  [unknown]            [k] 0xffffffffa9af4505
+     0.06%  postgres  libc.so.6            [.] 0x0000000000188aba
+     0.06%  postgres  libstdc++.so.6.0.35  [.] std::ostream& std::ostream::_M_insert<long>(long)@plt
+     0.06%  postgres  libc.so.6            [.] 0x0000000000188ad4
+     0.06%  postgres  [unknown]            [k] 0xffffffffa8c8252d
+     0.06%  postgres  postgres             [.] GetVictimBuffer
+     0.06%  postgres  postgres             [.] ReleaseBuffer
+     0.06%  postgres  libc.so.6            [.] 0x0000000000188605
+     0.05%  postgres  libc.so.6            [.] 0x0000000000188b10
+     0.05%  postgres  libc.so.6            [.] 0x0000000000188645
+     0.05%  postgres  libc.so.6            [.] 0x0000000000189504
+     0.05%  postgres  libc.so.6            [.] 0x00000000001889f4
+     0.05%  postgres  libstdc++.so.6.0.35  [.] std::ostream::sentry::sentry(std::ostream&)@plt
+     0.05%  postgres  [unknown]            [k] 0xffffffffa8d9d286
+     0.05%  postgres  [unknown]            [k] 0xffffffffa8d9d28b
+     0.05%  postgres  [unknown]            [k] 0xffffffffa8cf470c
+     0.05%  postgres  [unknown]            [k] 0xffffffffa8c82399
+     0.05%  postgres  [unknown]            [k] 0xffffffffa9ad7cea
+     0.05%  postgres  postgres             [.] memcpy@plt
+     0.05%  postgres  [unknown]            [k] 0xffffffffa8d06a1c
+     0.05%  postgres  libc.so.6            [.] 0x0000000000188ab0
+     0.05%  postgres  libc.so.6            [.] 0x0000000000188621
+     0.05%  postgres  [unknown]            [k] 0xffffffffa8d98c75
+     0.05%  postgres  pgx_lower.so         [.] datumTransfer@plt
+     0.05%  postgres  libc.so.6            [.] 0x0000000000189513
+     0.05%  postgres  postgres             [.] LockBuffer
+     0.05%  postgres  postgres             [.] TerminateBufferIO
+     0.04%  postgres  [unknown]            [k] 0xffffffffa8c81a1c
+     0.04%  postgres  [unknown]            [k] 0xffffffffa8c9672f
+     0.04%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_stringbuf<char, std::char_traits<char>, std::allocator<char> >::overflow(int)
+     0.04%  postgres  libc.so.6            [.] 0x000000000018861d
+     0.04%  postgres  postgres             [.] GetPrivateRefCountEntry
+     0.04%  postgres  [unknown]            [k] 0xffffffffa8d9cbf4
+     0.04%  postgres  [unknown]            [k] 0xffffffffa8600b90
+     0.04%  postgres  postgres             [.] WaitReadBuffers
+     0.04%  postgres  [unknown]            [k] 0xffffffffa8d9d288
+     0.04%  postgres  libc.so.6            [.] 0x0000000000188ad2
+     0.04%  postgres  libc.so.6            [.] 0x0000000000188607
+     0.04%  postgres  libstdc++.so.6.0.35  [.] std::ios_base::ios_base()
+     0.04%  postgres  libc.so.6            [.] 0x0000000000188324
+     0.04%  postgres  [unknown]            [k] 0xffffffffa8d9f533
+     0.04%  postgres  libc.so.6            [.] 0x00000000001889f7
+     0.04%  postgres  libc.so.6            [.] 0x0000000000188aec
+     0.04%  postgres  libc.so.6            [.] 0x0000000000189560
+     0.04%  postgres  libc.so.6            [.] malloc
+     0.04%  postgres  libstdc++.so.6.0.35  [.] std::locale::id::_M_id() const@plt
+     0.04%  postgres  libstdc++.so.6.0.35  [.] memset@plt
+     0.04%  postgres  libstdc++.so.6.0.35  [.] std::num_put<char, std::ostreambuf_iterator<char, std::char_traits<char> > >::do_put(std::ostreambuf_iterator<char, std::char_traits<char> >, std::ios_base&, char, long) const
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8cf41cd
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8d9d29b
+     0.03%  postgres  libc.so.6            [.] cfree
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8cf2a2d
+     0.03%  postgres  [unknown]            [k] 0xffffffffa895686c
+     0.03%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_ostringstream<char, std::char_traits<char>, std::allocator<char> >::basic_ostringstream()
+     0.03%  postgres  [unknown]            [k] 0xffffffffa9adf2de
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8c81a14
+     0.03%  postgres  postgres             [.] ResourceOwnerRemember
+     0.03%  postgres  [unknown]            [k] 0xffffffffa9138e52
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8ceb759
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8c81a19
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8d9d126
+     0.03%  postgres  [unknown]            [k] 0xffffffffa9138e4f
+     0.03%  postgres  pgx_lower.so         [.] std::ostream::operator<<(int)@plt
+     0.03%  postgres  libstdc++.so.6.0.35  [.] std::locale::locale()
+     0.03%  postgres  libstdc++.so.6.0.35  [.] 0x000000000014dd04
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8c81a24
+     0.03%  postgres  postgres             [.] tag_hash
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8c8442a
+     0.03%  postgres  libc.so.6            [.] 0x0000000000188404
+     0.03%  postgres  libc.so.6            [.] 0x0000000000044f55
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8a7ad50
+     0.03%  postgres  postgres             [.] ReservePrivateRefCountEntry
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8d2708a
+     0.03%  postgres  libc.so.6            [.] 0x0000000000189410
+     0.03%  postgres  libc.so.6            [.] 0x0000000000188b05
+     0.03%  postgres  postgres             [.] hash_search
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8d06cc0
+     0.03%  postgres  postgres             [.] heap_compute_data_size
+     0.03%  postgres  [unknown]            [k] 0xffffffffa8cf2a70
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cee71e
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d06cc3
+     0.02%  postgres  postgres             [.] ss_report_location
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8c9446b
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8ce5b8b
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d9cb90
+     0.02%  postgres  [unknown]            [k] 0xffffffffa9ae334d
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188ac6
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188408
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d09a01
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8c81b3d
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188411
+     0.02%  postgres  libstdc++.so.6.0.35  [.] operator delete(void*)
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188b32
+     0.02%  postgres  libc.so.6            [.] 0x0000000000044f64
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf4a3f
+     0.02%  postgres  postgres             [.] ExecStoreHeapTuple
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8df14d8
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf41e4
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf43a7
+     0.02%  postgres  libc.so.6            [.] 0x00000000000a9ad1
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8a7ad55
+     0.02%  postgres  [unknown]            [k] 0xffffffffa9ad7cc7
+     0.02%  postgres  postgres             [.] finish_spin_delay
+     0.02%  postgres  [unknown]            [k] 0xffffffffa9abab59
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf41e7
+     0.02%  postgres  [unknown]            [k] 0xffffffffa895655a
+     0.02%  postgres  [unknown]            [k] 0xffffffffa9ae3395
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8ce4a6c
+     0.02%  postgres  libc.so.6            [.] 0x0000000000189418
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d26038
+     0.02%  postgres  libc.so.6            [.] preadv64
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8aeae72
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188623
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d22c39
+     0.02%  postgres  postgres             [.] InvalidateVictimBuffer
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188b08
+     0.02%  postgres  libc.so.6            [.] 0x000000000018860e
+     0.02%  postgres  postgres             [.] tuplesort_puttuple_common
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d06d98
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d9d12f
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8da1302
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8ce49a0
+     0.02%  postgres  libstdc++.so.6.0.35  [.] 0x000000000015247a
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d66b19
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d642de
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d07f3c
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d9f1e5
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8da183e
+     0.02%  postgres  postgres             [.] uint32_hash
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d06a40
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8a3a435
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf4a99
+     0.02%  postgres  postgres             [.] tuplesort_gettupleslot
+     0.02%  postgres  pgx_lower.so         [.] std::__cxx11::basic_ostringstream<char, std::char_traits<char>, std::allocator<char> >::basic_ostringstream()@plt
+     0.02%  postgres  pgx_lower.so         [.] prepare_new_batch@plt
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf2c04
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d9f439
+     0.02%  postgres  libc.so.6            [.] 0x00000000001886b6
+     0.02%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::swap(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf4a89
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8a165c7
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf4a67
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8c82396
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf2c69
+     0.02%  postgres  postgres             [.] varstrfastcmp_locale
+     0.02%  postgres  postgres             [.] StartBufferIO
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf4416
+     0.02%  postgres  postgres             [.] CheckBufferIsPinnedOnce
+     0.02%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151325
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d9cb06
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d4de65
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8c94525
+     0.02%  postgres  [unknown]            [k] 0xffffffffa913880b
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf3ed6
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188400
+     0.02%  postgres  libstdc++.so.6.0.35  [.] 0x00000000001524a3
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188619
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d45dc3
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8956a65
+     0.02%  postgres  postgres             [.] heap_scan_stream_read_next_serial
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf267d
+     0.02%  postgres  libstdc++.so.6.0.35  [.] std::num_put<char, std::ostreambuf_iterator<char, std::char_traits<char> > >::_M_pad(char, long, std::ios_base&, char*, char const*, int&) const@plt
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf450f
+     0.02%  postgres  libc.so.6            [.] 0x00000000001894ba
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8da1143
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8c81acd
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188609
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf448c
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188ab5
+     0.02%  postgres  [unknown]            [k] 0xffffffffa91388af
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d287eb
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8da1826
+     0.02%  postgres  libc.so.6            [.] 0x000000000018956a
+     0.02%  postgres  [unknown]            [k] 0xffffffffa895682f
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188633
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf4245
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8ceb047
+     0.02%  postgres  postgres             [.] BufTableInsert
+     0.02%  postgres  postgres             [.] heap_form_tuple
+     0.02%  postgres  libc.so.6            [.] 0x0000000000044f67
+     0.02%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151427
+     0.02%  postgres  postgres             [.] CheckForSerializableConflictOutNeeded
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8956662
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d9f426
+     0.02%  postgres  postgres             [.] BufferGetBlockNumber
+     0.02%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000152404
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188600
+     0.02%  postgres  [unknown]            [k] 0xffffffffa89edf18
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8c82534
+     0.02%  postgres  libc.so.6            [.] 0x0000000000188615
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8d27229
+     0.02%  postgres  libc.so.6            [.] 0x0000000000044f59
+     0.02%  postgres  [unknown]            [k] 0xffffffffa9ad49c9
+     0.02%  postgres  libc.so.6            [.] 0x0000000000044f58
+     0.02%  postgres  [unknown]            [k] 0xffffffffa8cf42ab
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da2f8d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4470
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a7d628
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2c99
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeaeb7
+     0.01%  postgres  libc.so.6            [.] 0x0000000000098550
+     0.01%  postgres  libc.so.6            [.] 0x00000000000abd39
+     0.01%  postgres  postgres             [.] AllocSetReset
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81a88
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da182c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d66b64
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89f5366
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89dd0d4
+     0.01%  postgres  postgres             [.] LWLockConditionalAcquire
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138e0e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4214
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeae9f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89e7678
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95ec5
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3c83
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a27086
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81b49
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_stringbuf<char, std::char_traits<char>, std::allocator<char> >::_M_pbump(char*, char*, long)
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89568e0
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188ac4
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000015144d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9abad08
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82238
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d28605
+     0.01%  postgres  postgres             [.] ConditionVariableBroadcast
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a1deea
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cfd656
+     0.01%  postgres  [unknown]            [k] 0xffffffffa860117e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d22eb6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce49c2
+     0.01%  postgres  libc.so.6            [.] 0x000000000018941b
+     0.01%  postgres  libc.so.6            [.] 0x00000000000aafef
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee74a
+     0.01%  postgres  libc.so.6            [.] 0x0000000000044f50
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf3f2e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeae92
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95ec2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8df14d5
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8443b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9ccf1
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c934aa
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ac8983
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ab68c7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da03af
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d26ed0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8ce05
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d642d9
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::reserve(unsigned long)
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da2fc6
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::locale::~locale()
+     0.01%  postgres  [unknown]            [k] 0xffffffffa90e37a8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06a92
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbeac7
+     0.01%  postgres  libc.so.6            [.] 0x0000000000098575
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cb78df
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4195
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae33e7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d28609
+     0.01%  postgres  libc.so.6            [.] 0x00000000000a9adf
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d24307
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4a0b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06e30
+     0.01%  postgres  postgres             [.] pgstat_count_io_op
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8ce02
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8df1109
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d099fe
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8cdf0
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000152478
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8ce28
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d122
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82401
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9abacec
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81b41
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::ostreambuf_iterator<char, std::char_traits<char> > std::num_put<char, std::ostreambuf_iterator<char, std::char_traits<char> > >::_M_insert_int<long>(std::ostreambuf_iterator<char, std::char_traits<char> >, std::ios_base&, char, long) const@plt
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d234e2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d24389
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9af2967
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81b9b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da16f8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa91388b7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ad4988
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000014dd43
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8600b99
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8237a
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000014dd3b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d64290
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81a9e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae33a7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3c4b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa895684c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ab68c4
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d10b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d24323
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89e8848
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8600bb7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d20b43
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8dc20cc
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000015143b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9acb49a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89566f4
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf440c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4b46
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8dc2891
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4980
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce49c6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d22363
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4f69
+     0.01%  postgres  [unknown]            [k] 0xffffffffa90721cd
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8600080
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000152497
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000152471
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9048286
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95aed
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cc1c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee3ae
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae0792
+     0.01%  postgres  libc.so.6            [.] 0x00000000000abcca
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9af342f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8ce0a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4477
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a39f08
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81a1e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceeb6a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9af3ec0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf476c
+     0.01%  postgres  pgx_lower.so         [.] palloc@plt
+     0.01%  postgres  pgx_lower.so         [.] runtime::PgSortState::pack_datums_to_mlir(void*, bool const*, unsigned char*) const
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::locale::operator=(std::locale const&)
+     0.01%  postgres  libc.so.6            [.] 0x0000000000044f60
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8bbb284
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbac26
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151438
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a74433
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae0809
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab191
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d95c75
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a95711
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95ecb
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c944e6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9af3140
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d24395
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d4de8a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138ea6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9adc80a
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab8c8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d29f
+     0.01%  postgres  libc.so.6            [.] 0x000000000018956d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8954d9b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ac826c
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151414
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c84486
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8949517
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d642f2
+     0.01%  postgres  postgres             [.] slot_getsomeattrs_int
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89dcaea
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x00000000000f27c5
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9adc784
+     0.01%  postgres  libc.so.6            [.] 0x00000000000abd24
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a7441d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a3a43d
+     0.01%  postgres  pgx_lower.so         [.] prepare_new_batch
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8956790
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4e84
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06e48
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82636
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c9383d
+     0.01%  postgres  libc.so.6            [.] 0x00000000001886bd
+     0.01%  postgres  pgx_lower.so         [.] hashVarLenData
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeb910
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cedc6c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89edf77
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cb78e3
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c844d7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2688
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae336c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138df7
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188695
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cb17
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9f55c
+     0.01%  postgres  libc.so.6            [.] 0x000000000018943a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a14735
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ac050
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c93a10
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c94476
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d24327
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000015246c
+     0.01%  postgres  libLLVM.so.20.1      [.] 0x00000000028c846c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95a28
+     0.01%  postgres  [unknown]            [k] 0xffffffffa913887b
+     0.01%  postgres  postgres             [.] heap_page_prune_opt
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf43f8
+     0.01%  postgres  postgres             [.] IncrBufferRefCount
+     0.01%  postgres  libLLVM.so.20.1      [.] 0x0000000001ca246d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce447a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138e24
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf44aa
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8990ccd
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceea72
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138734
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x00000000001524b6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d216a1
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c844b5
+     0.01%  postgres  libLLVM.so.20.1      [.] 0x000000000193b504
+     0.01%  postgres  libc.so.6            [.] 0x0000000000044f54
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce5bd4
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf497c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06da1
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81a27
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d20c6f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4a43
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cb78c1
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cc17
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cb6b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cef359
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4969
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee6c7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf415f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d26f73
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da1833
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ab6a3c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2a32
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c957ed
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4b49
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee24d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9af450b
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_replace(unsigned long, unsigned long, char const*, unsigned long)@plt
+     0.01%  postgres  [unknown]            [k] 0xffffffffa860162e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d09a61
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf43f5
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81d3c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee5d9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c819f9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cc47
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2909
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d266
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d09b15
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d25db3
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce5b86
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000152492
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9041249
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2afa
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d287a4
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab1a4
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d2169b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c819b8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9135fe0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d99a1e
+     0.01%  postgres  libc.so.6            [.] 0x000000000018942a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee72a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d2433c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06d21
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceea48
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da3321
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d25e5c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3310
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d2432f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d1fbe4
+     0.01%  postgres  [unknown]            [k] 0xffffffffa895653d
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab176
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d23c
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188a19
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d98bf5
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8dc1685
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06b10
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d1fbec
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ababcb
+     0.01%  postgres  postgres             [.] tuplesort_puttupleslot
+     0.01%  postgres  libc.so.6            [.] 0x00000000000abcc7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89e83d1
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeae50
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8954d96
+     0.01%  postgres  pgx_lower.so         [.] runtime::Vector::getLen() const
+     0.01%  postgres  postgres             [.] ProcArrayEndTransaction
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d36c3c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d10a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4a2c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d45dbc
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4373
+     0.01%  postgres  postgres             [.] varlenafastcmp_locale
+     0.01%  postgres  postgres             [.] fill_val
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf401a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d671e5
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8239c
+     0.01%  postgres  postgres             [.] AllocSetDelete
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d2168a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ad7ce8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa90e3757
+     0.01%  postgres  [unknown]            [k] 0xffffffffa91388ff
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d234fa
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d237ae
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4a5c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8982ed7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81be2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8882d6a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138dc9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee9ed
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d25e57
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ad4941
+     0.01%  postgres  pgx_lower.so         [.] tuplesort_puttupleslot@plt
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000014dd1a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a2eebf
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c959ae
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d09cda
+     0.01%  postgres  libstdc++.so.6.0.35  [.] free@plt
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab0d8
+     0.01%  postgres  libc.so.6            [.] 0x0000000000044f69
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89c0cee
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d645bc
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06dfb
+     0.01%  postgres  [unknown]            [k] 0xffffffffa91fa9b2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a141d9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa913bc41
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c9562e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138742
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d22eca
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da2faf
+     0.01%  postgres  postgres             [.] AllocSetAllocFromNewBlock
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d28606
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89ea329
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeb948
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a83ac5
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151422
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceaebc
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89ba405
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_replace(unsigned long, unsigned long, char const*, unsigned long)
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a1419c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8982f56
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c84464
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d26034
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c83d1b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce5b50
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188a1f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d24383
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151449
+     0.01%  postgres  libstdc++.so.6.0.35  [.] memcpy@plt
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c93358
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae332d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2942
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbac77
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d262d7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2c96
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d09a58
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceb164
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9aeaa25
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceea43
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee27a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ab68c0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d1fc1e
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab428
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbe5a5
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000014dd32
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cfd478
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188ac8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d67424
+     0.01%  postgres  pgx_lower.so         [.] get_table_handle_tupledesc
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81ab3
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da2f6e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d26f65
+     0.01%  postgres  [unknown]            [k] 0xffffffffa90e376d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d0c9
+     0.01%  postgres  pgx_lower.so         [.] MemoryContextDelete@plt
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9f437
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a3ad5c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89eeb84
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a74430
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c83c66
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95a1f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa88ec48b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81a76
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee3b3
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c93926
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d2178d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceea67
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ad108b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06ca6
+     0.01%  postgres  postgres             [.] tts_minimal_getsomeattrs
+     0.01%  postgres  [unknown]            [k] 0xffffffffa88e8760
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9f177
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf3ed0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cfd666
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89c0ce6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d99a1d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a39ec0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3a8d
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000151448
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d215b2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89e7683
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aa28f2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c959c9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce3df0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4175
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cbb9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4623
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9aeaa38
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab359
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9aeaa2c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c9589b
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab785
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbbe7c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9af29c0
+     0.01%  postgres  libc.so.6            [.] 0x00000000000abd1c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a0835f
+     0.01%  postgres  postgres             [.] PageIsVerifiedExtended
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c934ec
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d22ec2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d999dd
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d67408
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2716
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ceb159
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbe5ea
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d64274
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188abf
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89eeb00
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da1865
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2c8b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2a53
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82559
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8954dbe
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ac3036
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aeaeba
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d223f9
+     0.01%  postgres  postgres             [.] cstring_to_text_with_len
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8dc2c66
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2905
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cb7205
+     0.01%  postgres  libc.so.6            [.] 0x00000000001886c2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06b22
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9138884
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d20c15
+     0.01%  postgres  postgres             [.] BumpAlloc
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d2600c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ad3c8e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c5eacd
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c8d285
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82409
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x00000000001524ae
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d21553
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce5b8c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d22ec6
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cb78e1
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000014dd2a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89f5402
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d06b06
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89e87e2
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_mutate(unsigned long, unsigned long, char const*, unsigned long)@plt
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x000000000015141e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d64208
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cbb0
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ac098
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4707
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf2bab
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf40b1
+     0.01%  postgres  libc.so.6            [.] pthread_once
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9abad2e
+     0.01%  postgres  libstdc++.so.6.0.35  [.] 0x0000000000152400
+     0.01%  postgres  postgres             [.] FileAccess
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d671f7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8df2c6a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89f5618
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d286d2
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8dc1fbb
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce3df1
+     0.01%  postgres  postgres             [.] GetCurrentTransactionStopTimestamp
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4ab9
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9abad5a
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf490c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ac427f
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9cb22
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c93813
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae0801
+     0.01%  postgres  libc.so.6            [.] 0x0000000000188c33
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ac8285
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ac07d
+     0.01%  postgres  [unknown]            [k] 0xffffffffa86015d7
+     0.01%  postgres  postgres             [.] RecoveryInProgress
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da1828
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8aacf8c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d099f4
+     0.01%  postgres  libc.so.6            [.] 0x0000000000189414
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d09b49
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82392
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ad7c70
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3808
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d27074
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d102
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89f4e87
+     0.01%  postgres  [unknown]            [k] 0xffffffffa89ff012
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf9f5c
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3a37
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c82387
+     0.01%  postgres  libLLVM.so.20.1      [.] llvm::SmallPtrSetImplBase::insert_imp_big(void const*)
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d673fe
+     0.01%  postgres  libLLVM.so.20.1      [.] 0x0000000000fe2944
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8a9573b
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d28767
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ad50cb
+     0.01%  postgres  libstdc++.so.6.0.35  [.] operator new(unsigned long)
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9aeaa20
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee1db
+     0.01%  postgres  postgres             [.] get_hash_value
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cfd476
+     0.01%  postgres  libc.so.6            [.] 0x00000000000ab178
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ae3a94
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c9598e
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cf4a04
+     0.01%  postgres  pgx_lower.so         [.] mlir::RegisteredOperationName::Model<mlir::LLVM::SwitchOp>::~Model()
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8ce4620
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8da10eb
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cbe5a0
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95ea7
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c9391e
+     0.01%  postgres  libMLIR.so.20.1      [.] 0x00000000011f3815
+     0.01%  postgres  libstdc++.so.6.0.35  [.] std::ios_base::~ios_base()
+     0.01%  postgres  libLLVM.so.20.1      [.] llvm::object::ELFObjectFile<llvm::object::ELFType<(llvm::endianness)1, true> >::getRela(llvm::object::DataRefImpl) const
+     0.01%  postgres  [unknown]            [k] 0xffffffffa9ac25aa
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8cee723
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81a36
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8d9d248
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c81ac8
+     0.01%  postgres  [unknown]            [k] 0xffffffffa8c95eee
+     0.01%  postgres  postgres             [.] BufTableLookup
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8aafe7d
+     0.00%  postgres  [unknown]            [k] 0xffffffffa9ab6a16
+     0.00%  postgres  [unknown]            [k] 0xffffffffa89496c4
+     0.00%  postgres  [unknown]            [k] 0xffffffffa89eeb08
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8c56896
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8601884
+     0.00%  postgres  [unknown]            [k] 0xffffffffa9ae0164
+     0.00%  postgres  [unknown]            [k] 0xffffffffa88dcb11
+     0.00%  postgres  [unknown]            [k] 0xffffffffa88dcac7
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8c61cc4
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8894489
+     0.00%  postgres  [unknown]            [k] 0xffffffffa9ae080a
+     0.00%  postgres  [unknown]            [k] 0xffffffffa888ea7e
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8c62575
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8c571fa
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8c571f7
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8893c8b
+     0.00%  postgres  [unknown]            [k] 0xffffffffa89496ca
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8a7441e
+     0.00%  postgres  [unknown]            [k] 0xffffffffa8893c8a
+     0.00%  postgres  [unknown]            [k] 0xffffffffa89496cc
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
