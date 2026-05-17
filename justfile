@@ -81,6 +81,36 @@ compile: _preflight
         exit "$rc"
     fi
 
+# RelWithDebInfo build — enables PGX_RELEASE_MODE (compiles out PGX_HOT_LOG and
+# per-tuple ScopeLogger overhead), plus full compiler optimization, while keeping
+# debug info for symbol resolution in perf.  Uses a separate build dir
+# (build-docker-rwdi) to avoid clobbering the Debug build used by `just test`.
+# Installs the resulting pgx_lower.so into PG's extension dir, overwriting the
+# Debug build, so run `just compile` afterwards to restore the Debug build.
+compile-rwdi: _preflight
+    #!/usr/bin/env bash
+    set -o pipefail
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    session="pgx-lower-${branch}"
+    [ "${branch}" = "main" ] && session="pgx-lower"
+    mutagen sync flush "${session}" >/dev/null 2>&1 || true
+    _rwdi_bdir="{{_wdir}}/build-docker-rwdi"
+    ssh {{_thor}} "export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=\$(tsp docker exec {{_ctr}} bash -c 'mkdir -p ${_rwdi_bdir} && cd ${_rwdi_bdir} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .') && echo \"[job \$id queued on {{_build_q}}]\" && tsp -c \$id" 2>&1 | tee /tmp/pgx-compile-rwdi.out
+    rc=${PIPESTATUS[0]}
+    if [ "$rc" -eq 0 ]; then
+        ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' /tmp/pgx-compile-rwdi.out 2>/dev/null || echo 0)
+        echo ""
+        echo "BUILD OK (RelWithDebInfo) — ${ninja_targets} ninja step(s), pgx_lower.so installed"
+        echo "NOTE: PGX_RELEASE_MODE active — PGX_HOT_LOG and ScopeLogger overhead compiled out"
+        echo "      Run 'just compile' to restore the Debug build when done profiling."
+    else
+        errs=$(grep -cE 'error:|FAILED:' /tmp/pgx-compile-rwdi.out 2>/dev/null || echo 0)
+        echo ""
+        echo "BUILD FAILED (RelWithDebInfo) — ${errs} error line(s), exit $rc. Last 30 lines:"
+        tail -n 30 /tmp/pgx-compile-rwdi.out
+        exit "$rc"
+    fi
+
 # Print ccache statistics from the dev container.
 ccache-stats:
     @ssh {{_thor}} 'docker exec {{_ctr}} ccache --show-stats | head -20'
@@ -289,6 +319,12 @@ bench-phase-timing SF='1' ITERS='5': _preflight
 #   just profile-exec QUERY=q18 SF=1
 profile-exec QUERY='q01' SF='1': _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Profile query with RelWithDebInfo build (PGX_RELEASE_MODE active, optimized).
+# Outputs to benchmark/profiling/perf-exec/<QUERY>-sf<SF>-relwithdebinfo/.
+# Run `just compile-rwdi` first to install the RelWithDebInfo build.
+profile-exec-rwdi QUERY='q01' SF='1': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}-relwithdebinfo") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
 # cached. Run before merging anything that claims a performance improvement

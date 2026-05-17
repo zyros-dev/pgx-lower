@@ -108,6 +108,60 @@ attach step.  `perf record -- <child>` (tracing own child) works unrestricted.
 
 ---
 
+## RelWithDebInfo Build (PGX_RELEASE_MODE)
+
+**Status: CONFIRMED working as of 2026-05-17.**
+
+### Build invocation
+
+```bash
+# In worktree or main repo:
+just compile-rwdi
+
+# Under the hood (in Docker container on thor):
+mkdir -p build-docker-rwdi
+cd build-docker-rwdi
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DBUILD_ONLY_EXTENSION=ON \
+      -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+      -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+      /workspace/.worktrees/<slug>
+cmake --build .
+cmake --install .
+```
+
+Build dir: `build-docker-rwdi/` (separate from `build-docker-ptest/` for Debug).
+Install: overwrites `/usr/local/pgsql/lib/pgx_lower.so`.
+Run `just compile` to restore the Debug build.
+
+### What PGX_RELEASE_MODE eliminates (and what it does NOT)
+
+CMakeLists.txt:135-137 defines `PGX_RELEASE_MODE=1` for Release/RelWithDebInfo/Profile.
+
+| Macro | Debug | RelWithDebInfo (PGX_RELEASE_MODE) |
+|-------|-------|----------------------------------|
+| `PGX_HOT_LOG` | active (per-tuple LOG call) | **compiled out** → `((void)0)` |
+| `PGX_IO` (per-tuple `should_log` + `ScopeLogger`) | active | **NOT eliminated** — still fires |
+| LLVM module verification | active | **compiled out** |
+
+**Critical finding:** `PGX_IO` overhead (10.23% `should_log` + 7.28% `log::log`) persists
+in the RelWithDebInfo profile. `PGX_RELEASE_MODE` only gates `PGX_HOT_LOG`. To eliminate
+per-tuple PGX_IO overhead in production builds, `PGX_IO` itself must also be gated on
+`#ifndef PGX_RELEASE_MODE`.
+
+### Performance impact of RelWithDebInfo vs Debug
+
+At SF=1, Q01:
+
+| Metric | Debug | RelWithDebInfo |
+|--------|-------|---------------|
+| Query wall time | ~23 s | ~4 s (5.75× faster) |
+| Cycles | 34.2B | 15.5B |
+| IPC | 1.60 | 2.22 |
+| Frontend stalls | 36.15% | 18.82% |
+
+---
+
 ## Why SF=1 makes compile-phase gating unnecessary
 
 At SF=1, TPC-H Q01 execution dominates compile by ~70–175×:
@@ -150,14 +204,26 @@ hypothesis (those functions dominating per-tuple decode) is **not confirmed
 by this profile**.  The actual dominant cost is the logging subsystem
 (see Dry-run status below for details).
 
-**JITed-frame symbolization (perf jitdump / `perf inject --jit`)**: LLVM's
-MCJIT can write a `jit-<pid>.dump` file that `perf inject --jit` uses to
-annotate JITed frames with source-line information.  This is nice-to-have.
-Status: JITed frames appear as `[JIT] tid 865 [.] 0x0000705010a021b6` (two
-raw-address JIT entries totalling ~0.09% of samples).  JIT execution time
-is negligible in this profile — the hot path is entirely in `pgx_lower.so`
-C++ code, not in the JITed MLIR-generated LLVM IR.  `perf inject --jit`
-was not attempted; not needed given the JIT share is < 0.1%.
+**JITed-frame symbolization (perf jitdump / `perf inject --jit`)**: CONFIRMED working.
+
+Method:
+1. `perf record -k 1` (CLOCK_MONOTONIC clockid) — required for jitdump timestamp correlation
+2. MLIR ExecutionEngine has `enablePerfNotificationListener=true` by default, which registers
+   `createPerfJITEventListener()`. This writes `/tmp/jit-<pid>.dump` during execution.
+3. `perf inject --jit -i perf.data -o perf-jit.data` merges the jitdump into the output.
+4. `perf report -i perf-jit.data` resolves JIT frames by name.
+
+**No code changes were needed** — the LLVM perf JIT listener is already wired in MLIR's
+ExecutionEngine. Only `-k 1` in `perf record` and the `perf inject --jit` step were missing.
+
+Result from the RelWithDebInfo profile:
+- JIT function `main` appears as `4.28%` in `jitted-6238-1.so`
+- Prior Debug profile: JIT frames were raw addresses `0x705010a021b6` (~0.09% of samples)
+- The 4.28% in RelWithDebInfo is the actual JIT-compiled query loop cost (much larger
+  than Debug's 0.09% because JIT optimization is ON in RelWithDebInfo)
+
+`run_perf_profile.py` now includes `-k 1` in `perf record` and the `perf inject --jit`
+step automatically (results written to `perf-jit.data`; used for `perf report`).
 
 ---
 
@@ -262,5 +328,52 @@ SELECT pg_reload_conf();
 
 **FFI-wall hypothesis: NOT confirmed.**  `extract_field`/`get_*_field_mlir` not in profile.
 True bottleneck: numeric conversion + per-column batch fill + PGX_IO overhead.
+
+Full analysis: `benchmark/profiling/exec-axis/findings.md`.
+
+---
+
+## Decisive profile (RelWithDebInfo, logging OFF, JIT symbolized) — Task 5 Round 2
+
+**Artifacts:** `benchmark/profiling/perf-exec/q01-sf1-relwithdebinfo/`
+
+| File | Size | Notes |
+|------|------|-------|
+| `perf.data` | 1.3 MB | fp call-graph, -k 1, 15,701 samples (gitignored) |
+| `perf-jit.data` | 1.3 MB | jit-injected (perf inject --jit; gitignored) |
+| `perf-report.txt` | 77 KB | committed; generated from perf-jit.data |
+| `perf-stat.txt` | 1.5 KB | committed |
+
+**Build:** RelWithDebInfo (`just compile-rwdi`), `PGX_RELEASE_MODE=1`, Clang 20 O2+.
+**GUC contamination:** `ALTER SYSTEM RESET` baked into `run_perf_profile.py` — runs automatically.
+**JIT symbolization:** `-k 1` + `perf inject --jit` — JIT `main` visible at 4.28%.
+
+**Key hardware counters:**
+
+| Metric | Debug+GUC-OFF | RelWithDebInfo+GUC-OFF |
+|--------|---------------|------------------------|
+| Cycles | 34.2B | 15.5B |
+| IPC | 1.60 | 2.22 |
+| Frontend stalls | 36.15% | 18.82% |
+| Query wall time | ~23 s | ~4 s |
+
+**Top symbols (RelWithDebInfo):**
+
+| Symbol | % | Group |
+|--------|---|-------|
+| `heap_deform_tuple` | 11.12% | PG decode |
+| `should_log` | 10.23% + 1.26%@plt | PGX_IO (NOT eliminated by PGX_RELEASE_MODE) |
+| `numeric_to_i128` | 9.21% | numeric conversion |
+| `DataSourceIteration::access` | 8.02% | per-column decode |
+| `log::log` | 7.28% + 0.86%@plt | PGX_IO |
+| `process_tuple_into_batch` | 5.15% | batch fill |
+| `AllocSetAlloc` | 4.52% | PG allocator |
+| `main` (JIT, `jitted-<pid>-1.so`) | 4.28% | JIT query loop |
+| `detoast_attr` | 2.89% | PG detoast |
+| `__divti3` | 2.42% | 128-bit division |
+
+**FFI-wall hypothesis: DEFINITIVELY REFUTED.**
+`extract_field`/`get_*_field_mlir` not in profile in either Debug or RelWithDebInfo.
+JIT is now symbolized and shows only 4.28% self — not dominated by FFI overhead.
 
 Full analysis: `benchmark/profiling/exec-axis/findings.md`.

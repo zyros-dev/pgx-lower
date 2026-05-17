@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-17
 **Query:** Q01 @ SF=1
-**Build:** Debug (CMAKE_BUILD_TYPE=Debug, no PGX_RELEASE_MODE)
+**Builds profiled:** Debug (no PGX_RELEASE_MODE) + **RelWithDebInfo (PGX_RELEASE_MODE, optimized)** — see below
 **Profiler:** perf 6.8.1, frame-pointer call-graph (`--call-graph fp`), attached to postgres backend PID as postgres user
 
 ---
@@ -131,17 +131,86 @@ but the FFI entry points themselves are not hot as independent functions.
 
 ---
 
-## 7. Notes for Downstream Work
+## 7. RelWithDebInfo Profile — Before/After vs Debug Clean
 
-- **Spec 06 (data types):** `numeric_to_i128` at 7.67% + `__divti3` + `AllocSetAlloc` from
-  NUMERIC detoasting make NUMERIC conversion the single biggest real bottleneck. Priority.
-- **`PGX_IO` per-tuple overhead:** 11-13% in production calls to `should_log()` and
-  ScopeLogger optional machinery. Should be eliminated with `PGX_RELEASE_MODE` build
-  or by adding a fast-path compile-time flag to `PGX_IO`.
-- **RelWithDebInfo build:** For the next validation step, build with `RelWithDebInfo`
-  to enable `PGX_RELEASE_MODE`, eliminate `PGX_HOT_LOG`, and get compiler optimization.
-  This will expose whether `extract_field`/`get_*_field_mlir` emerge as hot in an
-  optimized build.
-- **Call-graph note:** `--call-graph fp` (3.6MB perf.data, ~60s report) is correct for this
-  codebase. Prior `--call-graph dwarf` produced 289MB data, multi-hour perf report processing
-  (Debug build, 123MB DWARF). Avoid dwarf call-graph for routine profiling.
+Source: `benchmark/profiling/perf-exec/q01-sf1-relwithdebinfo/`
+15,701 samples; 15.5B cycles; IPC=2.22; 18.82% frontend stalls
+
+| Metric | Debug+GUC-OFF (clean) | RelWithDebInfo+GUC-OFF (decisive) |
+|--------|----------------------|-----------------------------------|
+| PGX_RELEASE_MODE | No | **Yes** |
+| Query wall time | ~23 s | **~4 s (5.75× faster)** |
+| Cycles | 34.2B | **15.5B** |
+| IPC | 1.60 | **2.22** |
+| Frontend stalls | 36.15% | **18.82%** |
+| `heap_deform_tuple` | 4.94% | **11.12%** |
+| `should_log` (PGX_IO) | ~6.1% + 1.22%@plt | **10.23% + 1.26%@plt** |
+| `numeric_to_i128` | 7.67% | **9.21%** |
+| `DataSourceIteration::access` | 8.49% | **8.02%** |
+| `log::log` (PGX_IO) | ~5.0% | **7.28%** |
+| `process_tuple_into_batch` | 5.73% | **5.15%** |
+| JIT `main` | (raw address, ~0.09%) | **4.28% (symbolized!)** |
+| `__divti3` | 1.22% | **2.42%** |
+| FFI symbols (`extract_field` etc.) | NOT FOUND | **NOT FOUND** |
+
+Key observations:
+- **`heap_deform_tuple` rose from 4.94% to 11.12%** because PGX_IO overhead shrank
+  proportionally with optimizer eliminating redundant code — heap decode is now more
+  visible as a fraction.
+- **PGX_IO overhead did NOT disappear in RelWithDebInfo** — `PGX_RELEASE_MODE` only
+  eliminates `PGX_HOT_LOG`, not `PGX_IO`. The guard overhead is real and still ~19%
+  of total samples.
+- **JIT frames ARE now symbolized** — `main` in `jitted-<pid>-1.so` at 4.28%.
+- **FFI-wall still not present** — `extract_field`/`get_*_field_mlir` absent.
+
+---
+
+## 8. FFI-Wall Hypothesis: DEFINITIVELY REFUTED
+
+**VERDICT: FFI-WALL REFUTED (decisive, production-representative build)**
+
+With JIT symbolization working and code fully optimized:
+- The JIT function (`main` in `jitted-<pid>-1.so`) runs 4.28% of cycles
+- Its subtree calls: `should_log` 1.12%, `DataSourceIteration::access` 0.67%, self 0.84%
+- `extract_field`/`get_*_field_mlir` do NOT appear at any percentage
+- The JIT→C++ boundary is NOT the bottleneck
+
+True production bottlenecks (in order of impact):
+1. **PGX_IO overhead** (~19.6%): `should_log` + `log::log` not compiled out by PGX_RELEASE_MODE
+2. **PG tuple decode** (~16%): `heap_deform_tuple` 11.12% + `AllocSetAlloc` 4.52%
+3. **Numeric conversion** (~11.6%): `numeric_to_i128` 9.21% + `__divti3` 2.42%
+4. **Per-column decode** (~8%): `DataSourceIteration::access` 8.02%
+5. **JIT loop overhead** (~4.28%): the optimized query loop itself (arithmetic + FFI calls)
+
+---
+
+## 9. Notes for Downstream Work
+
+- **Spec 06 (data types):** `numeric_to_i128` 9.21% + `__divti3` 2.42% = 11.6% on
+  NUMERIC conversion for Q01. This is the single largest addressable per-query cost
+  after PGX_IO. Priority target for spec 06.
+
+- **PGX_IO overhead (19.6% in RelWithDebInfo):** `PGX_RELEASE_MODE` only eliminates
+  `PGX_HOT_LOG`, NOT `PGX_IO`. The `PGX_IO` macro must also be gated on
+  `#ifndef PGX_RELEASE_MODE` (or equivalent) to eliminate per-tuple `should_log()`
+  calls in production builds. This is the largest single addressable bottleneck overall.
+
+- **PG tuple decode (11.12% `heap_deform_tuple` + 4.52% `AllocSetAlloc`):** Structural
+  PostgreSQL cost. Spec 05 (decode-at-scan) addresses part of this. Remaining cost
+  is inherent in the PG heap access model.
+
+- **FFI-wall is not the bottleneck.** Do not optimize `extract_field`/`get_*_field_mlir`
+  dispatch — they are not independently hot in either Debug or RelWithDebInfo profiles.
+  The JIT-to-C++ boundary cost is real but modest (~1-2% visible in JIT call tree).
+
+- **RelWithDebInfo build:** `just compile-rwdi` triggers a RelWithDebInfo build to
+  `build-docker-rwdi/`, installs to PG extension dir, with `PGX_RELEASE_MODE` active.
+  Run `just compile` to restore the Debug build. Build takes ~3 minutes on thor.
+
+- **JIT symbolization:** Use `perf record -k 1` + `perf inject --jit` for all future
+  profiles. MLIR ExecutionEngine already has `enablePerfNotificationListener=true` by
+  default — no code changes needed. The jitdump approach is confirmed working.
+
+- **Call-graph note:** `--call-graph fp` (1.2MB perf.data, ~60s report) is correct for
+  this codebase. Prior `--call-graph dwarf` produced 289MB data, multi-hour perf report.
+  Avoid dwarf call-graph for routine profiling.

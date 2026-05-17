@@ -62,6 +62,18 @@ import psycopg2
 
 QUERIES_DIR = Path(__file__).parent.parent.parent / "tpch" / "queries"
 
+# ---------------------------------------------------------------------------
+# JIT symbolization note
+# ---------------------------------------------------------------------------
+# MLIR ExecutionEngine sets enablePerfNotificationListener=True by default,
+# which registers createPerfJITEventListener().  When perf record runs with
+# -k 1 (CLOCK_MONOTONIC clockid), the LLVM JIT writes a jitdump file at
+# /tmp/jit-<pid>.dump.  After recording, `perf inject --jit` merges that
+# jitdump into perf.data, enabling JIT frame symbolization in perf report.
+# Without -k 1, the jitdump is written but timestamps mismatch and perf
+# inject cannot correlate samples to JIT frames.
+# ---------------------------------------------------------------------------
+
 PERF_STAT_EVENTS = (
     "cycles,instructions,branches,branch-misses,"
     "cache-references,cache-misses,"
@@ -73,6 +85,26 @@ def pg_connect(port: int) -> psycopg2.extensions.connection:
     return psycopg2.connect(
         host="localhost", port=port, database="postgres", user="postgres"
     )
+
+
+def reset_system_gucs(port: int) -> None:
+    """
+    Reset pgx_lower GUCs in postgresql.auto.conf via ALTER SYSTEM RESET.
+
+    This prevents contamination from prior phase-timing runs that use
+    ALTER SYSTEM SET pgx_lower.log_enable='on', which persists across
+    sessions.  Session-level SET does NOT override ALTER SYSTEM in all
+    cases — baking the RESET here guarantees a clean baseline.
+    """
+    conn = pg_connect(port)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("ALTER SYSTEM RESET pgx_lower.log_enable")
+        cur.execute("ALTER SYSTEM RESET pgx_lower.log_io")
+        cur.execute("ALTER SYSTEM RESET pgx_lower.enabled_categories")
+        cur.execute("SELECT pg_reload_conf()")
+    conn.close()
+    print("  [reset_system_gucs] ALTER SYSTEM RESET log_enable/log_io/enabled_categories + pg_reload_conf()")
 
 
 def ensure_tpch_loaded(port: int, sf: float) -> None:
@@ -227,6 +259,7 @@ def attach_perf_record(perf_bin: str, backend_pid: int, perf_data: str) -> subpr
     abs_perf_data = str(Path(perf_data).resolve())
     cmd_str = (
         f"{perf_bin} record -g --call-graph fp "
+        f"-k 1 "  # CLOCK_MONOTONIC: required for perf inject --jit JIT frame correlation
         f"-p {backend_pid} -o {abs_perf_data}"
     )
     # su postgres -c "..." — works when running as container root
@@ -273,6 +306,15 @@ def main() -> None:
     args = parser.parse_args()
 
     check_perf(args.perf_bin)
+
+    # Reset system-level GUCs before any query runs.
+    # This prevents contamination from prior ALTER SYSTEM SET calls (e.g., from
+    # phase-timing runs).  Must run before ensure_tpch_loaded and warm-up.
+    print("\n=== Resetting system GUCs (ALTER SYSTEM RESET) ===")
+    try:
+        reset_system_gucs(args.port)
+    except Exception as e:
+        print(f"  WARNING: could not reset GUCs: {e} — continuing (session SET will still override)")
 
     query_sql_path = QUERIES_DIR / f"{args.query}.sql"
     if not query_sql_path.exists():
@@ -365,6 +407,39 @@ def main() -> None:
         print("WARNING: perf.data is empty — perf attach may have failed.")
         print("  Check that su postgres works and paranoid=1 is set on the host.")
 
+    # ── perf inject --jit (merge jitdump for JIT frame symbolization) ─────────
+    # MLIR ExecutionEngine registers createPerfJITEventListener() by default,
+    # which writes /tmp/jit-<pid>.dump when perf record runs with -k 1.
+    # perf inject --jit merges that jitdump into perf.data so JIT frames
+    # appear with function names instead of raw addresses in perf report.
+    jit_data = str(out_dir / "perf-jit.data")
+    if size_bytes > 0:
+        print(f"\n=== perf inject --jit (JIT frame symbolization) ===")
+        abs_jit_data = str(Path(jit_data).resolve())
+        abs_perf_data_inject = str(Path(perf_data).resolve())
+        inject_cmd_str = (
+            f"{args.perf_bin} inject --jit "
+            f"-i {abs_perf_data_inject} "
+            f"-o {abs_jit_data}"
+        )
+        # Run as postgres since perf.data is postgres-owned
+        inject_result = subprocess.run(
+            ["su", "postgres", "-c", inject_cmd_str],
+            capture_output=True, text=True,
+        )
+        print(f"  exit: {inject_result.returncode}")
+        if inject_result.returncode == 0:
+            jit_size = Path(abs_jit_data).stat().st_size if Path(abs_jit_data).exists() else 0
+            print(f"  perf-jit.data written ({jit_size:,} bytes) — JIT frames symbolized")
+            # Use jit-injected data for the report
+            perf_data_for_report = abs_jit_data
+        else:
+            print(f"  WARNING: perf inject --jit failed: {inject_result.stderr[:400]}")
+            print(f"  Falling back to raw perf.data for report (JIT frames as raw addresses)")
+            perf_data_for_report = str(Path(perf_data).resolve())
+    else:
+        perf_data_for_report = str(Path(perf_data).resolve())
+
     # ── perf stat (second query execution, attach via -p + sleep) ────────────
     print(f"\n=== perf stat ({args.query} @ SF={args.sf}) ===")
     print(f"  output: {perf_stat_txt}")
@@ -416,8 +491,11 @@ def main() -> None:
     # ── perf report ──────────────────────────────────────────────────────────
     if Path(perf_data).exists() and size_bytes > 0:
         print(f"\n=== perf report ({args.query} @ SF={args.sf}) ===")
-        abs_perf_data = str(Path(perf_data).resolve())
+        # Use jit-injected data if available (for JIT frame symbolization),
+        # else fall back to raw perf.data.
+        report_input = perf_data_for_report if 'perf_data_for_report' in dir() else str(Path(perf_data).resolve())
         abs_report_txt = str(Path(perf_report_txt).resolve())
+        print(f"  input: {report_input}")
         # perf.data is owned by postgres (written by su postgres perf record).
         # perf report must run as the same user OR with -f (force).
         # Use su postgres to avoid ownership errors; pipe stdout through
@@ -426,7 +504,7 @@ def main() -> None:
         # large DWARF — 2>/dev/null sends those errors to null).
         report_cmd_str = (
             f"{args.perf_bin} report --stdio --no-children "
-            f"-i {abs_perf_data} 2>/dev/null"
+            f"-i {report_input} 2>/dev/null"
         )
         with open(perf_report_txt, "w") as report_out:
             report_result = subprocess.run(
