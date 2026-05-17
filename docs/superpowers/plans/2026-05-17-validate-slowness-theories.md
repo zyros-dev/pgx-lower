@@ -100,8 +100,9 @@ Expected: the call sites that delimit ① translate, ② lowering staircase, ③
 
 - [ ] **Step 2: Add monotonic-clock timing around the four sub-phases**
 
-Wrap each region with `std::chrono::steady_clock` start/stop; accumulate into a struct and emit one structured log line per query, e.g.:
-`PGXL_PHASE_TIMING translate_ms=.. lowering_ms=.. jit_ms=.. exec_ms=.. query=<id>`
+Wrap each region with `std::chrono::steady_clock` start/stop; accumulate into a struct and emit one structured log line per query:
+`PGXL_PHASE_TIMING setup_ms=.. translate_ms=.. lowering_ms=.. jit_ms=.. exec_ms=.. query=<id>`
+Five phases: **setup** (MLIRContext ctor + 14 dialect loads), **translate** (PG AST → RelAlg), **lowering** (RelAlg → LLVM dialect), **jit** (JITEngine ctor + register_dialects + ORC compile), **exec** (native run). Total compile = setup+translate+lowering+jit.
 Guard behind the existing logging GUC so it is opt-in and adds no hot-path cost when off. **No behaviour change** — timing only.
 
 - [ ] **Step 3: Build**
@@ -112,7 +113,7 @@ Expected: success.
 - [ ] **Step 4: Verify the log line appears and the split is sane**
 
 Run: `just bench` with the timing GUC on, one query.
-Expected: a `PGXL_PHASE_TIMING` line; `lowering_ms` ≫ `jit_ms` (sanity check of the prior ~236/15 indication).
+Expected: a `PGXL_PHASE_TIMING` line with all five fields; sanity check: `(setup+translate+lowering)` vs `jit_ms` indicates which side dominates compile (prior indication: MLIR-side ≫ jit).
 
 - [ ] **Step 5: Commit**
 
@@ -201,16 +202,16 @@ git commit -m "feat: perf profiling recipe + tooling decision record"
 
 - [ ] **Step 1: Hypothesis**
 
-H1: of total compile time, the MLIR lowering staircase ≫ LLVM/JIT codegen (prior indication ~236 ms vs ~15 ms).
+H1: of total compile time, the MLIR-side cost (setup+translate+lowering) ≫ LLVM/JIT codegen (`jit_ms`) — prior indication ~236 ms vs ~15 ms. `setup_ms` (MLIRContext ctor + 14 dialect loads) is now separately visible and suspected to be a large fraction of that MLIR-side total.
 
 - [ ] **Step 2: Measure across all TPC-H queries at SF=1**
 
-Use the Phase-1 phase timing; aggregate `lowering_ms` vs `jit_ms` (geomean + per-query) into `compile-axis/report.md`.
+Use the Phase-1 phase timing; aggregate `(setup_ms + translate_ms + lowering_ms)` vs `jit_ms` (geomean + per-query) into `compile-axis/report.md`. Also break out `setup_ms` alone so the dialect-load cost is quantified.
 
 - [ ] **Step 3: Decision gate**
 
-Criterion: `lowering_ms / (lowering_ms + jit_ms)` ≥ 0.8 geomean.
-- YES → compile-axis bottleneck = MLIR lowering, **validated**. The relevant fix is the plan/compile cache + lowering shave (Phase 6), not a faster backend.
+Criterion: `(setup_ms + translate_ms + lowering_ms) / (setup_ms + translate_ms + lowering_ms + jit_ms)` ≥ 0.8 geomean — i.e. MLIR-side cost (setup+translate+lowering) ≫ jit.
+- YES → compile-axis bottleneck = MLIR-side (setup/translate/lowering), **validated**. The relevant fix is the plan/compile cache + lowering shave + context amortization (Phase 6), not a faster backend.
 - NO → record the actual split; revise the compile-axis fix story accordingly.
 
 - [ ] **Step 4: Commit**
@@ -312,4 +313,4 @@ Note: Umbra's *playbook* (Flying Start) does **not** port — it kills LLVM late
 
 - **Spec coverage:** validate compile axis (Phase 3), validate execution/FFI axis (Phases 1–2 prerequisite + Phase 4), tool research incl. Magic-Trace-rejection + perf (Phase 2), scale-factor runs (Phase 1), data-types-first concern (Phase 5), branch-not-reset (Task 0), fix roadmap gated on validation (Phase 6) — all present and traced to the conversation's requirements.
 - **Placeholder scan:** no "TBD"/"handle edge cases"; commands and decision criteria are concrete. Where exact line numbers would drift, a `grep`/locate step is the action (intentional, not a placeholder).
-- **Consistency:** artifact paths under `benchmark/profiling/<experiment>/` throughout; phase-timing field names (`translate_ms/lowering_ms/jit_ms/exec_ms`) used consistently across Tasks 1, 3, 4; the compile/exec-separation rule is invariant from Phase 1 onward.
+- **Consistency:** artifact paths under `benchmark/profiling/<experiment>/` throughout; phase-timing field names (`setup_ms/translate_ms/lowering_ms/jit_ms/exec_ms`) used consistently across Tasks 1, 3, 4; the compile/exec-separation rule is invariant from Phase 1 onward; total compile = setup+translate+lowering+jit.

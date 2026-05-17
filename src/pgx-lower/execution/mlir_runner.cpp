@@ -58,16 +58,23 @@ bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 
 // Internal timing struct — populated only when pgx_lower.log_enable is on.
-// Only jit_ms and exec_ms are filled by executeJITWithDestReceiverTimed;
+// setup_ms and jit_ms are filled by executeJITWithDestReceiverTimed;
 // translate_ms and lowering_ms are measured directly in run_mlir_with_dest_receiver.
+// setup_ms covers MLIRContext construction + setupMLIRContextForJIT (14 dialect loads).
+// jit_ms covers JITEngine ctor (setup_llvm_target) + register_dialects + engine.compile().
 struct PhaseTimings {
-    double jit_ms  = 0.0;
-    double exec_ms = 0.0;
+    double setup_ms = 0.0;
+    double jit_ms   = 0.0;
+    double exec_ms  = 0.0;
 };
 
 // Internal overload: same logic as the public one but fills *timings when non-null.
+// When timings != nullptr, the setup_start passed in is the time point captured just before
+// MLIRContext construction; setup_ms is computed as (end of setupMLIRContextForJIT - setup_start).
 bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, DestReceiver* dest,
-                                     PhaseTimings* timings);
+                                     PhaseTimings* timings,
+                                     std::chrono::steady_clock::time_point setup_start,
+                                     std::chrono::steady_clock::time_point setup_end);
 
 #ifdef POSTGRESQL_EXTENSION
 auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest)
@@ -80,16 +87,26 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
     }
 
     try {
-        ::mlir::MLIRContext context;
-        if (!setupMLIRContextForJIT(context)) {
-            return false;
-        }
-
         // Determine once whether we should collect per-phase timing.
         // Uses should_log so we only pay timer overhead when the log line will actually fire.
         // Zero cost when pgx_lower.log_enable is off (the dominant, default case).
         const bool timing_enabled = pgx_lower::log::should_log(
             pgx_lower::log::Category::GENERAL, pgx_lower::log::Level::IO);
+
+        // Phase 0: MLIRContext construction + dialect registration (setup_ms).
+        // Timer must start BEFORE MLIRContext construction — that object and
+        // setupMLIRContextForJIT (14 getOrLoadDialect calls + diagnostic handler)
+        // are the prime suspects for unmeasured per-query compile cost.
+        const auto t0_start = timing_enabled ? std::chrono::steady_clock::now()
+                                             : std::chrono::steady_clock::time_point{};
+
+        ::mlir::MLIRContext context;
+        if (!setupMLIRContextForJIT(context)) {
+            return false;
+        }
+
+        const auto t0_end = timing_enabled ? std::chrono::steady_clock::now()
+                                           : std::chrono::steady_clock::time_point{};
 
         // Phase 1: PostgreSQL AST to RelAlg translation
         const auto t1_start = timing_enabled ? std::chrono::steady_clock::now()
@@ -156,10 +173,12 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         const auto t2_end = timing_enabled ? std::chrono::steady_clock::now()
                                            : std::chrono::steady_clock::time_point{};
 
-        // Phases 3 + 4: JIT compile then native execution (timed internally when enabled)
+        // Phases 3 + 4: JIT compile then native execution (timed internally when enabled).
+        // Pass setup_start/setup_end so executeJITWithDestReceiverTimed can compute setup_ms.
         PhaseTimings timings;
         if (!executeJITWithDestReceiverTimed(*module, estate, dest,
-                                             timing_enabled ? &timings : nullptr)) {
+                                             timing_enabled ? &timings : nullptr,
+                                             t0_start, t0_end)) {
             return false;
         }
 
@@ -172,8 +191,8 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
             static std::atomic<uint64_t> query_counter{0};
             const uint64_t qid = ++query_counter;
             PGX_LOG(GENERAL, IO,
-                    "PGXL_PHASE_TIMING translate_ms=%.3f lowering_ms=%.3f jit_ms=%.3f exec_ms=%.3f query=%llu",
-                    translate_ms, lowering_ms, timings.jit_ms, timings.exec_ms,
+                    "PGXL_PHASE_TIMING setup_ms=%.3f translate_ms=%.3f lowering_ms=%.3f jit_ms=%.3f exec_ms=%.3f query=%llu",
+                    timings.setup_ms, translate_ms, lowering_ms, timings.jit_ms, timings.exec_ms,
                     static_cast<unsigned long long>(qid));
         }
 
@@ -195,16 +214,28 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
 }
 #endif
 
-// Internal timed variant: fills *timings (phases 3 jit + 4 exec) when non-null.
+// Internal timed variant: fills *timings (phases 0/setup, 3/jit, 4/exec) when non-null.
+// setup_start / setup_end are the time points bracketing MLIRContext construction +
+// setupMLIRContextForJIT, captured in the caller before/after that work.
 // When timings == nullptr the behaviour is identical to the original function —
 // the null check is branch-predicted and has zero measurable overhead.
 bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, DestReceiver* dest,
-                                     PhaseTimings* timings) {
-    pgx_lower::execution::JITEngine engine(llvm::CodeGenOptLevel::Default);
+                                     PhaseTimings* timings,
+                                     std::chrono::steady_clock::time_point setup_start,
+                                     std::chrono::steady_clock::time_point setup_end) {
+    // Record setup_ms (MLIRContext ctor + setupMLIRContextForJIT) from caller's measurements.
+    if (timings) {
+        using DMs = std::chrono::duration<double, std::milli>;
+        timings->setup_ms = std::chrono::duration_cast<DMs>(setup_end - setup_start).count();
+    }
 
-    // Phase 3: LLVM/JIT compile (MLIR → LLVM IR → native code via ORC)
+    // Phase 3: LLVM/JIT compile — timer starts BEFORE JITEngine ctor so that
+    // setup_llvm_target (called in the ctor) and register_dialects (called inside
+    // engine.compile()) are both included in jit_ms.
     const auto t3_start = timings ? std::chrono::steady_clock::now()
                                   : std::chrono::steady_clock::time_point{};
+
+    pgx_lower::execution::JITEngine engine(llvm::CodeGenOptLevel::Default);
 
     if (!engine.compile(module)) {
         PGX_ERROR("JIT compilation failed");
@@ -237,8 +268,11 @@ bool executeJITWithDestReceiverTimed(::mlir::ModuleOp module, EState* estate, De
 
 // Public API: calls the timed variant without timing (timings == nullptr).
 // Behaviour is byte-for-byte identical to the original when timing is not requested.
+// The setup_start/setup_end values are unused when timings == nullptr.
 bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
-    return executeJITWithDestReceiverTimed(module, estate, dest, nullptr);
+    return executeJITWithDestReceiverTimed(module, estate, dest, nullptr,
+                                          std::chrono::steady_clock::time_point{},
+                                          std::chrono::steady_clock::time_point{});
 }
 
 } // namespace mlir_runner
