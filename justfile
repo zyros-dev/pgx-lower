@@ -264,6 +264,32 @@ bench: _preflight
 bench-phase-timing SF='1' ITERS='5': _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/phase-timing/run_phase_timing.py --sf {{SF}} --port 5432 --iterations {{ITERS}} --output benchmark/profiling/phase-timing/sf{{SF}}-report.md") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
+# Profile a single TPC-H query at a given scale factor using perf record
+# (sampled call-graph) and perf stat (hardware counters).
+#
+# Prerequisites (one-time, human action):
+#   On thor: sudo sysctl -w kernel.perf_event_paranoid=1
+#   In container: /usr/local/bin/perf must exist (see benchmark/profiling/tooling.md)
+#
+# The recipe runs the query ONCE under:
+#   perf record -g --call-graph dwarf  →  benchmark/profiling/perf-exec/<QUERY>-sf<SF>/perf.data
+#   perf stat -e cycles,instructions,…  →  …/perf-stat.txt
+# A perf report --stdio dump is also captured at …/perf-report.txt.
+#
+# At SF=1, execution dominates compile by ~70–175× (Q01: exec ~23 s, compile
+# ~134 ms) so the full-query profile is already ~99% execution samples;
+# no gating or two-phase setup is needed.
+#
+# FFI symbols (extract_field, get_*_field_mlir) are exported via
+# -Wl,--export-dynamic on pgx_lower.so and should appear in perf report
+# without extra steps once paranoid is lowered.
+#
+# Usage:
+#   just profile-exec             # q01 at SF=1 (defaults)
+#   just profile-exec QUERY=q18 SF=1
+profile-exec QUERY='q01' SF='1': _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "cd {{_wdir}} && python3 benchmark/profiling/perf-exec/run_perf_profile.py --query {{QUERY}} --sf {{SF}} --port 5432 --output benchmark/profiling/perf-exec/{{QUERY}}-sf{{SF}}") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
 # Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
 # cached. Run before merging anything that claims a performance improvement
 # where SF=0.5's numbers feel marginal. At SF=1 the per-query wall time is
