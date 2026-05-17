@@ -62,7 +62,7 @@ def pg_connect(port: int) -> psycopg2.extensions.connection:
     conn = psycopg2.connect(
         host="localhost", port=port, database="postgres", user="postgres"
     )
-    conn.autocommit = False
+    # GUC SETs are session-scoped; they persist for subsequent statements on this connection.
     return conn
 
 
@@ -78,7 +78,6 @@ def enable_pgxl(cur) -> None:
 
 def disable_pgxl(cur) -> None:
     """Disable pgx_lower; use plain PostgreSQL."""
-    cur.execute("LOAD 'pgx_lower.so'")
     cur.execute("SET pgx_lower.enabled = off")
     cur.execute("SET client_min_messages = warning")
 
@@ -116,7 +115,6 @@ def run_single_query(conn, query_sql: str, pgx: bool) -> dict:
             disable_pgxl(cur)
         conn.commit()
 
-        # Re-open transaction for the query itself
         conn.notices.clear()
         t0 = time.perf_counter()
         cur.execute(query_sql)
@@ -160,9 +158,8 @@ def write_report(
     pgxl_results: dict[str, list[dict]],
     skipped: set[str],
     run_ts: str,
-    actual_iters_note: str,
 ) -> None:
-    """Write sf1-report.md with per-query 5-phase split and gate evaluation."""
+    """Write the phase-timing report with per-query 5-phase split and gate evaluation."""
 
     queries = sorted(pg_results.keys())
 
@@ -183,8 +180,6 @@ def write_report(
     lines.append(f"**Generated:** {run_ts}  ")
     lines.append(f"**Scale Factor:** {sf}  ")
     lines.append(f"**Iterations:** {iterations}  ")
-    if actual_iters_note:
-        lines.append(f"**Note:** {actual_iters_note}  ")
     lines.append(f"**Skipped:** {', '.join(sorted(skipped)) or 'none'}  ")
     lines.append("")
     lines.append("## How to read this table")
@@ -304,12 +299,18 @@ def main():
     parser.add_argument("--skip", type=str, default="", help="Comma-separated queries to skip")
     parser.add_argument(
         "--output", "-o", type=str,
-        default=str(Path(__file__).parent / "sf1-report.md"),
-        help="Output report path",
+        default=None,
+        help="Output report path (default: sf{sf}-report.md next to this script)",
     )
     parser.add_argument("--no-pg-baseline", action="store_true",
                         help="Skip PostgreSQL baseline (pgx-lower runs only)")
     args = parser.parse_args()
+
+    # Derive default output path from the actual --sf value so that different
+    # scale-factor runs don't overwrite each other.
+    if args.output is None:
+        sf_tag = int(args.sf) if args.sf == int(args.sf) else args.sf
+        args.output = str(Path(__file__).parent / f"sf{sf_tag}-report.md")
 
     skip = DEFAULT_SKIP.copy()
     if args.skip:
@@ -425,7 +426,6 @@ def main():
             except Exception as e:
                 print(f"ERROR: {e}")
                 conn.rollback()
-                pgxl_results[qname].append({"wall_ms": float("nan"), "phase": None})
 
     conn.close()
 
@@ -439,7 +439,6 @@ def main():
         pgxl_results=dict(pgxl_results),
         skipped=skip,
         run_ts=datetime.now().isoformat(timespec="seconds"),
-        actual_iters_note="",
     )
 
 
