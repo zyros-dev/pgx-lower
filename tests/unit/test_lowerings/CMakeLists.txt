@@ -257,3 +257,57 @@ set_tests_properties(AstConstTranslationTest PROPERTIES
     TIMEOUT 60
     LABELS "unit;ast;translation"
 )
+
+# ----------------------------------------------------------------------------
+# PGX_IO release-gate test (spec-15).
+#
+# Verifies that PGX_IO(X) expands to ((void)0) when PGX_RELEASE_MODE is
+# defined, rather than emitting a should_log() call + ScopeLogger ctor.
+#
+# The TU defines PGX_RELEASE_MODE itself and provides counting stubs for
+# every logging symbol, so it does NOT link against logging.cpp (that would
+# pull in the real should_log and obscure the stub's counter).
+#
+# RED  before the fix: should_log() is called 1000x → EXPECT_EQ fails.
+# GREEN after the fix: PGX_IO expands to ((void)0) → count stays 0.
+
+add_executable(test_pgx_io_release_gate
+    test_pgx_io_release_gate.cpp
+)
+
+target_compile_definitions(test_pgx_io_release_gate PRIVATE
+    BUILDING_UNIT_TESTS=1
+    ${LLVM_DEFINITIONS_LIST}
+)
+
+target_include_directories(test_pgx_io_release_gate PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+)
+
+# Link MLIR for the mlir::Value / mlir::Type / mlir::ModuleOp types that
+# logging.h declares (verify_and_print etc.). Our stubs provide empty bodies,
+# but the types must be complete at compile time.
+target_link_libraries(test_pgx_io_release_gate
+    gtest
+    gtest_main
+    ${MLIR_ALL_LIBS}
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    ${llvm_libs}
+)
+
+target_compile_features(test_pgx_io_release_gate PRIVATE cxx_std_20)
+
+add_test(NAME PgxIoReleaseGateTest COMMAND test_pgx_io_release_gate)
+
+set_tests_properties(PgxIoReleaseGateTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;logging;release-gate"
+)

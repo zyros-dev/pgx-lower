@@ -225,10 +225,14 @@ private:
     } while(0)
 #endif
 
+#ifndef PGX_RELEASE_MODE
 #define PGX_IO(category) \
     [[maybe_unused]] std::optional<::pgx_lower::log::ScopeLogger> _pgx_io_logger; \
     if (::pgx_lower::log::should_log(::pgx_lower::log::Category::category, ::pgx_lower::log::Level::IO)) \
         _pgx_io_logger.emplace(::pgx_lower::log::Category::category, __FILE__, __LINE__, __func__)
+#else
+#define PGX_IO(category) ((void)0)
+#endif
 
 #ifdef PGX_RELEASE_MODE
 #define PGX_HOT_LOG(category, level, fmt, ...) ((void)0)
