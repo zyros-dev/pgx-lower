@@ -2,10 +2,10 @@ find_package(GTest REQUIRED)
 
 add_executable(test_numeric_conversion
     test_numeric_conversion.cpp
+    pg_test_init.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/runtime/NumericConversion.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
-    ${CMAKE_SOURCE_DIR}/tests/unit/test_lowerings/pg_stubs.cpp
 )
 
 target_compile_definitions(test_numeric_conversion PRIVATE POSTGRESQL_EXTENSION=1)
