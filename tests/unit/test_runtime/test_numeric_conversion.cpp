@@ -4,6 +4,7 @@
 
 extern "C" {
 #include "postgres.h"
+#include "varatt.h"
 }
 
 #include "pgx-lower/runtime/NumericConversion.h"
