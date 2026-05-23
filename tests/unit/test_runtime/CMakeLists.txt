@@ -24,7 +24,7 @@ target_link_libraries(test_numeric_conversion
     /usr/local/pgsql/lib/libpgcommon.a
     /usr/local/pgsql/lib/libpgport.a
     -Wl,--end-group
-    ssl crypto z pthread dl m
+    ssl crypto z pthread dl m icuuc icui18n icudata
 )
 
 add_test(NAME NumericConversionTest COMMAND test_numeric_conversion)
