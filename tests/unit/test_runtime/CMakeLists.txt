@@ -17,6 +17,13 @@ target_include_directories(test_numeric_conversion PRIVATE
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )
 
-target_link_libraries(test_numeric_conversion GTest::gtest_main)
+target_link_libraries(test_numeric_conversion
+    GTest::gtest_main
+    -Wl,--start-group
+    ${PostgreSQL_LIBRARY_DIR}/libpgbackend.a
+    ${PostgreSQL_LIBRARY_DIR}/libpgcommon.a
+    ${PostgreSQL_LIBRARY_DIR}/libpgport.a
+    -Wl,--end-group
+)
 
 add_test(NAME NumericConversionTest COMMAND test_numeric_conversion)
