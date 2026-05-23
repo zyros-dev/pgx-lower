@@ -6,6 +6,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/numeric_tests.cpp
             ../src/pgx-lower/test/type_mapping_tests.cpp
             ../src/pgx-lower/test/boolean_lowering_tests.cpp
+            ../src/pgx-lower/test/ast_const_translation_tests.cpp
         )
     endif()
 
