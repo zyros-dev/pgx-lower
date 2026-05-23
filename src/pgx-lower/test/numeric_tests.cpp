@@ -57,6 +57,8 @@ build_numeric(bool neg, int16 weight, uint16 dscale,
                  __FILE__, __LINE__, (long long) _e, (long long) _a); \
     } while (0)
 
+extern "C" {
+
 PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_zero);
 Datum
 ts_test_numeric_to_i128_zero(PG_FUNCTION_ARGS)
@@ -115,3 +117,5 @@ ts_test_numeric_to_i128_large(PG_FUNCTION_ARGS)
     ASSERT_EQ_I128(numeric_to_i128(d, 0), 99999999LL);
     PG_RETURN_VOID();
 }
+
+}  // extern "C"
