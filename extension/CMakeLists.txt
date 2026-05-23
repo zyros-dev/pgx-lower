@@ -5,6 +5,7 @@ if(NOT BUILDING_UNIT_TESTS)
         list(APPEND _pgx_lower_test_sources
             ../src/pgx-lower/test/numeric_tests.cpp
             ../src/pgx-lower/test/type_mapping_tests.cpp
+            ../src/pgx-lower/test/boolean_lowering_tests.cpp
         )
     endif()
 
