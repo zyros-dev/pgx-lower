@@ -14,6 +14,8 @@ extern "C" {
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 
+#include "pgx-lower/test/pgx_test_fn.h"
+
 namespace postgresql_ast {
 auto translate_const(Const* const_node, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value;
 }
@@ -51,10 +53,7 @@ struct Fixture {
 
 }  // namespace
 
-extern "C" {
-
-PG_FUNCTION_INFO_V1(ts_test_ast_const_int32);
-Datum ts_test_ast_const_int32(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(ast_const_int32) {
     Fixture f;
     auto c = Fixture::make_const(INT4OID, -1, Datum{42});
     mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
@@ -67,8 +66,7 @@ Datum ts_test_ast_const_int32(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_ast_const_int64);
-Datum ts_test_ast_const_int64(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(ast_const_int64) {
     Fixture f;
     auto c = Fixture::make_const(INT8OID, -1, Datum{123456789012LL});
     mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
@@ -80,8 +78,7 @@ Datum ts_test_ast_const_int64(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_ast_const_bool);
-Datum ts_test_ast_const_bool(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(ast_const_bool) {
     Fixture f;
     auto c = Fixture::make_const(BOOLOID, -1, Datum{1});
     mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
@@ -90,8 +87,7 @@ Datum ts_test_ast_const_bool(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_ast_const_null);
-Datum ts_test_ast_const_null(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(ast_const_null) {
     Fixture f;
     auto c = Fixture::make_const(INT4OID, -1, Datum{0}, true);
     mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
@@ -102,8 +98,7 @@ Datum ts_test_ast_const_null(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_ast_const_date);
-Datum ts_test_ast_const_date(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(ast_const_date) {
     Fixture f;
     auto c = Fixture::make_const(DATEOID, -1, Datum{1234});
     mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
@@ -113,5 +108,3 @@ Datum ts_test_ast_const_date(PG_FUNCTION_ARGS) {
     REQUIRE(mlir::isa<mlir::db::ConstantOp>(op));
     PG_RETURN_VOID();
 }
-
-}  // extern "C"

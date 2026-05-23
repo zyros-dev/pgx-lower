@@ -5,8 +5,12 @@ extern "C" {
 }
 
 #include <cstring>
+#include <vector>
 
 #include "pgx-lower/runtime/NumericConversion.h"
+#include "pgx-lower/test/pgx_test_fn.h"
+
+namespace {
 
 #define NBASE 10000
 #define NUMERIC_POS 0x0000
@@ -15,38 +19,36 @@ extern "C" {
 
 typedef int16 NumericDigit;
 
-struct test_numeric_long {
+struct NumericLong {
     uint16 n_sign_dscale;
-    int16  n_weight;
+    int16 n_weight;
     NumericDigit n_data[1];
 };
 
-union test_numeric_choice {
+union NumericChoice {
     uint16 n_header;
-    struct test_numeric_long n_long;
+    struct NumericLong n_long;
 };
 
-struct test_numeric_data {
+struct NumericData {
     int32 vl_len_;
-    union test_numeric_choice choice;
+    union NumericChoice choice;
 };
 
-#define TEST_NUMERIC_HDR (VARHDRSZ + sizeof(uint16) + sizeof(int16))
-
-static Datum
-build_numeric(bool neg, int16 weight, uint16 dscale,
-              const NumericDigit *digits, int ndigits)
-{
-    Size total = TEST_NUMERIC_HDR + (Size) ndigits * sizeof(NumericDigit);
-    struct test_numeric_data *num = (struct test_numeric_data *) palloc0(total);
+Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale,
+                   const std::vector<NumericDigit>& digits) {
+    const size_t hdr = VARHDRSZ + sizeof(uint16) + sizeof(int16);
+    const size_t total = hdr + digits.size() * sizeof(NumericDigit);
+    buf.assign(total, 0);
+    auto* num = reinterpret_cast<NumericData*>(buf.data());
     SET_VARSIZE(num, total);
-    num->choice.n_long.n_sign_dscale =
-        (neg ? NUMERIC_NEG : NUMERIC_POS) | (dscale & NUMERIC_DSCALE_MASK);
+    num->choice.n_long.n_sign_dscale = (neg ? NUMERIC_NEG : NUMERIC_POS) | (dscale & NUMERIC_DSCALE_MASK);
     num->choice.n_long.n_weight = weight;
-    if (ndigits > 0)
-        memcpy(num->choice.n_long.n_data, digits, (size_t) ndigits * sizeof(NumericDigit));
+    std::memcpy(num->choice.n_long.n_data, digits.data(), digits.size() * sizeof(NumericDigit));
     return PointerGetDatum(num);
 }
+
+}  // namespace
 
 #define ASSERT_EQ_I128(actual, expected) \
     do { \
@@ -57,65 +59,38 @@ build_numeric(bool neg, int16 weight, uint16 dscale,
                  __FILE__, __LINE__, (long long) _e, (long long) _a); \
     } while (0)
 
-extern "C" {
-
-PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_zero);
-Datum
-ts_test_numeric_to_i128_zero(PG_FUNCTION_ARGS)
-{
-    Datum d = build_numeric(false, 0, 0, NULL, 0);
-    ASSERT_EQ_I128(numeric_to_i128(d, 0), 0);
+PGX_TEST_FN(numeric_to_i128_zero) {
+    std::vector<char> buf;
+    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 0, 0, {}), 0), 0);
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_positive);
-Datum
-ts_test_numeric_to_i128_positive(PG_FUNCTION_ARGS)
-{
-    NumericDigit digits[] = {1, 2345};
-    Datum d = build_numeric(false, 1, 0, digits, 2);
-    ASSERT_EQ_I128(numeric_to_i128(d, 0), 12345);
+PGX_TEST_FN(numeric_to_i128_positive) {
+    std::vector<char> buf;
+    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 1, 0, {1, 2345}), 0), 12345);
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_negative);
-Datum
-ts_test_numeric_to_i128_negative(PG_FUNCTION_ARGS)
-{
-    NumericDigit digits[] = {1, 2345};
-    Datum d = build_numeric(true, 1, 0, digits, 2);
-    ASSERT_EQ_I128(numeric_to_i128(d, 0), -12345);
+PGX_TEST_FN(numeric_to_i128_negative) {
+    std::vector<char> buf;
+    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, true, 1, 0, {1, 2345}), 0), -12345);
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_rescale_up);
-Datum
-ts_test_numeric_to_i128_rescale_up(PG_FUNCTION_ARGS)
-{
-    NumericDigit digits[] = {1, 5000};
-    Datum d = build_numeric(false, 0, 1, digits, 2);
-    ASSERT_EQ_I128(numeric_to_i128(d, 4), 15000);
+PGX_TEST_FN(numeric_to_i128_rescale_up) {
+    std::vector<char> buf;
+    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 0, 1, {1, 5000}), 4), 15000);
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_scale_down);
-Datum
-ts_test_numeric_to_i128_scale_down(PG_FUNCTION_ARGS)
-{
-    NumericDigit digits[] = {1, 2345};
-    Datum d = build_numeric(false, 1, 0, digits, 2);
-    ASSERT_EQ_I128(numeric_to_i128(d, -2), 123);
+PGX_TEST_FN(numeric_to_i128_scale_down) {
+    std::vector<char> buf;
+    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 1, 0, {1, 2345}), -2), 123);
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_numeric_to_i128_large);
-Datum
-ts_test_numeric_to_i128_large(PG_FUNCTION_ARGS)
-{
-    NumericDigit digits[] = {9999, 9999};
-    Datum d = build_numeric(false, 1, 0, digits, 2);
-    ASSERT_EQ_I128(numeric_to_i128(d, 0), 99999999LL);
+PGX_TEST_FN(numeric_to_i128_large) {
+    std::vector<char> buf;
+    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 1, 0, {9999, 9999}), 0), 99999999LL);
     PG_RETURN_VOID();
 }
-
-}  // extern "C"

@@ -4,6 +4,7 @@ extern "C" {
 }
 
 #include "pgx-lower/test/standalone_mlir_runner.h"
+#include "pgx-lower/test/pgx_test_fn.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
@@ -13,10 +14,7 @@ extern "C" {
 #define REQUIRE(cond) \
     do { if (!(cond)) elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond); } while (0)
 
-extern "C" {
-
-PG_FUNCTION_INFO_V1(ts_test_pipeline_mapop_print);
-Datum ts_test_pipeline_mapop_print(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(pipeline_mapop_print) {
     auto tester = std::make_unique<pgx_test::StandalonePipelineTester>();
     auto* builder = tester->getBuilder();
     auto& columnManager = tester->getColumnManager();
@@ -60,5 +58,3 @@ Datum ts_test_pipeline_mapop_print(PG_FUNCTION_ARGS) {
     REQUIRE(!output.empty());
     PG_RETURN_VOID();
 }
-
-}  // extern "C"

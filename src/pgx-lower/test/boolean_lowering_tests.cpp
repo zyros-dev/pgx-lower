@@ -16,6 +16,8 @@ extern "C" {
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
 
+#include "pgx-lower/test/pgx_test_fn.h"
+
 #include <string>
 
 #define ASSERT_CONTAINS(haystack, needle) \
@@ -56,10 +58,7 @@ struct Fixture {
 
 }  // namespace
 
-extern "C" {
-
-PG_FUNCTION_INFO_V1(ts_test_boolean_not_lowering);
-Datum ts_test_boolean_not_lowering(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(boolean_not_lowering) {
     Fixture f;
     auto fn = f.builder.create<mlir::func::FuncOp>(
         f.builder.getUnknownLoc(), "test_not",
@@ -75,8 +74,7 @@ Datum ts_test_boolean_not_lowering(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_boolean_and_lowering);
-Datum ts_test_boolean_and_lowering(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(boolean_and_lowering) {
     Fixture f;
     auto fn = f.builder.create<mlir::func::FuncOp>(
         f.builder.getUnknownLoc(), "test_and",
@@ -95,8 +93,7 @@ Datum ts_test_boolean_and_lowering(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_boolean_or_lowering);
-Datum ts_test_boolean_or_lowering(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(boolean_or_lowering) {
     Fixture f;
     auto fn = f.builder.create<mlir::func::FuncOp>(
         f.builder.getUnknownLoc(), "test_or",
@@ -115,8 +112,7 @@ Datum ts_test_boolean_or_lowering(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-PG_FUNCTION_INFO_V1(ts_test_boolean_complex_expression);
-Datum ts_test_boolean_complex_expression(PG_FUNCTION_ARGS) {
+PGX_TEST_FN(boolean_complex_expression) {
     Fixture f;
     auto fn = f.builder.create<mlir::func::FuncOp>(
         f.builder.getUnknownLoc(), "test_complex",
@@ -147,5 +143,3 @@ Datum ts_test_boolean_complex_expression(PG_FUNCTION_ARGS) {
     ASSERT_NOT_CONTAINS(ir, "util.pack");
     PG_RETURN_VOID();
 }
-
-}  // extern "C"
