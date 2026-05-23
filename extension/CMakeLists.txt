@@ -2,7 +2,10 @@
 if(NOT BUILDING_UNIT_TESTS)
     set(_pgx_lower_test_sources)
     if(CMAKE_BUILD_TYPE MATCHES Debug)
-        list(APPEND _pgx_lower_test_sources ../src/pgx-lower/test/numeric_tests.cpp)
+        list(APPEND _pgx_lower_test_sources
+            ../src/pgx-lower/test/numeric_tests.cpp
+            ../src/pgx-lower/test/type_mapping_tests.cpp
+        )
     endif()
 
     add_postgresql_mixed_extension(
