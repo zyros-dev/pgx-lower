@@ -2,7 +2,7 @@
 if(NOT BUILDING_UNIT_TESTS)
     set(_pgx_lower_test_sources)
     if(CMAKE_BUILD_TYPE MATCHES Debug)
-        list(APPEND _pgx_lower_test_sources ../src/pgx-lower/test/numeric_tests.c)
+        list(APPEND _pgx_lower_test_sources ../src/pgx-lower/test/numeric_tests.cpp)
     endif()
 
     add_postgresql_mixed_extension(
@@ -10,8 +10,8 @@ if(NOT BUILDING_UNIT_TESTS)
         VERSION 1.0
         C_SOURCES
         ../src/pgx-lower/execution/postgres/executor_c.c
-        ${_pgx_lower_test_sources}
         CPP_SOURCES
+        ${_pgx_lower_test_sources}
         ../src/pgx-lower/execution/postgres/my_executor.cpp
         ../src/pgx-lower/execution/postgres/executor_c.cpp
         ../src/pgx-lower/execution/mlir_runner.cpp

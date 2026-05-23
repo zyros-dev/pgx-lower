@@ -1,8 +1,10 @@
+extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
 #include "varatt.h"
+}
 
-#include <string.h>
+#include <cstring>
 
 #include "pgx-lower/runtime/NumericConversion.h"
 
