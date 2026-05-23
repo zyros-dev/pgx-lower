@@ -12,7 +12,8 @@
 # existing stubs.
 
 find_package(GTest REQUIRED)
-find_package(PostgreSQL REQUIRED)
+# PostgreSQL already discovered at top-level; do not re-find_package or
+# the custom targets (test_verbose, test_multi) collide.
 
 add_executable(test_numeric_conversion
     test_numeric_conversion.cpp
