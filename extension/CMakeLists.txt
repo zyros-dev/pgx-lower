@@ -89,7 +89,6 @@ if(NOT BUILDING_UNIT_TESTS)
             init_tpch
             tpch_no_lower
             tpch
-            unit_numeric
 )
 
 target_link_libraries(pgx_lower PRIVATE

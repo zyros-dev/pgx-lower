@@ -222,6 +222,15 @@ test: _preflight
     set -euo pipefail
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
+# Fast PG-aware unit tests (spec 16). Runs each .sql under tests/regress-unit/sql/
+# with `psql -v ON_ERROR_STOP=on`. Each .sql is a DO block that PERFORMs the
+# unit C functions linked into pgx_lower.so (Debug builds only). Failures
+# trigger via elog(ERROR, ...) which makes psql exit non-zero.
+utest-pg: _preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && pg_ctlcluster 17 main start 2>/dev/null; su postgres -c \"psql -d postgres -c \\\"DROP DATABASE IF EXISTS regression_unit; CREATE DATABASE regression_unit;\\\"\" && fail=0; for sql in {{_wdir}}/tests/regress-unit/sql/*.sql; do echo \"--- \$sql ---\"; su postgres -c \"psql -v ON_ERROR_STOP=on -d regression_unit -f \$sql\" || { fail=1; echo FAIL: \$sql; }; done; echo; if [ \$fail -eq 0 ]; then echo \"UTEST-PG OK — all unit tests passed\"; else echo \"UTEST-PG FAILED\"; exit 1; fi") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
 # Re-record the pg_regress baseline. Run only when you have consciously
 # accepted a new set of red tests on main — each entry that gets added
 # here must be justified in the PR body. Removing entries is free (those
