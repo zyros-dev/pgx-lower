@@ -21,7 +21,6 @@ target_link_libraries(test_numeric_conversion
     GTest::gtest_main
     -Wl,--start-group
     /usr/local/pgsql/lib/libpgbackend.a
-    /usr/local/pgsql/lib/libpgcommon.a
     /usr/local/pgsql/lib/libpgport.a
     -Wl,--end-group
     ssl crypto z pthread dl m icuuc icui18n icudata
