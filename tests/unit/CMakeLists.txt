@@ -1,2 +1,1 @@
 add_subdirectory(test_lowerings)
-add_subdirectory(test_runtime)

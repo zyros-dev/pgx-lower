@@ -79,9 +79,6 @@ RUN wget https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VE
     CC=clang CXX=clang++ ./configure --prefix=/usr/local/pgsql --with-openssl --with-icu && \
     make -j$(nproc) && \
     make install && \
-    ar rcs /usr/local/pgsql/lib/libpgbackend.a \
-        $(find src/backend src/timezone src/common -name '*.o' \
-            ! -name main.o ! -name 'fe_*.o' ! -name '*_shlib.o') && \
     cd / && \
     rm -rf postgresql-${PG_VERSION} postgresql-${PG_VERSION}.tar.gz
 
