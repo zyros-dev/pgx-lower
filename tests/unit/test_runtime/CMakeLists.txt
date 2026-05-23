@@ -20,9 +20,9 @@ target_include_directories(test_numeric_conversion PRIVATE
 target_link_libraries(test_numeric_conversion
     GTest::gtest_main
     -Wl,--start-group
-    ${PostgreSQL_LIBRARY_DIR}/libpgbackend.a
-    ${PostgreSQL_LIBRARY_DIR}/libpgcommon.a
-    ${PostgreSQL_LIBRARY_DIR}/libpgport.a
+    /usr/local/pgsql/lib/libpgbackend.a
+    /usr/local/pgsql/lib/libpgcommon.a
+    /usr/local/pgsql/lib/libpgport.a
     -Wl,--end-group
 )
 
