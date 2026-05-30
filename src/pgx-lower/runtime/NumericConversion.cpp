@@ -17,7 +17,7 @@ extern "C" {
 #define NBASE 10000
 #define DEC_DIGITS 4
 
-typedef int16 NumericDigit;
+using NumericDigit = int16;
 
 struct NumericShort {
     uint16 n_header;
@@ -37,7 +37,7 @@ union NumericChoice {
 };
 
 struct NumericData {
-    int32 vl_len_;
+    int32 vl_len;
     union NumericChoice choice;
 };
 
@@ -99,50 +99,50 @@ struct NumericData {
 __int128 numeric_to_i128(Datum numeric_datum, int32_t target_scale) {
     PGX_IO(RUNTIME);
 
-    const Numeric num = DatumGetNumeric(numeric_datum);
+    const Numeric NUM = DatumGetNumeric(numeric_datum);
 
     // Handle special values
-    if (NUMERIC_IS_NAN(num) || NUMERIC_IS_INF(num)) {
+    if (NUMERIC_IS_NAN(NUM) || NUMERIC_IS_INF(NUM)) {
         PGX_LOG(RUNTIME, WARNING_LEVEL, "numeric_to_i128: NaN or Inf encountered, returning 0");
         return 0;
     }
 
-    const bool is_negative = (NUMERIC_SIGN(num) == NUMERIC_NEG);
-    const int weight = NUMERIC_WEIGHT(num);
-    const int dscale = NUMERIC_DSCALE(num);
-    const int ndigits = NUMERIC_NDIGITS(num);
-    const NumericDigit* digits = NUMERIC_DIGITS(num);
+    const bool IS_NEGATIVE = (NUMERIC_SIGN(NUM) == NUMERIC_NEG);
+    const int WEIGHT = NUMERIC_WEIGHT(NUM);
+    const int DSCALE = NUMERIC_DSCALE(NUM);
+    const int NDIGITS = NUMERIC_NDIGITS(NUM);
+    const NumericDigit* const digits = NUMERIC_DIGITS(NUM);
 
-    PGX_LOG(RUNTIME, TRACE, "numeric_to_i128: weight=%d, dscale=%d, ndigits=%d, target_scale=%d", weight, dscale,
-            ndigits, target_scale);
+    PGX_LOG(RUNTIME, TRACE, "numeric_to_i128: weight=%d, dscale=%d, ndigits=%d, target_scale=%d", WEIGHT, DSCALE,
+            NDIGITS, target_scale);
 
-    if (ndigits == 0) {
+    if (NDIGITS == 0) {
         return 0;
     }
 
     __int128 value = 0;
-    for (int i = 0; i < ndigits; i++) {
+    for (int i = 0; i < NDIGITS; i++) {
         value = value * NBASE + digits[i];
     }
 
-    const int total_base_digits = ndigits;
-    const int base_digits_before_decimal = weight + 1;
-    const int base_digits_after_decimal = total_base_digits - base_digits_before_decimal;
+    const int TOTAL_BASE_DIGITS = NDIGITS;
+    const int BASE_DIGITS_BEFORE_DECIMAL = WEIGHT + 1;
+    const int BASE_DIGITS_AFTER_DECIMAL = TOTAL_BASE_DIGITS - BASE_DIGITS_BEFORE_DECIMAL;
 
-    const int current_decimal_scale = base_digits_after_decimal * DEC_DIGITS;
-    const int scale_adjustment = target_scale - current_decimal_scale;
+    const int CURRENT_DECIMAL_SCALE = BASE_DIGITS_AFTER_DECIMAL * DEC_DIGITS;
+    const int SCALE_ADJUSTMENT = target_scale - CURRENT_DECIMAL_SCALE;
 
-    if (scale_adjustment > 0) {
-        for (int i = 0; i < scale_adjustment; i++) {
+    if (SCALE_ADJUSTMENT > 0) {
+        for (int i = 0; i < SCALE_ADJUSTMENT; i++) {
             value *= 10;
         }
-    } else if (scale_adjustment < 0) {
-        for (int i = 0; i < -scale_adjustment; i++) {
+    } else if (SCALE_ADJUSTMENT < 0) {
+        for (int i = 0; i < -SCALE_ADJUSTMENT; i++) {
             value /= 10;
         }
     }
 
-    return is_negative ? -value : value;
+    return IS_NEGATIVE ? -value : value;
 }
 
 Datum i128_to_numeric(__int128 value, int32_t scale) {
@@ -154,15 +154,15 @@ Datum i128_to_numeric(__int128 value, int32_t scale) {
         return DirectFunctionCall1(int4_numeric, Int32GetDatum(0));
     }
 
-    const bool is_negative = (value < 0);
-    __uint128_t abs_value = is_negative ? -static_cast<__uint128_t>(value) : static_cast<__uint128_t>(value);
+    const bool IS_NEGATIVE = (value < 0);
+    __uint128_t const abs_value = IS_NEGATIVE ? -static_cast<__uint128_t>(value) : static_cast<__uint128_t>(value);
 
     __uint128_t scale_divisor = 1;
     for (int i = 0; i < scale; i++) {
         scale_divisor *= 10;
     }
 
-    __uint128_t integer_part = abs_value / scale_divisor;
+    __uint128_t const integer_part = abs_value / scale_divisor;
     __uint128_t fractional_part = abs_value % scale_divisor;
 
     int actual_frac_scale = scale;
@@ -171,8 +171,8 @@ Datum i128_to_numeric(__int128 value, int32_t scale) {
         actual_frac_scale--;
     }
 
-    const int frac_padding = (DEC_DIGITS - (actual_frac_scale % DEC_DIGITS)) % DEC_DIGITS;
-    for (int i = 0; i < frac_padding; i++) {
+    const int FRAC_PADDING = (DEC_DIGITS - (actual_frac_scale % DEC_DIGITS)) % DEC_DIGITS;
+    for (int i = 0; i < FRAC_PADDING; i++) {
         fractional_part *= 10;
     }
 
@@ -191,8 +191,8 @@ Datum i128_to_numeric(__int128 value, int32_t scale) {
     NumericDigit frac_digits[40];
     int frac_ndigits = 0;
     temp = fractional_part;
-    const int expected_frac_digits = (actual_frac_scale + frac_padding) / DEC_DIGITS;
-    while (frac_ndigits < expected_frac_digits) {
+    const int EXPECTED_FRAC_DIGITS = (actual_frac_scale + FRAC_PADDING) / DEC_DIGITS;
+    while (frac_ndigits < EXPECTED_FRAC_DIGITS) {
         frac_digits[frac_ndigits++] = temp % NBASE;
         temp /= NBASE;
     }
@@ -212,16 +212,16 @@ Datum i128_to_numeric(__int128 value, int32_t scale) {
         ndigits--;
     }
 
-    const int weight = int_ndigits - 1;
+    const int WEIGHT = int_ndigits - 1;
 
-    const int numeric_size = NUMERIC_HDRSZ + ndigits * sizeof(NumericDigit);
-    Numeric result = static_cast<Numeric>(palloc(numeric_size));
+    const int NUMERIC_SIZE = NUMERIC_HDRSZ + ndigits * sizeof(NumericDigit);
+    Numeric const result = static_cast<Numeric>(palloc(NUMERIC_SIZE));
 
-    SET_VARSIZE(result, numeric_size);
+    SET_VARSIZE(result, NUMERIC_SIZE);
 
-    result->choice.n_header = is_negative ? NUMERIC_NEG : NUMERIC_POS;
-    result->choice.n_long.n_sign_dscale = (is_negative ? NUMERIC_NEG : NUMERIC_POS) | (actual_frac_scale & NUMERIC_DSCALE_MASK);
-    result->choice.n_long.n_weight = weight;
+    result->choice.n_header = IS_NEGATIVE ? NUMERIC_NEG : NUMERIC_POS;
+    result->choice.n_long.n_sign_dscale = (IS_NEGATIVE ? NUMERIC_NEG : NUMERIC_POS) | (actual_frac_scale & NUMERIC_DSCALE_MASK);
+    result->choice.n_long.n_weight = WEIGHT;
 
     memcpy(result->choice.n_long.n_data, digits, ndigits * sizeof(NumericDigit));
 

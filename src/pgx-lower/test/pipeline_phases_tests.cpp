@@ -17,9 +17,9 @@ extern "C" {
 PGX_TEST_FN(pipeline_mapop_print) {
     auto tester = std::make_unique<pgx_test::StandalonePipelineTester>();
     auto* builder = tester->getBuilder();
-    auto& columnManager = tester->getColumnManager();
+    auto& column_manager = tester->getColumnManager();
 
-    const char* baseTableMLIR = R"(
+    const char* const base_table_mlir = R"(
         module {
           func.func @main() -> !dsa.table {
             %0 = relalg.basetable  {column_order = ["id"], table_identifier = "test|oid:32970940"} columns: {id => @test::@id({type = i32})}
@@ -29,26 +29,26 @@ PGX_TEST_FN(pipeline_mapop_print) {
         }
     )";
 
-    REQUIRE(tester->loadRelAlgModule(baseTableMLIR));
+    REQUIRE(tester->loadRelAlgModule(base_table_mlir));
 
     auto module = tester->getModule();
-    auto mainFunc = module.lookupSymbol<mlir::func::FuncOp>("main");
-    REQUIRE(mainFunc);
+    auto main_func = module.lookupSymbol<mlir::func::FuncOp>("main");
+    REQUIRE(main_func);
 
-    auto& entryBlock = mainFunc.getBody().front();
-    auto& baseTableOp = *entryBlock.begin();
+    auto& entry_block = main_func.getBody().front();
+    auto& base_table_op = *entry_block.begin();
 
-    builder->setInsertionPoint(&entryBlock, ++entryBlock.begin());
+    builder->setInsertionPoint(&entry_block, ++entry_block.begin());
 
-    auto colDef = columnManager.createDef("maptest", "computed");
-    colDef.getColumn().type = builder->getI32Type();
+    auto col_def = column_manager.createDef("maptest", "computed");
+    col_def.getColumn().type = builder->getI32Type();
 
-    auto mapOp = builder->create<mlir::relalg::MapOp>(
+    auto map_op = builder->create<mlir::relalg::MapOp>(
         builder->getUnknownLoc(),
-        baseTableOp.getResult(0),
-        builder->getArrayAttr({colDef})
+        base_table_op.getResult(0),
+        builder->getArrayAttr({col_def})
     );
-    (void) mapOp;
+    (void) map_op;
 
     std::string output;
     llvm::raw_string_ostream stream(output);

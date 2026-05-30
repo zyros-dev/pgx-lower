@@ -54,10 +54,10 @@ extern "C" {
 
 namespace llvm {
 class Module;
-}
+} // namespace llvm
 namespace mlir_runner {
-extern void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
-}
+extern void dump_llvmir(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
+} // namespace mlir_runner
 
 namespace pgx_lower::execution {
 
@@ -78,7 +78,7 @@ bool JITEngine::compile(mlir::ModuleOp module) {
 
     register_dialects(module);
 
-    const auto start_time = std::chrono::high_resolution_clock::now();
+    const auto START_TIME = std::chrono::high_resolution_clock::now();
 
     // Store lambdas to avoid dangling pointers
     auto module_builder = create_mlir_to_llvm_translator();
@@ -105,11 +105,11 @@ bool JITEngine::compile(mlir::ModuleOp module) {
 
     PGX_LOG(JIT, DEBUG, "JIT compilation successful");
 
-    const auto end_time = std::chrono::high_resolution_clock::now();
-    const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+    const auto END_TIME = std::chrono::high_resolution_clock::now();
+    const auto DURATION = std::chrono::duration_cast<std::chrono::microseconds>(END_TIME - START_TIME).count();
 
     compiled_ = true;
-    PGX_LOG(JIT, IO, "JIT Compile OUT: Native code ready (compilation took %.2f ms)", duration / 1000.0);
+    PGX_LOG(JIT, IO, "JIT Compile OUT: Native code ready (compilation took %.2f ms)", DURATION / 1000.0);
     return true;
 }
 
@@ -125,7 +125,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
 
     PGX_LOG(JIT, IO, "JIT Execute IN: CompiledQuery (estate=%p, dest=%p)", estate, dest);
 
-    const auto start_time = std::chrono::high_resolution_clock::now();
+    const auto START_TIME = std::chrono::high_resolution_clock::now();
 
     // The PG_TRY/PG_CATCH machinery (error-data capture, MemoryContext
     // switching, CHECK_FOR_INTERRUPTS) all lives in PG's runtime — available
@@ -134,18 +134,18 @@ bool JITEngine::execute(void* estate, void* dest) const {
     // directly; any crash surfaces as a test failure instead of being wrapped
     // in a PG-level exception.
 #ifdef POSTGRESQL_EXTENSION
-    const auto saved_context = CurrentMemoryContext;
+    auto *const SAVED_CONTEXT = CurrentMemoryContext;
 
     PG_TRY();
     {
         if (set_context_fn_) {
             PGX_LOG(JIT, DEBUG, "estate pointer value: %p", estate);
-            const auto set_ctx = reinterpret_cast<void (*)(void*)>(set_context_fn_);
-            set_ctx(estate);
+            const auto SET_CTX = reinterpret_cast<void (*)(void*)>(set_context_fn_);
+            SET_CTX(estate);
             PGX_LOG(JIT, DEBUG, "Execution context set successfully");
         }
 
-        const auto fn = reinterpret_cast<void (*)()>(main_fn_);
+        const auto FN = reinterpret_cast<void (*)()>(main_fn_);
         PGX_LOG(JIT, DEBUG, "About to execute JIT-compiled function at address %p", main_fn_);
 
         if (g_tuple_streamer.slot) {
@@ -153,7 +153,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
                     g_tuple_streamer.slot, g_tuple_streamer.slot->tts_nvalid, g_tuple_streamer.slot->tts_tupleDescriptor);
         }
 
-        fn();
+        FN();
         PGX_LOG(JIT, DEBUG, "JIT function call returned successfully");
 
         if (g_tuple_streamer.slot) {
@@ -165,7 +165,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
     }
     PG_CATCH();
     {
-        MemoryContextSwitchTo(saved_context);
+        MemoryContextSwitchTo(SAVED_CONTEXT);
 
         auto* edata = CopyErrorData();
         PGX_ERROR("PostgreSQL exception during JIT execution: %s (SQLSTATE: %s, detail: %s, hint: %s)",
@@ -178,7 +178,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
     }
     PG_END_TRY();
 
-    MemoryContextSwitchTo(saved_context);
+    MemoryContextSwitchTo(SAVED_CONTEXT);
 #else  // BUILDING_UNIT_TESTS path
     if (set_context_fn_) {
         const auto set_ctx = reinterpret_cast<void (*)(void*)>(set_context_fn_);
@@ -188,11 +188,11 @@ bool JITEngine::execute(void* estate, void* dest) const {
     fn();
 #endif
 
-    const auto end_time = std::chrono::high_resolution_clock::now();
-    const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    const auto END_TIME = std::chrono::high_resolution_clock::now();
+    const auto DURATION = std::chrono::duration_cast<std::chrono::microseconds>(END_TIME - START_TIME);
 
-    PGX_LOG(JIT, DEBUG, "JIT execution took %.3f ms", duration.count() / 1000.0);
-    PGX_LOG(JIT, IO, "JIT Execute OUT: Query completed successfully (%.2f ms)", duration.count() / 1000.0);
+    PGX_LOG(JIT, DEBUG, "JIT execution took %.3f ms", DURATION.count() / 1000.0);
+    PGX_LOG(JIT, IO, "JIT Execute OUT: Query completed successfully (%.2f ms)", DURATION.count() / 1000.0);
 
     return true;
 }
@@ -205,8 +205,8 @@ void JITEngine::setup_llvm_target() {
         llvm::InitializeNativeTargetAsmParser();
         initialized = true;
 
-        const auto target_triple = llvm::sys::getDefaultTargetTriple();
-        PGX_LOG(JIT, DEBUG, "LLVM target triple: %s", target_triple.c_str());
+        const auto TARGET_TRIPLE = llvm::sys::getDefaultTargetTriple();
+        PGX_LOG(JIT, DEBUG, "LLVM target triple: %s", TARGET_TRIPLE.c_str());
     }
 }
 
@@ -233,7 +233,7 @@ JITEngine::create_mlir_to_llvm_translator() {
         auto module = mlir::cast<mlir::ModuleOp>(op);
 
         size_t input_ops_count = 0;
-        module.walk([&](mlir::Operation* operation) { input_ops_count++; });
+        module.walk([&](mlir::Operation*  /*operation*/) { input_ops_count++; });
 
         PGX_LOG(JIT, IO, "MLIR→LLVM IN: Standard MLIR Module with %zu operations", input_ops_count);
 
@@ -255,7 +255,7 @@ JITEngine::create_mlir_to_llvm_translator() {
 #endif
 
         for (auto& func : llvm_module->functions()) {
-            std::string func_name = func.getName().str();
+            std::string const func_name = func.getName().str();
             if (func_name == "main" || func_name == "_mlir_ciface_main") {
                 func.setLinkage(llvm::GlobalValue::ExternalLinkage);
                 func.setVisibility(llvm::GlobalValue::DefaultVisibility);
@@ -263,7 +263,7 @@ JITEngine::create_mlir_to_llvm_translator() {
             }
         }
 
-        const size_t output_func_count = llvm_module->size();
+        const size_t OUTPUT_FUNC_COUNT = llvm_module->size();
         size_t output_inst_count = 0;
         for (const auto& func : *llvm_module) {
             for (const auto& bb : func) {
@@ -271,7 +271,7 @@ JITEngine::create_mlir_to_llvm_translator() {
             }
         }
 
-        PGX_LOG(JIT, IO, "MLIR→LLVM OUT: LLVM IR Module with %zu functions, %zu instructions", output_func_count,
+        PGX_LOG(JIT, IO, "MLIR→LLVM OUT: LLVM IR Module with %zu functions, %zu instructions", OUTPUT_FUNC_COUNT,
                 output_inst_count);
 
         return llvm_module;
@@ -293,13 +293,13 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
             // Install LLVM fatal error handler
             static bool handler_installed = false;
             if (!handler_installed) {
-                llvm::install_fatal_error_handler([](void* user_data, const char* reason, bool gen_crash_diag) {
+                llvm::install_fatal_error_handler([](void*  /*user_data*/, const char* reason, bool gen_crash_diag) {
                     PGX_ERROR("LLVM FATAL ERROR: %s (gen_crash_diag=%d)", reason, gen_crash_diag);
                 });
                 handler_installed = true;
             }
 
-            llvm::TargetMachine* TM = nullptr;
+            llvm::TargetMachine* tm = nullptr;
             std::string triple = module->getTargetTriple();
             if (triple.empty()) {
                 triple = llvm::sys::getDefaultTargetTriple();
@@ -307,10 +307,10 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
             }
 
             std::string error;
-            const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, error);
+            const llvm::Target* const target = llvm::TargetRegistry::lookupTarget(triple, error);
             if (target) {
-                llvm::TargetOptions target_options;
-                TM = target->createTargetMachine(triple, llvm::sys::getHostCPUName(),
+                llvm::TargetOptions const target_options;
+                tm = target->createTargetMachine(triple, llvm::sys::getHostCPUName(),
                                                  "", // Features
                                                  target_options, llvm::Reloc::PIC_);
                 PGX_LOG(JIT, DEBUG, "Created TargetMachine for triple: %s", triple.c_str());
@@ -318,39 +318,39 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
                 PGX_LOG(JIT, DEBUG, "Failed to create TargetMachine: %s", error.c_str());
             }
 
-            llvm::PipelineTuningOptions PTO;
-            PTO.LoopUnrolling = false;
-            PTO.LoopVectorization = false;
-            PTO.SLPVectorization = false;
+            llvm::PipelineTuningOptions pto;
+            pto.LoopUnrolling = false;
+            pto.LoopVectorization = false;
+            pto.SLPVectorization = false;
 
-            llvm::PassBuilder PB(TM, PTO);
-            llvm::LoopAnalysisManager LAM;
-            llvm::FunctionAnalysisManager FAM;
-            llvm::CGSCCAnalysisManager CGAM;
-            llvm::ModuleAnalysisManager MAM;
+            llvm::PassBuilder pb(tm, pto);
+            llvm::LoopAnalysisManager lam;
+            llvm::FunctionAnalysisManager fam;
+            llvm::CGSCCAnalysisManager cgam;
+            llvm::ModuleAnalysisManager mam;
 
             PGX_LOG(JIT, DEBUG, "Registering all default analyses");
-            PB.registerModuleAnalyses(MAM);
-            PB.registerCGSCCAnalyses(CGAM);
-            PB.registerFunctionAnalyses(FAM);
-            PB.registerLoopAnalyses(LAM);
-            PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+            pb.registerModuleAnalyses(mam);
+            pb.registerCGSCCAnalyses(cgam);
+            pb.registerFunctionAnalyses(fam);
+            pb.registerLoopAnalyses(lam);
+            pb.crossRegisterProxies(lam, fam, cgam, mam);
 
             PGX_LOG(JIT, DEBUG, "Building function pass pipeline");
-            llvm::FunctionPassManager FPM;
+            llvm::FunctionPassManager fpm;
 
-            FPM.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
-            FPM.addPass(llvm::InstCombinePass());
+            fpm.addPass(llvm::SROAPass(llvm::SROAOptions::ModifyCFG));
+            fpm.addPass(llvm::InstCombinePass());
 
-            FPM.addPass(llvm::PromotePass());
-            FPM.addPass(llvm::InstCombinePass());
+            fpm.addPass(llvm::PromotePass());
+            fpm.addPass(llvm::InstCombinePass());
 
-            FPM.addPass(llvm::createFunctionToLoopPassAdaptor(llvm::LICMPass(llvm::LICMOptions()),
+            fpm.addPass(llvm::createFunctionToLoopPassAdaptor(llvm::LICMPass(llvm::LICMOptions()),
                                                               /*UseMemorySSA=*/true));
 
-            FPM.addPass(llvm::ReassociatePass());
-            FPM.addPass(llvm::GVNPass());
-            FPM.addPass(llvm::SimplifyCFGPass());
+            fpm.addPass(llvm::ReassociatePass());
+            fpm.addPass(llvm::GVNPass());
+            fpm.addPass(llvm::SimplifyCFGPass());
 
             PGX_LOG(JIT, DEBUG, "Running passes on %zu functions", module->size());
             for (auto& func : *module) {
@@ -360,12 +360,12 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
                 }
                 if (!func.hasOptNone()) {
                     PGX_LOG(JIT, DEBUG, "Running passes on function: %s", func.getName().str().c_str());
-                    FPM.run(func, FAM);
+                    fpm.run(func, fam);
                 }
             }
 
             PGX_LOG(JIT, DEBUG, "Optimization passes completed successfully");
-            mlir_runner::dumpLLVMIR(module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
+            mlir_runner::dump_llvmir(module, "LLVM IR AFTER OPTIMIZATION PASSES", log::Category::JIT);
 
             return llvm::Error::success();
         } catch (const std::exception& e) {
@@ -407,20 +407,20 @@ bool JITEngine::lookup_functions() {
 }
 
 bool JITEngine::link_static() {
-    const std::string obj_path = "/tmp/pgx_jit_module.o";
-    const std::string so_path = "/tmp/pgx_jit_module.so";
+    const std::string OBJ_PATH = "/tmp/pgx_jit_module.o";
+    const std::string SO_PATH = "/tmp/pgx_jit_module.so";
 
     PGX_LOG(JIT, DEBUG, "Attempting static linking");
 
-    if (!dump_object_file(obj_path)) {
+    if (!dump_object_file(OBJ_PATH)) {
         return false;
     }
 
-    if (!compile_to_shared_library(obj_path, so_path)) {
+    if (!compile_to_shared_library(OBJ_PATH, SO_PATH)) {
         return false;
     }
 
-    void* handle = load_shared_library(so_path);
+    void* const handle = load_shared_library(SO_PATH);
     if (!handle) {
         return false;
     }
@@ -440,10 +440,10 @@ bool JITEngine::dump_object_file(const std::string& path) const {
 }
 
 bool JITEngine::compile_to_shared_library(const std::string& obj_path, const std::string& so_path) {
-    const std::string cmd = "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + so_path + " " + obj_path
+    const std::string CMD = "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + so_path + " " + obj_path
                             + " 2>&1";
 
-    auto* pipe = ::popen(cmd.c_str(), "r");
+    auto* pipe = ::popen(CMD.c_str(), "r");
     if (!pipe) {
         PGX_ERROR("Failed to compile JIT object to shared library");
         return false;
@@ -451,13 +451,13 @@ bool JITEngine::compile_to_shared_library(const std::string& obj_path, const std
 
     std::array<char, 256> buffer;
     std::string result;
-    while (!std::feof(pipe)) {
-        const auto bytes = std::fread(buffer.data(), 1, buffer.size(), pipe);
-        result.append(buffer.data(), bytes);
+    while (std::feof(pipe) == 0) {
+        const auto BYTES = std::fread(buffer.data(), 1, buffer.size(), pipe);
+        result.append(buffer.data(), BYTES);
     }
 
-    const auto rc = ::pclose(pipe);
-    if (WEXITSTATUS(rc)) {
+    const auto RC = ::pclose(pipe);
+    if (WEXITSTATUS(RC)) {
         PGX_ERROR("Compilation failed: %s", result.c_str());
         return false;
     }
@@ -467,10 +467,10 @@ bool JITEngine::compile_to_shared_library(const std::string& obj_path, const std
 }
 
 void* JITEngine::load_shared_library(const std::string& path) {
-    void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    void* const handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
 
     if (!handle) {
-        const char* dl_error = dlerror();
+        const char* const dl_error = dlerror();
         PGX_ERROR("Cannot load shared library: %s", dl_error ? dl_error : "unknown error");
         return nullptr;
     }
@@ -486,7 +486,7 @@ bool JITEngine::lookup_symbols_from_library(void* handle) {
     }
 
     if (!main_fn_) {
-        const char* dl_error = dlerror();
+        const char* const dl_error = dlerror();
         PGX_ERROR("Cannot find main function via dlsym: %s", dl_error ? dl_error : "unknown");
         return false;
     }
@@ -494,7 +494,7 @@ bool JITEngine::lookup_symbols_from_library(void* handle) {
 
     set_context_fn_ = dlsym(handle, "rt_set_execution_context");
     if (!set_context_fn_) {
-        const char* dl_error = dlerror();
+        const char* const dl_error = dlerror();
         PGX_WARNING("Cannot find rt_set_execution_context via dlsym: %s", dl_error ? dl_error : "unknown");
         return false;
     }

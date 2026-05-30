@@ -31,11 +31,11 @@ mlir::relalg::ColumnManager& StandalonePipelineTester::getColumnManager() {
     return dialect->getColumnManager();
 }
 
-bool StandalonePipelineTester::loadRelAlgModule(const std::string& mlirText) {
-    auto moduleRef = mlir::parseSourceString<mlir::ModuleOp>(mlirText, context_.get());
-    if (!moduleRef) return false;
+bool StandalonePipelineTester::loadRelAlgModule(const std::string& mlir_text) {
+    auto module_ref = mlir::parseSourceString<mlir::ModuleOp>(mlir_text, context_.get());
+    if (!module_ref) return false;
     
-    module_ = std::make_unique<mlir::ModuleOp>(moduleRef.release());
+    module_ = std::make_unique<mlir::ModuleOp>(module_ref.release());
     return mlir::succeeded(mlir::verify(module_->getOperation()));
 }
 

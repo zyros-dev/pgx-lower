@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace pgx_lower { namespace log {
+namespace pgx_lower::log {
 
 bool log_enable = false;
 bool log_io = true;
@@ -17,38 +17,39 @@ std::set<Category> enabled_categories;
 static bool initialized = false;
 
 static void initialize_if_needed() {
-    if (initialized)
+    if (initialized) {
         return;
+}
     initialized = true;
 
-    const char* enable_env = std::getenv("PGX_LOWER_LOG_ENABLE");
+    const char* const enable_env = std::getenv("PGX_LOWER_LOG_ENABLE");
     if (enable_env && strcmp(enable_env, "true") == 0) {
         log_enable = true;
     }
 
-    const char* io_env = std::getenv("PGX_LOWER_LOG_IO");
+    const char* const io_env = std::getenv("PGX_LOWER_LOG_IO");
     if (io_env && strcmp(io_env, "false") == 0) {
         log_io = false;
     }
 
-    const char* debug_env = std::getenv("PGX_LOWER_LOG_DEBUG");
+    const char* const debug_env = std::getenv("PGX_LOWER_LOG_DEBUG");
     if (debug_env && strcmp(debug_env, "true") == 0) {
         log_debug = true;
     }
 
-    const char* ir_env = std::getenv("PGX_LOWER_LOG_IR");
+    const char* const ir_env = std::getenv("PGX_LOWER_LOG_IR");
     if (ir_env && strcmp(ir_env, "true") == 0) {
         log_ir = true;
     }
 
-    const char* trace_env = std::getenv("PGX_LOWER_LOG_TRACE");
+    const char* const trace_env = std::getenv("PGX_LOWER_LOG_TRACE");
     if (trace_env && strcmp(trace_env, "true") == 0) {
         log_trace = true;
     }
 
-    const char* cat_env = std::getenv("PGX_LOWER_LOG_CATEGORIES");
+    const char* const cat_env = std::getenv("PGX_LOWER_LOG_CATEGORIES");
     if (cat_env && strlen(cat_env) > 0) {
-        std::string cats(cat_env);
+        std::string const cats(cat_env);
         std::stringstream ss(cats);
         std::string cat;
         while (std::getline(ss, cat, ',')) {
@@ -57,22 +58,23 @@ static void initialize_if_needed() {
 
             std::transform(cat.begin(), cat.end(), cat.begin(), ::tolower);
 
-            if (cat == "ast_translate")
+            if (cat == "ast_translate") {
                 enabled_categories.insert(Category::AST_TRANSLATE);
-            else if (cat == "relalg_lower")
+            } else if (cat == "relalg_lower") {
                 enabled_categories.insert(Category::RELALG_LOWER);
-            else if (cat == "db_lower")
+            } else if (cat == "db_lower") {
                 enabled_categories.insert(Category::DB_LOWER);
-            else if (cat == "dsa_lower")
+            } else if (cat == "dsa_lower") {
                 enabled_categories.insert(Category::DSA_LOWER);
-            else if (cat == "util_lower")
+            } else if (cat == "util_lower") {
                 enabled_categories.insert(Category::UTIL_LOWER);
-            else if (cat == "runtime")
+            } else if (cat == "runtime") {
                 enabled_categories.insert(Category::RUNTIME);
-            else if (cat == "jit")
+            } else if (cat == "jit") {
                 enabled_categories.insert(Category::JIT);
-            else if (cat == "general")
+            } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+}
         }
     }
     initialized = true;
@@ -105,33 +107,38 @@ const char* level_name(Level level) {
     return "UNKNOWN";
 }
 
-bool should_log(const Category cat, const Level level) {
+bool should_log(const Category CAT, const Level LEVEL) {
     initialize_if_needed();
-    if (cat == Category::PROBLEM) return true;
+    if (CAT == Category::PROBLEM) return true;
 
-    if (!log_enable)
+    if (!log_enable) {
         return false;
+}
 
-    if (!enabled_categories.contains(cat)) {
+    if (!enabled_categories.contains(CAT)) {
         return false;
     }
 
-    switch (level) {
+    switch (LEVEL) {
     case Level::IO:
-        if (!log_io)
+        if (!log_io) {
             return false;
+}
         break;
     case Level::DEBUG:
-        if (!log_debug)
+        if (!log_debug) {
             return false;
+}
         break;
     case Level::IR:
-        if (!log_ir)
+        if (!log_ir) {
             return false;
+}
         break;
     case Level::TRACE:
-        if (!log_trace)
+        if (!log_trace) {
             return false;
+}
         break;
     default:;
     }
@@ -140,27 +147,28 @@ bool should_log(const Category cat, const Level level) {
 }
 
 const char* basename_only(const char* filepath) {
-    const char* basename = strrchr(filepath, '/');
+    const char* const basename = strrchr(filepath, '/');
     return basename ? basename + 1 : filepath;
 }
 
 void log(Category cat, Level level, const char* file, int line, const char* fmt, ...) {
-    if (!should_log(cat, level))
+    if (!should_log(cat, level)) {
         return;
+}
 
     va_list args_size;
     va_start(args_size, fmt);
-    const auto size_needed = vsnprintf(nullptr, 0, fmt, args_size) + 1;
+    const auto SIZE_NEEDED = vsnprintf(nullptr, 0, fmt, args_size) + 1;
     va_end(args_size);
 
-    auto message = std::vector<char>(size_needed * 2);
+    auto message = std::vector<char>(SIZE_NEEDED * 2);
     
     va_list args;
     va_start(args, fmt);
-    vsnprintf(message.data(), size_needed, fmt, args);
+    vsnprintf(message.data(), SIZE_NEEDED, fmt, args);
     va_end(args);
 
-    const char* filename = basename_only(file);
+    const char* const filename = basename_only(file);
 
 #ifdef POSTGRESQL_EXTENSION
     if (cat == Category::PROBLEM) {
@@ -199,7 +207,8 @@ ScopeLogger::~ScopeLogger() {
     }
 }
 
-}} // namespace pgx_lower::log
+} // namespace log
+ // namespace pgx_lower
 
 extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char* categories) {
     using namespace pgx_lower::log;
@@ -223,22 +232,23 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
 
             std::ranges::transform(cat, cat.begin(), ::tolower);
 
-            if (cat == "ast_translate")
+            if (cat == "ast_translate") {
                 enabled_categories.insert(Category::AST_TRANSLATE);
-            else if (cat == "relalg_lower")
+            } else if (cat == "relalg_lower") {
                 enabled_categories.insert(Category::RELALG_LOWER);
-            else if (cat == "db_lower")
+            } else if (cat == "db_lower") {
                 enabled_categories.insert(Category::DB_LOWER);
-            else if (cat == "dsa_lower")
+            } else if (cat == "dsa_lower") {
                 enabled_categories.insert(Category::DSA_LOWER);
-            else if (cat == "util_lower")
+            } else if (cat == "util_lower") {
                 enabled_categories.insert(Category::UTIL_LOWER);
-            else if (cat == "runtime")
+            } else if (cat == "runtime") {
                 enabled_categories.insert(Category::RUNTIME);
-            else if (cat == "jit")
+            } else if (cat == "jit") {
                 enabled_categories.insert(Category::JIT);
-            else if (cat == "general")
+            } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+}
         }
     }
 }

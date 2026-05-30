@@ -26,7 +26,6 @@
 #include "lingodb/mlir/Dialect/DB/Passes.h"
 
 #include "pgx-lower/execution/mlir_runner.h"
-#include "pgx-lower/utility/logging.h"
 
 extern "C" void initialize_mlir_passes() {
     try {
@@ -56,13 +55,13 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     }
 
     context.getDiagEngine().registerHandler([](mlir::Diagnostic &diag) {
-        std::string diagStr;
-        llvm::raw_string_ostream os(diagStr);
+        std::string diag_str;
+        llvm::raw_string_ostream os(diag_str);
         
-        std::string locStr;
-        llvm::raw_string_ostream locOs(locStr);
-        diag.getLocation().print(locOs);
-        locOs.flush();
+        std::string loc_str;
+        llvm::raw_string_ostream loc_os(loc_str);
+        diag.getLocation().print(loc_os);
+        loc_os.flush();
         
         diag.print(os);
         os.flush();
@@ -73,8 +72,8 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
             case mlir::DiagnosticSeverity::Note:
             case mlir::DiagnosticSeverity::Remark:
                 PGX_WARNING("MLIR Note at %s: %s",
-                       locStr.empty() ? "unknown" : locStr.c_str(), 
-                       diagStr.c_str());
+                       loc_str.empty() ? "unknown" : loc_str.c_str(), 
+                       diag_str.c_str());
                 break;
         }
         

@@ -58,17 +58,17 @@ mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCt
     const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
 
-    auto argValue = translate_expression(ctx, coerce->arg);
-    if (!argValue) {
+    auto arg_value = translate_expression(ctx, coerce->arg);
+    if (!arg_value) {
         PGX_ERROR("Failed to translate CoerceViaIO argument");
         throw std::runtime_error("Failed to translate CoerceViaIO argument");
     }
 
-    const bool isNullable = mlir::isa<mlir::db::NullableType>(argValue.getType());
-    const auto type_mapper = PostgreSQLTypeMapper(context_);
-    auto targetType = type_mapper.map_postgre_sqltype(coerce->resulttype, -1, isNullable);
+    const bool IS_NULLABLE = mlir::isa<mlir::db::NullableType>(arg_value.getType());
+    const auto TYPE_MAPPER = PostgreSQLTypeMapper(context_);
+    auto target_type = TYPE_MAPPER.map_postgre_sqltype(coerce->resulttype, -1, IS_NULLABLE);
 
-    return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, argValue);
+    return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), target_type, arg_value);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value {
@@ -88,19 +88,19 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                 throw std::runtime_error("Invalid BoolExpr parameters");
             }
 
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, bool_expr->args) {
-                if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                    if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
-                        if (!argValue.getType().isInteger(1)) {
-                            argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
+                if (auto *const ARG_NODE = static_cast<Node*>(lfirst(lc))) {
+                    if (mlir::Value arg_value = translate_expression(ctx, reinterpret_cast<Expr*>(ARG_NODE))) {
+                        if (!arg_value.getType().isInteger(1)) {
+                            arg_value = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), arg_value);
                         }
 
                         if (!result) {
-                            result = argValue;
+                            result = arg_value;
                         } else {
                             result = ctx.builder.create<mlir::db::AndOp>(
-                                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), mlir::ValueRange{result, argValue});
+                                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), mlir::ValueRange{result, arg_value});
                         }
                     }
                 }
@@ -123,19 +123,19 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                 throw std::runtime_error("BoolExpr OR args list has length but no elements array");
             }
 
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, bool_expr->args) {
-                if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                    if (auto argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
-                        if (!argValue.getType().isInteger(1)) { // Ensur
-                            argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
+                if (auto *const ARG_NODE = static_cast<Node*>(lfirst(lc))) {
+                    if (auto arg_value = translate_expression(ctx, reinterpret_cast<Expr*>(ARG_NODE))) {
+                        if (!arg_value.getType().isInteger(1)) { // Ensur
+                            arg_value = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), arg_value);
                         }
 
                         if (!result) {
-                            result = argValue;
+                            result = arg_value;
                         } else {
                             result = ctx.builder.create<mlir::db::OrOp>(
-                                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), mlir::ValueRange{result, argValue});
+                                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), mlir::ValueRange{result, arg_value});
                         }
                     }
                 }
@@ -150,26 +150,26 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     }
 
     case NOT_EXPR: {
-        mlir::Value argVal = nullptr;
+        mlir::Value arg_val = nullptr;
 
         if (bool_expr->args && bool_expr->args->length > 0) {
-            if (const ListCell* lc = list_head(bool_expr->args)) {
-                if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                    argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
+            if (const ListCell* const lc = list_head(bool_expr->args)) {
+                if (auto *const ARG_NODE = static_cast<Node*>(lfirst(lc))) {
+                    arg_val = translate_expression(ctx, reinterpret_cast<Expr*>(ARG_NODE));
                 }
             }
         }
 
-        if (!argVal) {
+        if (!arg_val) {
             PGX_ERROR("NOT expression has no valid argument, using placeholder");
             throw std::runtime_error("NOT expression has no valid argument, using placeholder");
         }
 
-        if (!argVal.getType().isInteger(1)) {
-            argVal = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argVal);
+        if (!arg_val.getType().isInteger(1)) {
+            arg_val = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), arg_val);
         }
 
-        return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), argVal);
+        return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), arg_val);
     }
 
     default: {
@@ -186,23 +186,22 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
         throw std::runtime_error("Invalid NullTest parameters");
     }
 
-    auto* argNode = reinterpret_cast<Node*>(null_test->arg);
-    auto argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
-    if (!argVal) {
+    auto* arg_node = reinterpret_cast<Node*>(null_test->arg);
+    auto arg_val = translate_expression(ctx, reinterpret_cast<Expr*>(arg_node));
+    if (!arg_val) {
         PGX_ERROR("Failed to translate NullTest argument");
         throw std::runtime_error("Failed to translate NullTest argument");
     }
 
-    if (isa<mlir::db::NullableType>(argVal.getType())) {
-        auto isNull = ctx.builder.create<mlir::db::IsNullOp>(ctx.builder.getUnknownLoc(), argVal);
-        if (null_test->nulltesttype == PG_IS_NOT_NULL)
+    if (isa<mlir::db::NullableType>(arg_val.getType())) {
+        auto isNull = ctx.builder.create<mlir::db::IsNullOp>(ctx.builder.getUnknownLoc(), arg_val);
+        if (null_test->nulltesttype == PG_IS_NOT_NULL) {
             return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), isNull);
-        else
-            return isNull;
+        }             return isNull;
     } else {
         return ctx.builder.create<mlir::db::ConstantOp>(
             ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
-            ctx.builder.getIntegerAttr(ctx.builder.getI1Type(), null_test->nulltesttype == PG_IS_NOT_NULL));
+            ctx.builder.getIntegerAttr(ctx.builder.getI1Type(), static_cast<int64_t>(null_test->nulltesttype == PG_IS_NOT_NULL)));
     }
 }
 
@@ -216,99 +215,99 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
     }
 
     if (!coalesce_expr->args || coalesce_expr->args->length == 0) {
-        auto nullType = mlir::db::NullableType::get(&context_, ctx.builder.getI32Type());
-        return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullType);
+        auto null_type = mlir::db::NullableType::get(&context_, ctx.builder.getI32Type());
+        return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), null_type);
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesce_expr->args->length);
 
-    auto translatedArgs = std::vector<mlir::Value>{};
+    auto translated_args = std::vector<mlir::Value>{};
 
-    ListCell* cell;
+    ListCell* cell = nullptr;
     foreach (cell, coalesce_expr->args) {
-        const auto expr = static_cast<Expr*>(lfirst(cell));
-        if (mlir::Value val = translate_expression(ctx, expr)) {
-            translatedArgs.push_back(val);
+        auto *const EXPR = static_cast<Expr*>(lfirst(cell));
+        if (mlir::Value const val = translate_expression(ctx, EXPR)) {
+            translated_args.push_back(val);
         } else {
             PGX_ERROR("Failed to translate COALESCE argument");
             throw std::runtime_error("Failed to translate COALESCE argument");
         }
     }
 
-    if (translatedArgs.empty()) {
+    if (translated_args.empty()) {
         PGX_ERROR("All COALESCE arguments failed to translate");
         throw std::runtime_error("All COALESCE arguments failed to translate");
     }
 
-    mlir::Type baseType = nullptr;
-    for (const auto& arg : translatedArgs) {
-        const auto argType = arg.getType();
-        if (auto nullableType = dyn_cast<mlir::db::NullableType>(argType)) {
-            if (!baseType) {
-                baseType = nullableType.getType();
+    mlir::Type base_type = nullptr;
+    for (const auto& arg : translated_args) {
+        const auto ARG_TYPE = arg.getType();
+        if (auto nullable_type = dyn_cast<mlir::db::NullableType>(ARG_TYPE)) {
+            if (!base_type) {
+                base_type = nullable_type.getType();
             }
-        } else if (!baseType) {
-            baseType = argType;
+        } else if (!base_type) {
+            base_type = ARG_TYPE;
         }
     }
 
     // COALESCE should always produce nullable type in query contexts
     // Even when all inputs are non-nullable, the result needs nullable wrapper
-    auto commonType = mlir::db::NullableType::get(&context_, baseType);
+    auto common_type = mlir::db::NullableType::get(&context_, base_type);
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE common type determined - forcing nullable for query context");
-    for (auto& val : translatedArgs) {
-        if (val.getType() != commonType) {
+    for (auto& val : translated_args) {
+        if (val.getType() != common_type) {
             if (!isa<mlir::db::NullableType>(val.getType())) {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Wrapping non-nullable argument to match common nullable type");
-                auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
-                val = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), commonType, val, falseFlag);
+                auto false_flag = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
+                val = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), common_type, val, false_flag);
             }
         }
     }
 
-    std::function<mlir::Value(size_t)> buildCoalesceRecursive = [&](const size_t index) -> mlir::Value {
-        const auto loc = ctx.builder.getUnknownLoc();
-        if (index >= translatedArgs.size() - 1) {
-            return translatedArgs.back();
+    std::function<mlir::Value(size_t)> build_coalesce_recursive = [&](const size_t INDEX) -> mlir::Value {
+        const auto LOC = ctx.builder.getUnknownLoc();
+        if (INDEX >= translated_args.size() - 1) {
+            return translated_args.back();
         }
 
-        auto value = translatedArgs[index];
-        auto isNull = ctx.builder.create<mlir::db::IsNullOp>(loc, value);
-        auto isNotNull = ctx.builder.create<mlir::db::NotOp>(loc, isNull);
+        auto value = translated_args[INDEX];
+        auto is_null = ctx.builder.create<mlir::db::IsNullOp>(LOC, value);
+        auto is_not_null = ctx.builder.create<mlir::db::NotOp>(LOC, is_null);
 
-        auto ifOp = ctx.builder.create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
+        auto if_op = ctx.builder.create<mlir::scf::IfOp>(LOC, common_type, is_not_null, true);
 
-        auto& thenRegion = ifOp.getThenRegion();
-        auto* thenBlock = &thenRegion.front();
-        ctx.builder.setInsertionPointToEnd(thenBlock);
+        auto& then_region = if_op.getThenRegion();
+        auto* then_block = &then_region.front();
+        ctx.builder.setInsertionPointToEnd(then_block);
 
-        mlir::Value thenValue = value;
-        if (value.getType() != commonType && !isa<mlir::db::NullableType>(value.getType())) {
-            auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1);
-            thenValue = ctx.builder.create<mlir::db::AsNullableOp>(loc, commonType, value, falseFlag);
+        mlir::Value then_value = value;
+        if (value.getType() != common_type && !isa<mlir::db::NullableType>(value.getType())) {
+            auto false_flag = ctx.builder.create<mlir::arith::ConstantIntOp>(LOC, 0, 1);
+            then_value = ctx.builder.create<mlir::db::AsNullableOp>(LOC, common_type, value, false_flag);
         }
-        ctx.builder.create<mlir::scf::YieldOp>(loc, thenValue);
+        ctx.builder.create<mlir::scf::YieldOp>(LOC, then_value);
 
-        auto& elseRegion = ifOp.getElseRegion();
-        auto* elseBlock = &elseRegion.front();
-        ctx.builder.setInsertionPointToEnd(elseBlock);
-        auto elseValue = buildCoalesceRecursive(index + 1);
-        ctx.builder.create<mlir::scf::YieldOp>(loc, elseValue);
+        auto& else_region = if_op.getElseRegion();
+        auto* else_block = &else_region.front();
+        ctx.builder.setInsertionPointToEnd(else_block);
+        auto else_value = build_coalesce_recursive(INDEX + 1);
+        ctx.builder.create<mlir::scf::YieldOp>(LOC, else_value);
 
-        ctx.builder.setInsertionPointAfter(ifOp);
+        ctx.builder.setInsertionPointAfter(if_op);
 
-        return ifOp.getResult(0);
+        return if_op.getResult(0);
     };
 
-    const auto result = buildCoalesceRecursive(0);
+    const auto RESULT = build_coalesce_recursive(0);
 
-    const bool resultIsNullable = mlir::isa<mlir::db::NullableType>(result.getType());
-    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE final result is nullable: %d", resultIsNullable);
+    const bool RESULT_IS_NULLABLE = mlir::isa<mlir::db::NullableType>(RESULT.getType());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE final result is nullable: %d", RESULT_IS_NULLABLE);
 
-    const auto resultIsNullableType = isa<mlir::db::NullableType>(result.getType());
-    PGX_LOG(AST_TRANSLATE, IO, "translate_coalesce_expr OUT: MLIR Value (nullable=%d)", resultIsNullableType);
+    const auto RESULT_IS_NULLABLE_TYPE = isa<mlir::db::NullableType>(RESULT.getType());
+    PGX_LOG(AST_TRANSLATE, IO, "translate_coalesce_expr OUT: MLIR Value (nullable=%d)", RESULT_IS_NULLABLE_TYPE);
 
-    return result;
+    return RESULT;
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCtxT& ctx,
@@ -327,128 +326,128 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         throw std::runtime_error("ScalarArrayOpExpr: Expected 2 arguments");
     }
 
-    const auto leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
-    auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
-    if (!leftValue) {
+    auto *const LEFT_NODE = static_cast<Node*>(lfirst(&args->elements[0]));
+    auto left_value = translate_expression(ctx, reinterpret_cast<Expr*>(LEFT_NODE));
+    if (!left_value) {
         PGX_ERROR("Failed to translate left operand of IN expression");
         throw std::runtime_error("Failed to translate left operand of IN expression");
     }
 
-    Oid leftTypeOid = exprType(leftNode);
-    int32 leftTypeMod = exprTypmod(leftNode);
-    int bpcharLength = -1;
-    if (leftTypeOid == BPCHAROID && leftTypeMod >= VARHDRSZ) {
-        bpcharLength = leftTypeMod - VARHDRSZ;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Left operand is BPCHAR with length=%d", bpcharLength);
+    Oid const left_type_oid = exprType(LEFT_NODE);
+    int32 const left_type_mod = exprTypmod(LEFT_NODE);
+    int bpchar_length = -1;
+    if (left_type_oid == BPCHAROID && left_type_mod >= VARHDRSZ) {
+        bpchar_length = left_type_mod - VARHDRSZ;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Left operand is BPCHAR with length=%d", bpchar_length);
     }
 
-    const auto rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
+    auto *const RIGHT_NODE = static_cast<Node*>(lfirst(&args->elements[1]));
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
-    auto arrayElements = std::vector<mlir::Value>{};
+    PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(RIGHT_NODE));
+    auto array_elements = std::vector<mlir::Value>{};
 
-    if (nodeTag(rightNode) == T_ArrayExpr) {
-        const auto arrayExpr = reinterpret_cast<ArrayExpr*>(rightNode);
-        if (const auto* elements = arrayExpr->elements) {
-            ListCell* lc;
+    if (nodeTag(RIGHT_NODE) == T_ArrayExpr) {
+        auto *const ARRAY_EXPR = reinterpret_cast<ArrayExpr*>(RIGHT_NODE);
+        if (const auto* elements = ARRAY_EXPR->elements) {
+            ListCell* lc = nullptr;
             foreach (lc, elements) {
-                const auto elemNode = static_cast<Node*>(lfirst(lc));
-                if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode))) {
-                    arrayElements.push_back(elemValue);
+                auto *const ELEM_NODE = static_cast<Node*>(lfirst(lc));
+                if (mlir::Value const elem_value = translate_expression(ctx, reinterpret_cast<Expr*>(ELEM_NODE))) {
+                    array_elements.push_back(elem_value);
                 }
             }
         }
-    } else if (nodeTag(rightNode) == T_Const) {
-        if (const auto constNode = reinterpret_cast<Const*>(rightNode); constNode->consttype == INT4ARRAYOID) {
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems;
-            Datum* values;
-            bool* nulls;
+    } else if (nodeTag(RIGHT_NODE) == T_Const) {
+        if (auto *const CONST_NODE = reinterpret_cast<Const*>(RIGHT_NODE); CONST_NODE->consttype == INT4ARRAYOID) {
+            auto *const ARRAY = DatumGetArrayTypeP(CONST_NODE->constvalue);
+            int nitems = 0;
+            Datum* values = nullptr;
+            bool* nulls = nullptr;
 
-            deconstruct_array(array, INT4OID, sizeof(int32), true, TYPALIGN_INT, &values, &nulls, &nitems);
+            deconstruct_array(ARRAY, INT4OID, sizeof(int32), true, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i = 0; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
-                    int32 intValue = DatumGetInt32(values[i]);
-                    auto elemValue = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
-                                                                                    intValue, ctx.builder.getI32Type());
-                    arrayElements.push_back(elemValue);
+                    int32 const int_value = DatumGetInt32(values[i]);
+                    auto elem_value = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                                    int_value, ctx.builder.getI32Type());
+                    array_elements.push_back(elem_value);
                 }
             }
-        } else if (constNode->consttype == PG_TEXT_ARRAY_OID) {
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems;
-            Datum* values;
-            bool* nulls;
+        } else if (CONST_NODE->consttype == PG_TEXT_ARRAY_OID) {
+            auto *const ARRAY = DatumGetArrayTypeP(CONST_NODE->constvalue);
+            int nitems = 0;
+            Datum* values = nullptr;
+            bool* nulls = nullptr;
 
-            deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
+            deconstruct_array(ARRAY, TEXTOID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i = 0; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
-                    const auto textValue = DatumGetTextP(values[i]);
-                    std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
+                    auto *const TEXT_VALUE = DatumGetTextP(values[i]);
+                    std::string const str_value(VARDATA(TEXT_VALUE), VARSIZE(TEXT_VALUE) - VARHDRSZ);
 
-                    auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
+                    auto elem_value = ctx.builder.create<mlir::db::ConstantOp>(
                         ctx.builder.getUnknownLoc(), ctx.builder.getType<mlir::db::StringType>(),
                         ctx.builder.getStringAttr(str_value));
-                    arrayElements.push_back(elemValue);
+                    array_elements.push_back(elem_value);
                 }
             }
-        } else if (constNode->consttype == BPCHARARRAYOID) {
+        } else if (CONST_NODE->consttype == BPCHARARRAYOID) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Processing BPCHAR array (CHAR/VARCHAR), target column length=%d",
-                    bpcharLength);
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems;
-            Datum* values;
-            bool* nulls;
+                    bpchar_length);
+            auto *const ARRAY = DatumGetArrayTypeP(CONST_NODE->constvalue);
+            int nitems = 0;
+            Datum* values = nullptr;
+            bool* nulls = nullptr;
 
-            deconstruct_array(array, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
+            deconstruct_array(ARRAY, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i = 0; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
-                    const auto bpcharValue = DatumGetBpCharP(values[i]);
-                    std::string str_value(VARDATA_ANY(bpcharValue), VARSIZE_ANY_EXHDR(bpcharValue));
+                    auto *const BPCHAR_VALUE = DatumGetBpCharP(values[i]);
+                    std::string str_value(VARDATA_ANY(BPCHAR_VALUE), VARSIZE_ANY_EXHDR(BPCHAR_VALUE));
 
                     str_value.erase(str_value.find_last_not_of(' ') + 1);
 
-                    if (bpcharLength > 0 && str_value.length() < static_cast<size_t>(bpcharLength)) {
-                        str_value.resize(bpcharLength, ' ');
+                    if (bpchar_length > 0 && str_value.length() < static_cast<size_t>(bpchar_length)) {
+                        str_value.resize(bpchar_length, ' ');
                         PGX_LOG(AST_TRANSLATE, DEBUG, "BPCHAR array element[%d]: '%s' (padded to len=%d)", i,
-                                str_value.c_str(), bpcharLength);
+                                str_value.c_str(), bpchar_length);
                     } else {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "BPCHAR array element[%d]: '%s' (len=%zu, no padding needed)", i,
                                 str_value.c_str(), str_value.length());
                     }
 
-                    auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
+                    auto elem_value = ctx.builder.create<mlir::db::ConstantOp>(
                         ctx.builder.getUnknownLoc(), ctx.builder.getType<mlir::db::StringType>(),
                         ctx.builder.getStringAttr(str_value));
-                    arrayElements.push_back(elemValue);
+                    array_elements.push_back(elem_value);
                 }
             }
         } else {
-            PGX_WARNING("ScalarArrayOpExpr: Unsupported const array type %u", constNode->consttype);
+            PGX_WARNING("ScalarArrayOpExpr: Unsupported const array type %u", CONST_NODE->consttype);
         }
-    } else if (nodeTag(rightNode) == T_SubPlan) {
+    } else if (nodeTag(RIGHT_NODE) == T_SubPlan) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr with SubPlan operand detected (ANY/ALL/IN subquery)");
         throw std::runtime_error("UNEXPECTED: Is this possible?");
-    } else if (nodeTag(rightNode) == T_Param) {
-        const auto* param = reinterpret_cast<Param*>(rightNode);
+    } else if (nodeTag(RIGHT_NODE) == T_Param) {
+        const auto* param = reinterpret_cast<Param*>(RIGHT_NODE);
 
         if (param->paramkind != PARAM_EXEC) {
             PGX_ERROR("Only PARAM_EXEC parameters are supported (got paramkind=%d)", param->paramkind);
             throw std::runtime_error("Unsupported param kind");
         }
 
-        const auto it = ctx.params.find(param->paramid);
-        if (it == ctx.params.end()) {
+        const auto IT = ctx.params.find(param->paramid);
+        if (IT == ctx.params.end()) {
             PGX_ERROR("Param references unknown paramid=%d (not in params map)", param->paramid);
             throw std::runtime_error("Param references unknown param");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving ScalarArrayOpExpr Param paramid=%d to InitPlan result", param->paramid);
 
-        const auto& param_info = it->second;
+        const auto& param_info = IT->second;
 
         if (!param_info.cached_value) {
             PGX_ERROR("InitPlan param %d has no cached value", param->paramid);
@@ -475,18 +474,18 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             throw std::runtime_error("InitPlan must return at least one column");
         }
 
-        mlir::Value initplan_stream = initplan_result.op->getResult(0);
+        mlir::Value const initplan_stream = initplan_result.op->getResult(0);
         const auto& initplan_column = initplan_result.columns[0];
 
         auto& col_mgr = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-        const auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
+        const auto TUPLE_TYPE = mlir::relalg::TupleType::get(ctx.builder.getContext());
 
         auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), initplan_stream);
 
         auto& pred_region = selection_op.getPredicate();
         auto& pred_block = pred_region.emplaceBlock();
-        auto inner_tuple = pred_block.addArgument(tuple_type, ctx.builder.getUnknownLoc());
+        auto inner_tuple = pred_block.addArgument(TUPLE_TYPE, ctx.builder.getUnknownLoc());
 
         mlir::OpBuilder pred_builder(&pred_block, pred_block.begin());
 
@@ -494,34 +493,34 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         auto initplan_value = pred_builder.create<mlir::relalg::GetColumnOp>(
             pred_builder.getUnknownLoc(), initplan_column.mlir_type, initplan_col_ref, inner_tuple);
 
-        char* oprname = get_opname(scalar_array_op->opno);
+        char* const oprname = get_opname(scalar_array_op->opno);
         if (!oprname) {
             PGX_ERROR("Unknown operator OID %u in ScalarArrayOpExpr with Param", scalar_array_op->opno);
             throw std::runtime_error("Unknown operator OID");
         }
 
-        const std::string op(oprname);
+        const std::string OP(oprname);
         pfree(oprname);
 
         mlir::db::DBCmpPredicate predicate;
-        if (op == "=") {
+        if (OP == "=") {
             predicate = mlir::db::DBCmpPredicate::eq;
-        } else if (op == "<>" || op == "!=") {
+        } else if (OP == "<>" || OP == "!=") {
             predicate = mlir::db::DBCmpPredicate::neq;
-        } else if (op == "<") {
+        } else if (OP == "<") {
             predicate = mlir::db::DBCmpPredicate::lt;
-        } else if (op == "<=") {
+        } else if (OP == "<=") {
             predicate = mlir::db::DBCmpPredicate::lte;
-        } else if (op == ">") {
+        } else if (OP == ">") {
             predicate = mlir::db::DBCmpPredicate::gt;
-        } else if (op == ">=") {
+        } else if (OP == ">=") {
             predicate = mlir::db::DBCmpPredicate::gte;
         } else {
-            PGX_ERROR("Unsupported operator '%s' in ScalarArrayOpExpr with Param", op.c_str());
+            PGX_ERROR("Unsupported operator '%s' in ScalarArrayOpExpr with Param", OP.c_str());
             throw std::runtime_error("Unsupported operator");
         }
 
-        auto comparison = pred_builder.create<mlir::db::CmpOp>(pred_builder.getUnknownLoc(), predicate, leftValue,
+        auto comparison = pred_builder.create<mlir::db::CmpOp>(pred_builder.getUnknownLoc(), predicate, left_value,
                                                                initplan_value);
 
         pred_builder.create<mlir::relalg::ReturnOp>(pred_builder.getUnknownLoc(), mlir::ValueRange{comparison});
@@ -532,53 +531,54 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created EXISTS pattern for ScalarArrayOpExpr with Param");
         return exists_op.getResult();
     } else {
-        PGX_ERROR("ScalarArrayOpExpr: Unexpected right operand type %d", nodeTag(rightNode));
+        PGX_ERROR("ScalarArrayOpExpr: Unexpected right operand type %d", nodeTag(RIGHT_NODE));
         throw std::runtime_error("Unsupported ScalarArrayOpExpr operand type");
     }
 
-    if (arrayElements.empty()) {
+    if (array_elements.empty()) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Empty array in IN clause, returning %s",
                 scalar_array_op->useOr ? "false" : "true");
         return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
                                                               scalar_array_op->useOr ? 0 : 1, ctx.builder.getI1Type());
     }
 
-    char* oprname = get_opname(scalar_array_op->opno);
-    std::string op = oprname ? std::string(oprname) : "=";
-    if (oprname)
+    char* const oprname = get_opname(scalar_array_op->opno);
+    std::string const op = oprname ? std::string(oprname) : "=";
+    if (oprname) {
         pfree(oprname);
+}
 
     if (op == "=" && scalar_array_op->useOr) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Using db.oneof for IN clause with %zu array elements", arrayElements.size());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using db.oneof for IN clause with %zu array elements", array_elements.size());
 
         std::vector<mlir::Value> values;
-        values.push_back(leftValue);
-        values.insert(values.end(), arrayElements.begin(), arrayElements.end());
+        values.push_back(left_value);
+        values.insert(values.end(), array_elements.begin(), array_elements.end());
 
-        auto oneofOp = ctx.builder.create<mlir::db::OneOfOp>(ctx.builder.getUnknownLoc(), values);
+        auto oneof_op = ctx.builder.create<mlir::db::OneOfOp>(ctx.builder.getUnknownLoc(), values);
         PGX_LOG(AST_TRANSLATE, IO, "translate_scalar_array_op_expr OUT: db.oneof MLIR Value");
-        return oneofOp.getResult();
+        return oneof_op.getResult();
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Using comparison loop for operator '%s' with useOr=%d", op.c_str(),
             scalar_array_op->useOr);
 
     mlir::Value result = nullptr;
-    for (auto elemValue : arrayElements) {
-        auto normalizedLeft = leftValue;
-        auto normalizedElem = elemValue;
+    for (auto elem_value : array_elements) {
+        auto normalized_left = left_value;
+        auto normalized_elem = elem_value;
 
         auto get_base_type = [](mlir::Type t) -> mlir::Type {
-            if (const auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
-                return nullable.getType();
+            if (const auto NULLABLE = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+                return NULLABLE.getType();
             }
             return t;
         };
 
-        const bool left_is_string = mlir::isa<mlir::db::StringType>(get_base_type(normalizedLeft.getType()));
-        const bool elem_is_string = mlir::isa<mlir::db::StringType>(get_base_type(normalizedElem.getType()));
+        const bool LEFT_IS_STRING = mlir::isa<mlir::db::StringType>(get_base_type(normalized_left.getType()));
+        const bool ELEM_IS_STRING = mlir::isa<mlir::db::StringType>(get_base_type(normalized_elem.getType()));
 
-        if (left_is_string && elem_is_string) {
+        if (LEFT_IS_STRING && ELEM_IS_STRING) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "String comparison in array operation - BPCHAR normalization may apply");
         }
 
@@ -586,14 +586,14 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
 
         if (op == "=") {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                      normalizedLeft, normalizedElem);
+                                                      normalized_left, normalized_elem);
         } else if (op == "<>" || op == "!=") {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::neq,
-                                                      normalizedLeft, normalizedElem);
+                                                      normalized_left, normalized_elem);
         } else {
             PGX_WARNING("Unsupported operator '%s' in ScalarArrayOpExpr, defaulting to equality", op.c_str());
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                      normalizedLeft, normalizedElem);
+                                                      normalized_left, normalized_elem);
         }
 
         if (!cmp.getType().isInteger(1)) {
@@ -627,10 +627,10 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 
     // 1. Simple:   CASE expr WHEN val1 THEN result1 WHEN val2 THEN result2 ELSE default END
     // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
-    mlir::Value caseArg = nullptr;
+    mlir::Value case_arg = nullptr;
     if (case_expr->arg) {
-        caseArg = translate_expression(ctx, case_expr->arg);
-        if (!caseArg) {
+        case_arg = translate_expression(ctx, case_expr->arg);
+        if (!case_arg) {
             PGX_ERROR("Failed to translate CASE argument expression");
             throw std::runtime_error("Check logs");
         }
@@ -640,87 +640,87 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     }
 
     // Build nested if-then-else structure from WHEN clauses
-    mlir::Value elseResult = nullptr;
+    mlir::Value else_result = nullptr;
     if (case_expr->defresult) {
-        elseResult = translate_expression(ctx, case_expr->defresult);
-        if (!elseResult) {
+        else_result = translate_expression(ctx, case_expr->defresult);
+        if (!else_result) {
             PGX_ERROR("Failed to translate CASE ELSE expression");
             throw std::runtime_error("Check logs");
         }
     } else {
-        const auto baseType = ctx.builder.getI32Type();
-        auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), baseType);
-        elseResult = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableType);
+        const auto BASE_TYPE = ctx.builder.getI32Type();
+        auto nullable_type = mlir::db::NullableType::get(ctx.builder.getContext(), BASE_TYPE);
+        else_result = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullable_type);
     }
 
     // Process WHEN clauses in reverse order to build nested if-else chain
-    mlir::Value result = elseResult;
+    mlir::Value result = else_result;
     if (case_expr->args && case_expr->args->length > 0) {
         for (int i = case_expr->args->length - 1; i >= 0; i--) {
-            const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
-            if (nodeTag(whenNode) != T_CaseWhen) {
-                PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
+            auto *const WHEN_NODE = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
+            if (nodeTag(WHEN_NODE) != T_CaseWhen) {
+                PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(WHEN_NODE));
                 throw std::runtime_error("Check logs");
             }
 
-            const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
+            auto *const WHEN_CLAUSE = reinterpret_cast<CaseWhen*>(WHEN_NODE);
 
             mlir::Value condition = nullptr;
-            if (caseArg) {
-                const mlir::Value whenCondition = translate_expression_with_case_test(ctx, whenClause->expr, caseArg);
-                if (!whenCondition) {
+            if (case_arg) {
+                const mlir::Value WHEN_CONDITION = translate_expression_with_case_test(ctx, WHEN_CLAUSE->expr, case_arg);
+                if (!WHEN_CONDITION) {
                     PGX_ERROR("Failed to translate WHEN condition in simple CASE");
                     throw std::runtime_error("Check logs");
                 }
-                condition = whenCondition;
+                condition = WHEN_CONDITION;
             } else {
-                condition = translate_expression(ctx, whenClause->expr);
+                condition = translate_expression(ctx, WHEN_CLAUSE->expr);
                 if (!condition) {
                     PGX_ERROR("Failed to translate WHEN condition");
                     throw std::runtime_error("Check logs");
                 }
             }
 
-            if (auto conditionType = condition.getType();
-                !isa<mlir::IntegerType>(conditionType) || cast<mlir::IntegerType>(conditionType).getWidth() != 1)
+            if (auto condition_type = condition.getType();
+                !isa<mlir::IntegerType>(condition_type) || cast<mlir::IntegerType>(condition_type).getWidth() != 1)
             {
                 condition = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), condition);
             }
 
-            mlir::Value thenResult = translate_expression(ctx, whenClause->result);
-            if (!thenResult) {
+            mlir::Value then_result = translate_expression(ctx, WHEN_CLAUSE->result);
+            if (!then_result) {
                 PGX_ERROR("Failed to translate THEN result");
                 throw std::runtime_error("Check logs");
             }
 
-            auto resultType = result.getType();
-            if (auto thenType = thenResult.getType(); resultType != thenType) {
-                const bool resultIsNullable = isa<mlir::db::NullableType>(resultType);
+            auto result_type = result.getType();
+            if (auto then_type = then_result.getType(); result_type != then_type) {
+                const bool RESULT_IS_NULLABLE = isa<mlir::db::NullableType>(result_type);
 
-                if (const bool thenIsNullable = isa<mlir::db::NullableType>(thenType); resultIsNullable && !thenIsNullable)
+                if (const bool THEN_IS_NULLABLE = isa<mlir::db::NullableType>(then_type); RESULT_IS_NULLABLE && !THEN_IS_NULLABLE)
                 {
-                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), thenType);
-                    thenResult = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType,
-                                                                            thenResult);
-                } else if (!resultIsNullable && thenIsNullable) {
-                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
-                    result = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType,
+                    auto nullable_type = mlir::db::NullableType::get(ctx.builder.getContext(), then_type);
+                    then_result = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullable_type,
+                                                                            then_result);
+                } else if (!RESULT_IS_NULLABLE && THEN_IS_NULLABLE) {
+                    auto nullable_type = mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
+                    result = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullable_type,
                                                                         result);
-                    resultType = nullableType;
+                    result_type = nullable_type;
                 }
             }
 
-            auto ifOp = ctx.builder.create<mlir::scf::IfOp>(ctx.builder.getUnknownLoc(), thenResult.getType(),
+            auto if_op = ctx.builder.create<mlir::scf::IfOp>(ctx.builder.getUnknownLoc(), then_result.getType(),
                                                             condition, true);
 
-            ctx.builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), thenResult);
+            ctx.builder.setInsertionPointToStart(&if_op.getThenRegion().front());
+            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), then_result);
 
-            ctx.builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            ctx.builder.setInsertionPointToStart(&if_op.getElseRegion().front());
             ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), result);
 
-            ctx.builder.setInsertionPointAfter(ifOp);
-            result = ifOp.getResult(0);
+            ctx.builder.setInsertionPointAfter(if_op);
+            result = if_op.getResult(0);
         }
     }
 
@@ -729,7 +729,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr,
-                                                                        const mlir::Value case_test_value)
+                                                                        const mlir::Value CASE_TEST_VALUE)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!expr) {
@@ -737,35 +737,35 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
     }
 
     if (nodeTag(expr) == T_CaseTestExpr) {
-        return case_test_value;
+        return CASE_TEST_VALUE;
     }
 
     if (nodeTag(expr) == T_OpExpr) {
-        const auto opExpr = reinterpret_cast<OpExpr*>(expr);
+        auto *const OP_EXPR = reinterpret_cast<OpExpr*>(expr);
 
-        if (!opExpr->args || opExpr->args->length != 2) {
+        if (!OP_EXPR->args || OP_EXPR->args->length != 2) {
             PGX_ERROR("OpExpr in CASE requires exactly 2 arguments");
             throw std::runtime_error("OpExpr in CASE requires exactly 2 arguments");
         }
 
-        const auto leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
-        const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
+        auto *const LEFT_NODE = static_cast<Node*>(lfirst(&OP_EXPR->args->elements[0]));
+        auto *const RIGHT_NODE = static_cast<Node*>(lfirst(&OP_EXPR->args->elements[1]));
 
-        mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
-                                    ? case_test_value
-                                    : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
-        mlir::Value rightValue = (rightNode && nodeTag(rightNode) == T_CaseTestExpr)
-                                     ? case_test_value
-                                     : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode));
+        mlir::Value left_value = (LEFT_NODE && nodeTag(LEFT_NODE) == T_CaseTestExpr)
+                                    ? CASE_TEST_VALUE
+                                    : translate_expression(ctx, reinterpret_cast<Expr*>(LEFT_NODE));
+        mlir::Value right_value = (RIGHT_NODE && nodeTag(RIGHT_NODE) == T_CaseTestExpr)
+                                     ? CASE_TEST_VALUE
+                                     : translate_expression(ctx, reinterpret_cast<Expr*>(RIGHT_NODE));
 
-        if (!leftValue || !rightValue) {
+        if (!left_value || !right_value) {
             PGX_ERROR("Failed to translate operands in CASE OpExpr");
             throw std::runtime_error("Failed to translate operands in CASE OpExpr");
         }
 
-        std::tie(leftValue, rightValue) = normalize_bpchar_operands(ctx, opExpr, leftValue, rightValue);
+        std::tie(left_value, right_value) = normalize_bpchar_operands(ctx, OP_EXPR, left_value, right_value);
 
-        return translate_comparison_op(ctx, opExpr->opno, leftValue, rightValue);
+        return translate_comparison_op(ctx, OP_EXPR->opno, left_value, right_value);
     }
 
     return translate_expression(ctx, expr);

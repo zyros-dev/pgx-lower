@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iomanip>
 #include <fstream>
+#include <utility>
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -19,14 +20,14 @@
 
 namespace mlir_runner {
 
-void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase) {
+void dump_module_with_stats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase) {
 #ifndef PGX_RELEASE_MODE
     if (!module) {
         PGX_WARNING("dumpModuleWithStats: Module is null for title: %s", title.c_str());
         return;
     }
 
-    auto PHASE_LOG = [&](const char* fmt, auto... args) {
+    auto phase_log = [&](const char* fmt, auto... args) {
         ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::IR, __FILE__, __LINE__, fmt, args...);
     };
     auto timestamp = std::chrono::system_clock::now();
@@ -36,108 +37,110 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     filename << "/tmp/pgx_ir/pgx_lower_" << title << "_" << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".mlir";
 
     try {
-        std::map<std::string, int> dialectCounts;
-        std::map<std::string, int> operationCounts;
-        std::map<std::string, int> typeCounts;
-        std::map<std::string, int> attributeCounts;
-        int totalOperations = 0;
-        int totalBlocks = 0;
-        int totalRegions = 0;
-        int totalValues = 0;
+        std::map<std::string, int> dialect_counts;
+        std::map<std::string, int> operation_counts;
+        std::map<std::string, int> type_counts;
+        std::map<std::string, int> attribute_counts;
+        int total_operations = 0;
+        int total_blocks = 0;
+        int total_regions = 0;
+        int total_values = 0;
 
         module.walk([&](::mlir::Operation* op) {
-            if (!op)
+            if (!op) {
                 return;
+}
 
-            totalOperations++;
+            total_operations++;
 
-            std::string dialectName = op->getName().getDialectNamespace().str();
-            if (dialectName.empty())
-                dialectName = "builtin";
-            dialectCounts[dialectName]++;
+            std::string dialect_name = op->getName().getDialectNamespace().str();
+            if (dialect_name.empty()) {
+                dialect_name = "builtin";
+}
+            dialect_counts[dialect_name]++;
 
-            std::string opName = op->getName().getStringRef().str();
-            operationCounts[opName]++;
+            std::string const op_name = op->getName().getStringRef().str();
+            operation_counts[op_name]++;
 
-            totalRegions += op->getNumRegions();
+            total_regions += op->getNumRegions();
             for (auto& region : op->getRegions()) {
-                totalBlocks += region.getBlocks().size();
+                total_blocks += region.getBlocks().size();
             }
 
-            totalValues += op->getNumResults();
+            total_values += op->getNumResults();
 
             for (auto result : op->getResults()) {
-                std::string typeName = "unknown";
-                llvm::raw_string_ostream stream(typeName);
+                std::string type_name = "unknown";
+                llvm::raw_string_ostream stream(type_name);
                 result.getType().print(stream);
-                typeCounts[typeName]++;
+                type_counts[type_name]++;
             }
 
             for (auto attr : op->getAttrs()) {
-                std::string attrType = attr.getName().str();
-                attributeCounts[attrType]++;
+                std::string const attr_type = attr.getName().str();
+                attribute_counts[attr_type]++;
             }
         });
 
-        PHASE_LOG("\n\n======= %s =======", title.c_str());
-        std::stringstream timeStr;
-        timeStr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-        PHASE_LOG("Timestamp: %s", timeStr.str().c_str());
-        PHASE_LOG("Output file: %s", filename.str().c_str());
+        phase_log("\n\n======= %s =======", title.c_str());
+        std::stringstream time_str;
+        time_str << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+        phase_log("Timestamp: %s", time_str.str().c_str());
+        phase_log("Output file: %s", filename.str().c_str());
 
-        PHASE_LOG("Module Statistics:");
-        PHASE_LOG("  Total Operations: %d", totalOperations);
-        PHASE_LOG("  Total Blocks: %d", totalBlocks);
-        PHASE_LOG("  Total Regions: %d", totalRegions);
-        PHASE_LOG("  Total Values: %d", totalValues);
+        phase_log("Module Statistics:");
+        phase_log("  Total Operations: %d", total_operations);
+        phase_log("  Total Blocks: %d", total_blocks);
+        phase_log("  Total Regions: %d", total_regions);
+        phase_log("  Total Values: %d", total_values);
 
         try {
-            std::string moduleStr;
-            llvm::raw_string_ostream stream(moduleStr);
+            std::string module_str;
+            llvm::raw_string_ostream stream(module_str);
             module.print(stream);
 
-            std::stringstream formattedMLIR;
-            formattedMLIR << "\n=== MLIR MODULE CONTENT: " << title << " ===\n";
+            std::stringstream formatted_mlir;
+            formatted_mlir << "\n=== MLIR MODULE CONTENT: " << title << " ===\n";
 
-            std::stringstream ss(moduleStr);
+            std::stringstream ss(module_str);
             std::string line;
-            int lineNum = 1;
+            int line_num = 1;
             while (std::getline(ss, line)) {
-                formattedMLIR << std::setw(3) << lineNum << ": " << line << "\n";
-                lineNum++;
+                formatted_mlir << std::setw(3) << line_num << ": " << line << "\n";
+                line_num++;
             }
-            formattedMLIR << "=== END MLIR MODULE CONTENT ===\n";
+            formatted_mlir << "=== END MLIR MODULE CONTENT ===\n";
 
-            PHASE_LOG("%s", formattedMLIR.str().c_str());
+            phase_log("%s", formatted_mlir.str().c_str());
 
         } catch (const std::exception& e) {
             PGX_ERROR("Failed to print MLIR module: %s", e.what());
         }
 
-        bool isValid = ::mlir::succeeded(::mlir::verify(module));
+        bool const is_valid = ::mlir::succeeded(::mlir::verify(module));
         std::ofstream file(filename.str());
         if (file.is_open()) {
             file << "// MLIR Module Debug Dump: " << title << "\n";
-            std::stringstream genTime;
-            genTime << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-            file << "// Generated: " << genTime.str() << "\n";
-            file << "// Total Operations: " << totalOperations << "\n";
-            file << "// Module Valid: " << (isValid ? "YES" : "NO") << "\n\n";
+            std::stringstream gen_time;
+            gen_time << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+            file << "// Generated: " << gen_time.str() << "\n";
+            file << "// Total Operations: " << total_operations << "\n";
+            file << "// Module Valid: " << (is_valid ? "YES" : "NO") << "\n\n";
 
-            std::string moduleStr;
-            llvm::raw_string_ostream stream(moduleStr);
+            std::string module_str;
+            llvm::raw_string_ostream stream(module_str);
             module.print(stream);
-            file << moduleStr;
+            file << module_str;
             file.close();
 
-            PHASE_LOG("Module dumped to: %s", filename.str().c_str());
+            phase_log("Module dumped to: %s", filename.str().c_str());
         }
         else {
             PGX_WARNING("Failed to open file for writing: %s", filename.str().c_str());
         }
 
-        PHASE_LOG("=== End Module Debug Dump ===");
-        PHASE_LOG("\n\n");
+        phase_log("=== End Module Debug Dump ===");
+        phase_log("\n\n");
 
     } catch (const std::exception& e) {
         PGX_ERROR("Exception in dumpModuleWithStats: %s", e.what());
@@ -147,25 +150,25 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
 #endif // PGX_RELEASE_MODE
 }
 
-void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase) {
+void dump_llvmir(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase) {
     if (!module) {
         PGX_WARNING("dumpLLVMIR: Module is null for title: %s", title.c_str());
         return;
     }
 
-    auto PHASE_LOG = [&](const char* fmt, auto... args) {
+    auto phase_log = [&](const char* fmt, auto... args) {
         ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::IR, __FILE__, __LINE__, fmt, args...);
     };
 
-    PHASE_LOG("=== %s ===", title.c_str());
+    phase_log("=== %s ===", title.c_str());
 
     for (auto& func : *module) {
         if (func.getName() == "main") {
-            std::string funcStr;
-            llvm::raw_string_ostream funcStream(funcStr);
-            func.print(funcStream, nullptr);
-            funcStream.flush();
-            PHASE_LOG("%s", funcStr.c_str());
+            std::string func_str;
+            llvm::raw_string_ostream func_stream(func_str);
+            func.print(func_stream, nullptr);
+            func_stream.flush();
+            phase_log("%s", func_str.c_str());
             return;
         }
     }
@@ -175,28 +178,28 @@ void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::
 
 class ModuleDumpPass : public mlir::PassWrapper<ModuleDumpPass, mlir::OperationPass<mlir::ModuleOp>> {
 private:
-    std::string phaseName;
-    ::pgx_lower::log::Category phaseCategory;
+    std::string phaseName_;
+    ::pgx_lower::log::Category phaseCategory_;
 
 public:
-    ModuleDumpPass(const std::string& name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL)
-        : phaseName(name), phaseCategory(category) {}
+    explicit ModuleDumpPass(std::string  name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL)
+        : phaseName_(std::move(name)), phaseCategory_(category) {}
 
     void runOnOperation() override {
-        dumpModuleWithStats(getOperation(), phaseName, phaseCategory);
+        dump_module_with_stats(getOperation(), phaseName_, phaseCategory_);
     }
 
-    llvm::StringRef getArgument() const override { return "module-dump"; }
-    llvm::StringRef getDescription() const override {
+    [[nodiscard]] llvm::StringRef getArgument() const override { return "module-dump"; }
+    [[nodiscard]] llvm::StringRef getDescription() const override {
         return "Dump MLIR module for debugging";
     }
 };
 
-std::unique_ptr<mlir::Pass> createModuleDumpPass(const std::string& phaseName, ::pgx_lower::log::Category category) {
-    return std::make_unique<ModuleDumpPass>(phaseName, category);
+std::unique_ptr<mlir::Pass> create_module_dump_pass(const std::string& phase_name, ::pgx_lower::log::Category category) {
+    return std::make_unique<ModuleDumpPass>(phase_name, category);
 }
 
-bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
+bool validate_module_state(::mlir::ModuleOp module, const std::string& phase) {
 #ifndef PGX_RELEASE_MODE
     if (!module || !module.getOperation()) {
         PGX_ERROR("%s: Module operation is null", phase.c_str());

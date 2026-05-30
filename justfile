@@ -486,3 +486,25 @@ pr-summary SUMMARY:
     new_body=$(printf '%s' "${body}" | python3 -c "import os, sys; body = sys.stdin.read(); print(body.replace('<what and why>', os.environ['_PR_SUMMARY_TEXT']), end='')")
     gh pr edit "${pr}" --body "${new_body}" >/dev/null
     echo "pr-summary: replaced <what and why> on PR #${pr}."
+
+# --- Lint (clang-tidy) -----------------------------------------------------
+
+# clang-tidy gate over src/pgx-lower/ (src/lingodb is carved out by its own
+# '-*' .clang-tidy). Binary fail-on-any: -warnings-as-errors='*' so any
+# enabled diagnostic exits non-zero. Queued on the build queue (it stands up
+# a build-artifacts/lint compile DB on first run, then runs incrementally).
+lint: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} check") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Apply clang-tidy's automatic fixes over src/pgx-lower/ in place. Run, then
+# ALWAYS `just test` to confirm the fixes are semantics-preserving before commit.
+lint-fix: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} fix") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Lint only the .cpp hunks changed vs origin/main — the cheap pre-push variant.
+lint-diff: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} diff") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Violation inventory (advisory, non-failing): total + per-check histogram.
+lint-inventory: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} inventory") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
