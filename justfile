@@ -191,7 +191,7 @@ expected-from-results TEST:
 #
 # Note: this is the OUTPUT-EQUIVALENCE suite — it proves pgx_lower
 # matches stock PG on a curated stable set of queries. For TDD on most
-# spec work, prefer `just utest` (faster, scoped to the thing you're
+# spec work, prefer `just utest-pg` (faster, scoped to the thing you're
 # actually changing). See SKILL.md step 2.
 test: _preflight
     #!/usr/bin/env bash
