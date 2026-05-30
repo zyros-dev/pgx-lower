@@ -486,3 +486,28 @@ pr-summary SUMMARY:
     new_body=$(printf '%s' "${body}" | python3 -c "import os, sys; body = sys.stdin.read(); print(body.replace('<what and why>', os.environ['_PR_SUMMARY_TEXT']), end='')")
     gh pr edit "${pr}" --body "${new_body}" >/dev/null
     echo "pr-summary: replaced <what and why> on PR #${pr}."
+
+# clang-tidy gate over the pgx-lower surface (lingodb is carved out by
+# src/lingodb/.clang-tidy). Binary: any diagnostic fails. CI calls `just lint`.
+lint:
+    @just _preflight
+    docker compose -f {{compose}} run --rm builder bash -lc " \
+        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh gate "
+
+# Auto-apply the mechanical clang-tidy fixes over the pgx-lower surface.
+lint-fix:
+    @just _preflight
+    docker compose -f {{compose}} run --rm builder bash -lc " \
+        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh fix "
+
+# Fast local pre-push gate: only .cpp changed vs origin/main.
+lint-diff:
+    @just _preflight
+    docker compose -f {{compose}} run --rm builder bash -lc " \
+        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh diff "
+
+# Generate the violation inventory (advisory, non-failing): total + per-check histogram.
+lint-inventory:
+    @just _preflight
+    docker compose -f {{compose}} run --rm builder bash -lc " \
+        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh inventory "
