@@ -59,8 +59,11 @@ check|diff)
     ;;
 fix)
     rc=0
+    # SERIAL (no -P): clang-tidy --fix rewrites source in place; running it in
+    # parallel races on shared headers and textually corrupts files (observed:
+    # mangled if/else, broken braced-init). Correctness over speed for --fix.
     printf '%s\n' "${files[@]}" \
-      | xargs -P"$(nproc)" -I{} clang-tidy-20 -p "$LINT_DIR" --quiet --fix --fix-errors {} \
+      | xargs -I{} clang-tidy-20 -p "$LINT_DIR" --quiet --fix --fix-errors {} \
       || rc=$?
     echo "LINT FIX applied over ${#files[@]} file(s). Review with 'git diff', then run 'just test'."
     exit 0
