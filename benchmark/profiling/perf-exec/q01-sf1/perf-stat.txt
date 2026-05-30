@@ -1,0 +1,22 @@
+# perf stat: q01 @ SF=1.0
+# postgres backend process (not psql client); method: perf stat -p <backend_pid> as postgres user
+# date: 2026-05-17, paranoid=1, container caps: SYS_ADMIN+PERFMON, seccomp:unconfined
+# perf version 6.8.1
+
+ Performance counter stats for process id '1148' (postgres backend, Q01 execution):
+
+    91,784,056,850      cycles                                                        (71.44%)
+   126,212,841,553      instructions              #    1.38  insn per cycle
+                                                  #    0.34  stalled cycles per insn  (71.44%)
+    29,790,713,057      branches                                                      (71.42%)
+       108,502,725      branch-misses             #    0.36% of all branches          (71.41%)
+       897,657,626      cache-references                                              (71.43%)
+        86,704,729      cache-misses              #    9.66% of all cache refs        (71.43%)
+    43,188,510,987      stalled-cycles-frontend   #   47.05% frontend cycles idle    (71.43%)
+      <not supported>   stalled-cycles-backend
+
+      24.023862444 seconds time elapsed
+
+# NOTE: 47% frontend stalls are the primary signal. This is consistent with the
+# logging overhead hypothesis: the hot path is dominated by std::set::find() calls
+# in pgx_lower::log::should_log(), which is a pointer-chasing RB-tree traversal.

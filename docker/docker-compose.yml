@@ -18,6 +18,14 @@ services:
     command: tail -f /dev/null
     stdin_open: true
     tty: true
+    # perf profiling: CAP_PERFMON + SYS_ADMIN allow perf stat/record inside the
+    # container even when kernel.perf_event_paranoid > 0 on the host.
+    # seccomp=unconfined is required for perf_event_open(2) syscall.
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    security_opt:
+      - seccomp:unconfined
 
   benchmark:
     build:

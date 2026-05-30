@@ -1,0 +1,296 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 1K of event 'cycles:P'
+# Event count (approx.): 1277647542
+#
+# Overhead  Command   Shared Object     Symbol                          
+# ........  ........  ................  ................................
+#
+    28.13%  postgres  postgres          [.] tts_buffer_heap_getsomeattrs
+            |          
+            |--13.14%--tts_buffer_heap_getsomeattrs
+            |          |          
+            |           --3.35%--0
+            |          
+            |--2.38%--ExecInterpExpr
+            |          |          
+            |          |--1.33%--0
+            |          |          
+            |          |--0.54%--0x651892deeaf0
+            |          |          
+            |           --0.51%--0x1
+            |          
+            |--2.35%--heapgettup_pagemode
+            |          
+            |--1.72%--bpchareq
+            |          
+            |--0.97%--SeqNext
+            |          
+            |--0.81%--heap_getnextslot
+            |          
+            |--0.75%--MemoryContextReset
+            |          |          
+            |           --0.68%--0x651892deeaf0
+            |          
+            |--0.74%--ExecStoreBufferHeapTuple
+            |          
+             --0.60%--ExecEvalScalarArrayOp
+
+     9.79%  postgres  postgres          [.] bpchareq
+            |          
+            |--3.18%--tts_buffer_heap_getsomeattrs
+            |          
+            |--1.95%--bpchareq
+            |          
+             --1.57%--ExecEvalScalarArrayOp
+
+     7.05%  postgres  postgres          [.] ExecEvalScalarArrayOp
+            |          
+            |--3.27%--tts_buffer_heap_getsomeattrs
+            |          
+            |--1.22%--bpchareq
+            |          
+             --0.55%--ExecEvalScalarArrayOp
+
+     6.89%  postgres  postgres          [.] ExecInterpExpr
+            |          
+            |--2.24%--tts_buffer_heap_getsomeattrs
+            |          
+            |--1.21%--bpchareq
+            |          
+             --0.71%--ExecInterpExpr
+                       |          
+                        --0.51%--0
+
+     6.64%  postgres  [unknown]         [k] 0xffffffffa9ad7ce5
+            |          
+            |--4.38%--0xffffffffa9ad7ce5
+            |          0xffffffffa9138e4f
+            |          0xffffffffa8c82392
+            |          0xffffffffa8c83d1b
+            |          0xffffffffa8ec8f50
+            |          0xffffffffa8dc2187
+            |          0xffffffffa8dc29f8
+            |          0xffffffffa8dc2d02
+            |          0xffffffffa8dc2d71
+            |          0xffffffffa8884ba6
+            |          0xffffffffa9adc7fe
+            |          0xffffffffa860012b
+            |          preadv64
+            |          
+             --1.38%--0xffffffffa9ad7cc4
+                       0xffffffffa9138e4f
+                       0xffffffffa8c82392
+                       0xffffffffa8c83d1b
+                       0xffffffffa8ec8f50
+                       0xffffffffa8dc2187
+                       0xffffffffa8dc29f8
+                       0xffffffffa8dc2d02
+                       0xffffffffa8dc2d71
+                       0xffffffffa8884ba6
+                       0xffffffffa9adc7fe
+                       0xffffffffa860012b
+                       preadv64
+
+     4.04%  postgres  postgres          [.] heapgettup_pagemode
+            |          
+            |--0.80%--tts_buffer_heap_getsomeattrs
+            |          
+             --0.52%--bpchareq
+
+     3.32%  postgres  postgres          [.] SeqNext
+            |          
+             --1.18%--bpchareq
+
+     3.20%  postgres  postgres          [.] heap_getnextslot
+            |          
+             --0.53%--bpchareq
+
+     1.81%  postgres  postgres          [.] ExecScan
+     1.66%  postgres  postgres          [.] ExecParallelHashJoin
+     1.48%  postgres  postgres          [.] MemoryContextReset
+     1.32%  postgres  postgres          [.] ExecStoreBufferHeapTuple
+            |          
+             --0.51%--tts_buffer_heap_getsomeattrs
+
+     1.16%  postgres  postgres          [.] slot_getsomeattrs_int
+     0.95%  postgres  [unknown]         [k] 0xffffffffa8c81a42
+            |          
+             --0.74%--0xffffffffa8c81a1c
+                       0xffffffffa8c81d39
+                       0xffffffffa8c8226c
+                       0xffffffffa8c83d1b
+                       0xffffffffa8ec8f50
+                       0xffffffffa8dc2187
+                       0xffffffffa8dc29f8
+                       0xffffffffa8dc2d02
+                       0xffffffffa8dc2d71
+                       0xffffffffa8884ba6
+                       0xffffffffa9adc7fe
+                       0xffffffffa860012b
+                       preadv64
+
+     0.95%  postgres  postgres          [.] ExecParallelScanHashBucket
+     0.94%  postgres  postgres          [.] hash_search_with_hash_value
+     0.88%  postgres  postgres          [.] pg_newlocale_from_collation
+     0.87%  postgres  postgres          [.] heap_prepare_pagescan
+     0.85%  postgres  [unknown]         [k] 0xffffffffa91388b4
+     0.83%  postgres  postgres          [.] pg_detoast_datum_packed
+            |          
+             --0.54%--tts_buffer_heap_getsomeattrs
+
+     0.80%  postgres  postgres          [.] ArrayGetNItemsSafe
+            |          
+             --0.58%--tts_buffer_heap_getsomeattrs
+
+     0.79%  postgres  postgres          [.] ExecScanFetch
+     0.56%  postgres  [unknown]         [k] 0xffffffffa8c81a46
+     0.55%  postgres  postgres          [.] dsa_get_address
+     0.54%  postgres  postgres          [.] pg_locale_deterministic
+     0.45%  postgres  libc.so.6         [.] 0x000000000018840e
+     0.41%  postgres  postgres          [.] ExecHashGetHashValue
+     0.37%  postgres  libc.so.6         [.] 0x0000000000188609
+     0.36%  postgres  postgres          [.] UnpinBufferNoOwner
+     0.33%  postgres  postgres          [.] FunctionCall1Coll
+     0.30%  postgres  libc.so.6         [.] 0x0000000000188607
+     0.30%  postgres  postgres          [.] LWLockAcquire
+     0.30%  postgres  postgres          [.] lc_collate_is_c
+     0.29%  postgres  postgres          [.] ArrayGetNItems
+     0.28%  postgres  postgres          [.] LWLockRelease
+     0.23%  postgres  libc.so.6         [.] 0x000000000018862e
+     0.23%  postgres  postgres          [.] GetPrivateRefCountEntry
+     0.22%  postgres  postgres          [.] StrategyGetBuffer
+     0.22%  postgres  [unknown]         [k] 0xffffffffa9ad7cea
+     0.22%  postgres  libc.so.6         [.] 0x0000000000188320
+     0.22%  postgres  postgres          [.] ExecJustOuterVar
+     0.21%  postgres  [unknown]         [k] 0xffffffffa9ad7577
+     0.20%  postgres  postgres          [.] hash_bytes_uint32
+     0.16%  postgres  postgres          [.] ReleaseBuffer
+     0.15%  postgres  libc.so.6         [.] 0x0000000000188628
+     0.15%  postgres  [unknown]         [k] 0xffffffffa9af4520
+     0.15%  postgres  postgres          [.] heap_page_prune_opt
+     0.15%  postgres  libc.so.6         [.] 0x0000000000188630
+     0.15%  postgres  postgres          [.] ResourceOwnerForget
+     0.15%  postgres  libc.so.6         [.] 0x0000000000188600
+     0.15%  postgres  postgres          [.] date_lt
+     0.15%  postgres  [unknown]         [k] 0xffffffffa8c81a36
+     0.14%  postgres  postgres          [.] StartBufferIO
+     0.14%  postgres  postgres          [.] WaitReadBuffers
+     0.14%  postgres  postgres          [.] bcmp@plt
+     0.14%  postgres  [unknown]         [k] 0xffffffffa91388a4
+     0.14%  postgres  postgres          [.] StartReadBuffers
+     0.14%  postgres  postgres          [.] tuplesort_puttuple_common
+     0.13%  postgres  postgres          [.] ExecHashGetBucketAndBatch
+     0.13%  postgres  postgres          [.] TerminateBufferIO
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c82508
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c82534
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8a74435
+     0.08%  postgres  [unknown]         [k] 0xffffffffa9041297
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c82ead
+     0.08%  postgres  [unknown]         [k] 0xffffffffa9138e52
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c8253b
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8cf4a67
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c82e86
+     0.08%  postgres  [unknown]         [k] 0xffffffffa913876c
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c8291d
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8ce5b8c
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8d9cbf4
+     0.08%  postgres  libc.so.6         [.] 0x0000000000188621
+     0.08%  postgres  postgres          [.] ss_report_location
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c82392
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8e336ed
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8cee153
+     0.08%  postgres  postgres          [.] tuplesort_puttupleslot
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8600080
+     0.08%  postgres  [unknown]         [k] 0xffffffffa9af4505
+     0.08%  postgres  postgres          [.] BufTableHashCode
+     0.08%  postgres  postgres          [.] PageIsVerifiedExtended
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c82396
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c81a4f
+     0.08%  postgres  [unknown]         [k] 0xffffffffa913878c
+     0.08%  postgres  libc.so.6         [.] 0x0000000000188408
+     0.08%  postgres  [unknown]         [k] 0xffffffffa9af450b
+     0.08%  postgres  postgres          [.] ExecHashGetSkewBucket
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8d09b49
+     0.08%  postgres  libc.so.6         [.] 0x0000000000188605
+     0.08%  postgres  postgres          [.] heap_form_minimal_tuple
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c81a1c
+     0.08%  postgres  postgres          [.] tag_hash
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8c81a14
+     0.08%  postgres  postgres          [.] ResourceOwnerEnlarge
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8e336c2
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8a7b22a
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8d28727
+     0.08%  postgres  libc.so.6         [.] 0x0000000000188af0
+     0.08%  postgres  [unknown]         [k] 0xffffffffa8da2f8d
+     0.08%  postgres  libc.so.6         [.] 0x0000000000188640
+     0.08%  postgres  [unknown]         [k] 0xffffffffa9af4500
+     0.07%  postgres  [unknown]         [k] 0xffffffffa9acb516
+     0.07%  postgres  postgres          [.] LockBufHdr
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8aa9745
+     0.07%  postgres  postgres          [.] hash_bytes
+     0.07%  postgres  postgres          [.] LockBuffer
+     0.07%  postgres  postgres          [.] IncrBufferRefCount
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8d9d291
+     0.07%  postgres  postgres          [.] read_stream_look_ahead
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c82399
+     0.07%  postgres  postgres          [.] fill_val
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c8252d
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8a8248f
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8dc48e5
+     0.07%  postgres  libc.so.6         [.] __libc_pread
+     0.07%  postgres  [unknown]         [k] 0xffffffffa9af3ec0
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8cf3ed5
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8ce449a
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c827f0
+     0.07%  postgres  [unknown]         [k] 0xffffffffa89568e0
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c82723
+     0.07%  postgres  [unknown]         [k] 0xffffffffa9138853
+     0.07%  postgres  libc.so.6         [.] 0x000000000018867a
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c81a19
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8dc4ba3
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8cee1cb
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8954d70
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c82789
+     0.07%  postgres  libc.so.6         [.] 0x0000000000188324
+     0.07%  postgres  [unknown]         [k] 0xffffffffa9ad7c70
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c8230b
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c82e4a
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8d9d286
+     0.07%  postgres  postgres          [.] varstrfastcmp_locale
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c823ef
+     0.07%  postgres  libc.so.6         [.] preadv64
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8cf2ad7
+     0.07%  postgres  [unknown]         [k] 0xffffffffa8c819f6
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8cf490f
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8a7ad50
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8dc2843
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8d18c93
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8c8ce2b
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8c85a3a
+     0.06%  postgres  [unknown]         [k] 0xffffffffa8c953a0
+     0.05%  postgres  [unknown]         [k] 0xffffffffa8c8353a
+     0.03%  postgres  [unknown]         [k] 0xffffffffc7816826
+     0.00%  postgres  postgres          [.] PostgresMain
+     0.00%  postgres  [unknown]         [k] 0xffffffffa8a7ad74
+     0.00%  postgres  [unknown]         [k] 0xffffffffa9af29c6
+     0.00%  postgres  [unknown]         [k] 0xffffffffa8c6005b
+     0.00%  postgres  [unknown]         [k] 0xffffffffa8601248
+     0.00%  postgres  [unknown]         [k] 0xffffffffa9adffa1
+     0.00%  postgres  [unknown]         [k] 0xffffffffa88e88a7
+     0.00%  postgres  [unknown]         [k] 0xffffffffa9ae080a
+     0.00%  postgres  [unknown]         [k] 0xffffffffa9ae06f8
+     0.00%  postgres  [unknown]         [k] 0xffffffffa8c62671
+     0.00%  postgres  [unknown]         [k] 0xffffffffa89496c4
+     0.00%  postgres  [unknown]         [k] 0xffffffffa8893c8b
+     0.00%  postgres  [unknown]         [k] 0xffffffffa8893c8a
+     0.00%  postgres  [unknown]         [k] 0xffffffffa89496c6
+     0.00%  postgres  [unknown]         [k] 0xffffffffa89496c8
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
