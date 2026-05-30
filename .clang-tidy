@@ -165,7 +165,11 @@ WarningsAsErrors: >
   modernize-use-nullptr,
   performance-avoid-endl
 
-HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external).)*$'
+# Only diagnose OUR headers under src/pgx-lower or include/pgx-lower. Excludes
+# system/vendored headers, the carved-out src/lingodb tree, and generated
+# TableGen .inc files under build-artifacts/ (which emit MLIR-deprecation noise
+# that -warnings-as-errors would otherwise promote to gate failures).
+HeaderFilterRegex: '(src|include)/pgx-lower/.*\.h$'
 
 CheckOptions:
   - key: modernize-use-auto.MinTypeNameLength
