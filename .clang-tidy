@@ -34,7 +34,9 @@ Checks: >
   cppcoreguidelines-pro-type-const-cast,
   cppcoreguidelines-pro-type-cstyle-cast,
   cppcoreguidelines-pro-type-dynamic-cast,
-  cppcoreguidelines-pro-type-reinterpret-cast,
+  # cppcoreguidelines-pro-type-reinterpret-cast removed: reinterpret_cast is the
+  # JIT<->C++ FFI mechanism (opaque pointers crossing the JIT boundary). Gating
+  # it would fight the architecture, not improve it.
   cppcoreguidelines-slicing,
   cppcoreguidelines-special-member-functions,
 
@@ -115,12 +117,17 @@ Checks: >
   readability-delete-null-pointer,
   readability-duplicate-include,
   readability-else-after-return,
-  readability-identifier-naming,
+  # readability-identifier-naming removed: the repo's existing camelCase
+  # functions/variables would generate hundreds of renames across the FFI
+  # boundary, where symbol names are load-bearing (the JIT resolves them by
+  # string). High risk, low value — a rename sweep, not a lint cleanup.
   readability-implicit-bool-conversion,
   readability-inconsistent-declaration-parameter-name,
   readability-isolate-declaration,
-  readability-magic-numbers,
   readability-make-member-function-const,
+  # readability-magic-numbers removed: TPC-H column indices and PG type OIDs read
+  # as "magic numbers" but are inherent to the domain — naming each one adds noise,
+  # not clarity.
   readability-misleading-indentation,
   readability-misplaced-array-index,
   readability-named-parameter,
@@ -152,57 +159,11 @@ WarningsAsErrors: >
   google-build-using-namespace,
   google-explicit-constructor,
   modernize-use-nullptr,
-  readability-identifier-naming,
   performance-avoid-endl
 
 HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external).)*$'
 
 CheckOptions:
-  - key: readability-identifier-naming.ClassCase
-    value: CamelCase
-  - key: readability-identifier-naming.StructCase
-    value: CamelCase
-  - key: readability-identifier-naming.UnionCase
-    value: CamelCase
-  - key: readability-identifier-naming.EnumCase
-    value: CamelCase
-  - key: readability-identifier-naming.TypedefCase
-    value: CamelCase
-  - key: readability-identifier-naming.TypeAliasCase
-    value: CamelCase
-  - key: readability-identifier-naming.TemplateParameterCase
-    value: CamelCase
-
-  - key: readability-identifier-naming.FunctionCase
-    value: lower_case
-  - key: readability-identifier-naming.MethodCase
-    value: lower_case
-  - key: readability-identifier-naming.VariableCase
-    value: lower_case
-  - key: readability-identifier-naming.ParameterCase
-    value: lower_case
-  - key: readability-identifier-naming.MemberCase
-    value: lower_case
-  - key: readability-identifier-naming.PrivateMemberSuffix
-    value: '_'
-  - key: readability-identifier-naming.ProtectedMemberSuffix
-    value: '_'
-
-  - key: readability-identifier-naming.EnumConstantCase
-    value: UPPER_CASE
-  - key: readability-identifier-naming.ConstantCase
-    value: UPPER_CASE
-  - key: readability-identifier-naming.GlobalConstantCase
-    value: UPPER_CASE
-  - key: readability-identifier-naming.StaticConstantCase
-    value: UPPER_CASE
-
-  - key: readability-identifier-naming.NamespaceCase
-    value: lower_case
-
-  - key: readability-identifier-naming.VariableIgnoredRegexp
-    value: '^(i|j|k|it|_)$'
-
   - key: modernize-use-auto.MinTypeNameLength
     value: 10
   - key: modernize-use-auto.RemoveStars
@@ -242,12 +203,6 @@ CheckOptions:
   - key: readability-implicit-bool-conversion.AllowIntegerConditions
     value: false
   - key: readability-implicit-bool-conversion.AllowPointerConditions
-    value: true
-  - key: readability-magic-numbers.IgnoredIntegerValues
-    value: '-1;0;1;2;3;4;5;10;100;1000'
-  - key: readability-magic-numbers.IgnoredFloatingPointValues
-    value: '0.0;1.0;2.0;10.0;100.0;0.5'
-  - key: readability-magic-numbers.IgnorePowersOf2IntegerValues
     value: true
 
   - key: cppcoreguidelines-explicit-virtual-functions.IgnoreDestructors
