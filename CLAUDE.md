@@ -1,5 +1,14 @@
 # pgx-lower — always-loaded context
 
+## Four rules (apply every code write)
+
+1. **Think Before Coding.** No silent assumptions. State assumptions. Surface tradeoffs. Ask before guessing. Push back when a simpler approach exists.
+2. **Simplicity First.** Minimum code that solves the problem. No speculative features. No abstractions for single-use code.
+3. **Surgical Changes.** Touch only what you must. Don't improve adjacent code, comments, or formatting. Match existing style.
+4. **Goal-Driven Execution.** Define success criteria. Loop until verified.
+
+Comments: would a human write this? If a comment restates what well-named code says, delete it. File-header banners are noise unless they encode a non-obvious WHY. In tests, the test names ARE the documentation.
+
 ## Where things run
 
 **Everything runs on thor.** The mac is an edit host only. Don't build, run Postgres, execute the extension, or run benchmarks locally — the toolchain (LLVM 20, MLIR 20, Postgres 17.6 from source) lives in a Docker image on thor.

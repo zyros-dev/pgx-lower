@@ -168,44 +168,5 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
-    # Add test subdirectories to build individual unit tests
-    add_subdirectory(tests)
-    # Add tools for development and testing
     add_subdirectory(tools)
-    # Clean slate refactor - minimal unit tests for core infrastructure only
-    file(GLOB_RECURSE UNIT_TEST_SOURCES 
-        "tests/unit/core/*.cpp"
-        "tests/unit/runtime/*.cpp"
-        "tests/unit/logging/*.cpp"
-        "tests/unit/dialects/*.cpp"
-        "tests/unit/dialect_dsa/*.cpp"
-        "tests/unit/frontend/*.cpp"
-        "tests/unit/conversion/*.cpp"
-        "tests/unit/mlir/*.cpp"
-        "tests/unit/execution/*.cpp"
-    )
-
-    # Build list of additional sources based on configuration
-    set(UNIT_TEST_ADDITIONAL_SOURCES
-            src/pgx-lower/frontend/SQL/query_analyzer.cpp
-            src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
-            src/pgx-lower/frontend/SQL/translation/expression_translator_basic.cpp
-            src/pgx-lower/frontend/SQL/translation/expression_translator_complex.cpp
-            src/pgx-lower/frontend/SQL/translation/expression_translator_functions.cpp
-            src/pgx-lower/frontend/SQL/translation/expression_translator_operators.cpp
-            src/pgx-lower/frontend/SQL/translation/plan_translator_agg.cpp
-            src/pgx-lower/frontend/SQL/translation/plan_translator_joins.cpp
-            src/pgx-lower/frontend/SQL/translation/plan_translator_scans.cpp
-            src/pgx-lower/frontend/SQL/translation/plan_translator_utils.cpp
-            src/pgx-lower/frontend/SQL/translation/schema_manager.cpp
-            src/pgx-lower/frontend/SQL/translation/translation_core.cpp
-            src/pgx-lower/utility/error_handling.cpp
-            src/pgx-lower/execution/mlir_runner.cpp
-            src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
-            src/pgx-lower/utility/logging.cpp
-            src/lingodb/runtime/helpers.cpp
-            src/lingodb/mlir/Passes.cpp
-    )
-    
-    
 endif()

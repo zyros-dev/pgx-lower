@@ -1,11 +1,24 @@
 # PostgreSQL Extension Configuration for pgx-lower
 if(NOT BUILDING_UNIT_TESTS)
+    set(_pgx_lower_test_sources)
+    if(CMAKE_BUILD_TYPE MATCHES Debug)
+        list(APPEND _pgx_lower_test_sources
+            ../src/pgx-lower/test/numeric_tests.cpp
+            ../src/pgx-lower/test/type_mapping_tests.cpp
+            ../src/pgx-lower/test/boolean_lowering_tests.cpp
+            ../src/pgx-lower/test/ast_const_translation_tests.cpp
+            ../src/pgx-lower/test/standalone_mlir_runner.cpp
+            ../src/pgx-lower/test/pipeline_phases_tests.cpp
+        )
+    endif()
+
     add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
         C_SOURCES
         ../src/pgx-lower/execution/postgres/executor_c.c
         CPP_SOURCES
+        ${_pgx_lower_test_sources}
         ../src/pgx-lower/execution/postgres/my_executor.cpp
         ../src/pgx-lower/execution/postgres/executor_c.cpp
         ../src/pgx-lower/execution/mlir_runner.cpp

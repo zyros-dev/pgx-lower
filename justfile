@@ -172,27 +172,6 @@ expected-from-results TEST:
     echo "Wrote tests/expected/{{TEST}}.out ($(wc -l <tests/expected/{{TEST}}.out) lines, $(wc -c <tests/expected/{{TEST}}.out) bytes)."
     echo "Re-run 'just test' — it should now pass for this case."
 
-# Unit tests (gtest) — the primary TDD home for most spec work. Builds
-# a separate build-docker-utest/ dir with -DBUILDING_UNIT_TESTS=ON and
-# runs ctest. Configures on first invocation; subsequent runs are
-# incremental ninja + ccache. Queued on the build queue so it doesn't
-# race compile/test/bench.
-utest: _preflight
-    #!/usr/bin/env bash
-    set -o pipefail
-    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_wdir}}/build-docker-utest && cd {{_wdir}}/build-docker-utest && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILDING_UNIT_TESTS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && ctest --output-on-failure") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-utest.out
-    rc=${PIPESTATUS[0]}
-    passed=$(grep -oE '^[0-9]+% tests passed' /tmp/pgx-utest.out | tail -1 || echo "unknown")
-    failed=$(grep -oE '[0-9]+ tests? failed out of [0-9]+' /tmp/pgx-utest.out | tail -1 || echo "")
-    echo ""
-    if [ "$rc" -eq 0 ]; then
-        echo "UTEST OK — ${passed}"
-    else
-        echo "UTEST FAILED — ${failed:-unknown}, exit $rc. Last 30 lines:"
-        tail -n 30 /tmp/pgx-utest.out
-        exit "$rc"
-    fi
-
 # Run PostgreSQL regression tests (queued), gated against
 # tests/pg_regress_baseline.txt. Exits non-zero only on *delta* vs the
 # baseline (new failures, or previously-failing tests that now pass).
@@ -218,6 +197,16 @@ test: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Fast PG-aware unit tests (spec 16). Runs each .sql under tests/regress-unit/sql/
+# with `psql -v ON_ERROR_STOP=on`. Each .sql is a DO block that PERFORMs the
+# unit C functions linked into pgx_lower.so (Debug builds only). Failures
+# trigger via elog(ERROR, ...) which makes psql exit non-zero.
+utest-pg: _preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python3 {{invocation_directory()}}/scripts/gen_unit_test_sql.py
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "export PATH=/usr/local/pgsql/bin:\$PATH && mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}/tests/regress-unit && su postgres -c \"/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit\" && fail=0; for sql in {{_wdir}}/tests/regress-unit/sql/*.sql; do echo \"--- \$(basename \$sql) ---\"; su postgres -c \"/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \$sql\" || { fail=1; echo FAIL: \$sql; }; done; echo; if [ \$fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Re-record the pg_regress baseline. Run only when you have consciously
 # accepted a new set of red tests on main — each entry that gets added
