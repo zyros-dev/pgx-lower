@@ -31,6 +31,12 @@ class JITEngine {
     bool compile(mlir::ModuleOp module);
     bool execute(void* estate, void* dest) const;
 
+    // Exposed for tests so a hand-built llvm::Module can be run through the
+    // same pipeline JITEngine uses during compile(). Runs the default
+    // per-module pipeline (at opt_level >= Less) including loop/SLP
+    // vectorization and unrolling.
+    static llvm::Error optimize_llvm_module(llvm::Module& module, llvm::CodeGenOptLevel opt_level);
+
    private:
     std::unique_ptr<mlir::ExecutionEngine> engine_;
     void* main_fn_{nullptr};
