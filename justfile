@@ -377,6 +377,7 @@ sync-main-reset:
         --name=pgx-lower \
         --sync-mode=two-way-resolved \
         --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
+        --ignore='/.worktrees/' \
         --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
         --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
         --ignore='/benchmark/output/' --ignore='/benchmark_results/' \
