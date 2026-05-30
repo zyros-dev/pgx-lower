@@ -6,6 +6,15 @@
 #include "llvm/Support/raw_ostream.h"
 #include "pgx-lower/execution/mlir_runner.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 namespace pgx_test {
 
@@ -15,8 +24,22 @@ StandalonePipelineTester::StandalonePipelineTester() {
 }
 
 bool StandalonePipelineTester::setupMLIRContext() {
+    // Test harness wants a fresh MLIRContext per test to avoid state
+    // bleed between TEST_F instances. Load the same dialect set that
+    // production (MLIRRuntime singleton) loads.
     context_ = std::make_unique<mlir::MLIRContext>();
-    return mlir_runner::setupMLIRContextForJIT(*context_);
+    context_->disableMultithreading();
+    context_->getOrLoadDialect<mlir::func::FuncDialect>();
+    context_->getOrLoadDialect<mlir::arith::ArithDialect>();
+    context_->getOrLoadDialect<mlir::scf::SCFDialect>();
+    context_->getOrLoadDialect<mlir::memref::MemRefDialect>();
+    context_->getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    context_->getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    context_->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    context_->getOrLoadDialect<mlir::db::DBDialect>();
+    context_->getOrLoadDialect<mlir::dsa::DSADialect>();
+    context_->getOrLoadDialect<mlir::util::UtilDialect>();
+    return true;
 }
 
 mlir::OpBuilder* StandalonePipelineTester::getBuilder() {

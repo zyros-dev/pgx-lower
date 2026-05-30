@@ -8,7 +8,6 @@ class ModuleOp;
 
 namespace mlir_runner {
 
-bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 bool runPhase3a(::mlir::ModuleOp module);
 bool runPhase3b(::mlir::ModuleOp module);
 bool runPhase3c(::mlir::ModuleOp module);

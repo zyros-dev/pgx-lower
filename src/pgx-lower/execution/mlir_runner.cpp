@@ -1,4 +1,5 @@
 #include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/mlir_runtime.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
 
@@ -9,6 +10,9 @@
 // AST Translation
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 
+// Need RelAlgDialect + ColumnManager for per-query reset (spec 01).
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
@@ -52,7 +56,6 @@ extern "C" {
 
 namespace mlir_runner {
 
-bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 
@@ -67,10 +70,17 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
     }
 
     try {
-        ::mlir::MLIRContext context;
-        if (!setupMLIRContextForJIT(context)) {
-            return false;
-        }
+        // Spec 01: shared MLIRContext with dialects / registry / target init
+        // pre-loaded once at _PG_init time. Per-query MLIRContext construction
+        // was costing 5-20ms of dialect+target setup on every invocation.
+        auto& rt = pgx_lower::execution::get_mlir_runtime();
+        ::mlir::MLIRContext& context = rt.context;
+
+        // RelAlg's ColumnManager lives on the dialect (now shared across
+        // queries). Clear its per-query accumulator state so stale Column
+        // pointers from the previous query can't leak into this query's
+        // QueryGraphBuilder lookups.
+        context.getLoadedDialect<::mlir::relalg::RelAlgDialect>()->getColumnManager().reset();
 
         // Phase 1: PostgreSQL AST to RelAlg translation
         auto translator = postgresql_ast::create_postgresql_ast_translator(context);
