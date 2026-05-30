@@ -72,7 +72,11 @@ Checks: >
   modernize-replace-auto-ptr,
   modernize-replace-disallow-copy-and-assign-macro,
   modernize-replace-random-shuffle,
-  modernize-return-braced-init-list,
+  # modernize-return-braced-init-list removed: VarLen32's constructor takes
+  # uint32_t, so the `return {ptr, len}` brace-init this rule rewrites to turns
+  # the (safe, intended) narrowing from int/size_t/int32_t into a hard
+  # -Wc++11-narrowing compile error. The explicit `return VarLen32(ptr, len)`
+  # form is correct; the rule fights this codebase.
   modernize-shrink-to-fit,
   modernize-unary-static-assert,
   modernize-use-auto,
