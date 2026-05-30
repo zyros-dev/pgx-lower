@@ -16,7 +16,7 @@ _ctr  := "pgx-lower-dev"
 _main_root := shell('dirname "$(git rev-parse --path-format=absolute --git-common-dir)"')
 _rel  := replace_regex(invocation_directory(), "^" + _main_root + "/?", "")
 _wdir := if _rel == "" { "/workspace" } else { "/workspace/" + _rel }
-_bdir := _wdir + "/build-docker-ptest"
+_bdir := _wdir + "/build-artifacts/ptest"
 
 # Serialized build queue: compile/test/bench share one slot on thor so they
 # don't skew each other's timings or OOM. Check runs on a separate queue.
@@ -150,7 +150,7 @@ ffix-diff: _preflight
 #
 # Usage: just expected-from-results 43_version
 # Requires: `just compile && just test` already ran for this branch — the
-# recipe reads build-docker-ptest/extension/results/<name>.out on thor.
+# recipe reads build-artifacts/ptest/extension/results/<name>.out on thor.
 expected-from-results TEST:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -376,7 +376,7 @@ sync-main-reset:
     mutagen sync create \
         --name=pgx-lower \
         --sync-mode=two-way-resolved \
-        --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
+        --ignore='/build-artifacts/' --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
         --ignore='/.worktrees/' \
         --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
         --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \

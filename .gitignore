@@ -45,6 +45,7 @@ hasdrf
 compile_commands.json
 
 # CMake build directories
+/build-artifacts/
 build/
 cmake-build-*/
 _deps/
