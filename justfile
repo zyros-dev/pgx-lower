@@ -243,11 +243,11 @@ bench-merge: _preflight
 
 # Generate the PR benchmark report. Requires an open PR (the PR number
 # becomes part of the filename). Snapshots the current benchmark.db to
-# ./benchmarks/pr-<N>-<branch>.db, pulls the baseline db directly from
+# ./bench-results/pr-<N>-<branch>.db, pulls the baseline db directly from
 # origin/main (not committed to feature branches), and emits matching
 # .png + .md.
 #
-# Baseline: the alphanumerically latest .db in origin/main:benchmarks/
+# Baseline: the alphanumerically latest .db in origin/main:bench-results/
 # (which is the most recently merged PR's db). Baseline dbs never land on
 # feature branches — each PR commits exactly one .db (its own).
 bench-report:
@@ -261,10 +261,10 @@ bench-report:
     fi
     # Derive artifact slug from branch name.
     slug="pr-${pr}-${branch}"
-    mkdir -p benchmarks
+    mkdir -p bench-results
     # Snapshot the run's db into the branch under the final name.
     src="{{_wdir}}/benchmark/output/benchmark.db"
-    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/benchmarks/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
+    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/bench-results/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
     # Fetch the baseline from origin/main. On a fresh repo there may be none;
     # in that case we self-compare (baseline == current) so the artifacts are
     # generated and the PR still gets chart + table + validation block. The
@@ -273,15 +273,15 @@ bench-report:
     # the NAY gate.
     git fetch origin main --quiet
     # git ls-tree pathspec doesn't expand shell-style wildcards — the quoted
-    # 'benchmarks/pr-*.db' was always returning empty, silently forcing the
+    # 'bench-results/pr-*.db' was always returning empty, silently forcing the
     # bootstrap branch even when a real baseline existed. List the whole
-    # benchmarks/ dir and grep instead. `sort -V` picks highest pr-N
+    # bench-results/ dir and grep instead. `sort -V` picks highest pr-N
     # numerically — de facto "most recent merge" in FIFO-merge order.
-    baseline_path=$(git ls-tree -r --name-only origin/main -- benchmarks/ 2>/dev/null | grep -E '^benchmarks/pr-.*\.db$' | sort -V | tail -1 || true)
+    baseline_path=$(git ls-tree -r --name-only origin/main -- bench-results/ 2>/dev/null | grep -E '^bench-results/pr-.*\.db$' | sort -V | tail -1 || true)
     if [ -z "${baseline_path}" ]; then
-        echo "NOTE: no baseline on origin/main:benchmarks/ — self-comparing. This PR will seed the baseline for future PRs." >&2
+        echo "NOTE: no baseline on origin/main:bench-results/ — self-comparing. This PR will seed the baseline for future PRs." >&2
         baseline_name="bootstrap-self.db"
-        ssh {{_thor}} "docker exec {{_ctr}} cp {{_wdir}}/benchmarks/${slug}.db /tmp/${baseline_name}"
+        ssh {{_thor}} "docker exec {{_ctr}} cp {{_wdir}}/bench-results/${slug}.db /tmp/${baseline_name}"
     else
         baseline_name=$(basename "${baseline_path}")
         # Stage the baseline on thor (not committed — just in /tmp for report.py).
@@ -292,16 +292,16 @@ bench-report:
     fi
     ssh {{_thor}} "docker exec {{_ctr}} python3 {{_wdir}}/benchmark/report.py \
         --baseline /tmp/${baseline_name} \
-        --current {{_wdir}}/benchmarks/${slug}.db \
-        --out {{_wdir}}/benchmarks/${slug} \
-        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/benchmarks/${slug}.png\""
+        --current {{_wdir}}/bench-results/${slug}.db \
+        --out {{_wdir}}/bench-results/${slug} \
+        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/bench-results/${slug}.png\""
     echo ""
-    echo "Artifacts: benchmarks/${slug}.{db,png,md}"
+    echo "Artifacts: bench-results/${slug}.{db,png,md}"
     echo "Baseline : ${baseline_name} (from origin/main)"
     # Force mutagen to finish syncing thor→mac before we try to read the
     # .md that report.py just wrote. Without this, the Python replace step
     # below races: report.py finishes on thor, we immediately try to open
-    # benchmarks/<slug>.md locally, and mutagen hasn't caught up yet.
+    # bench-results/<slug>.md locally, and mutagen hasn't caught up yet.
     # `mutagen sync flush` blocks until the cycle completes.
     mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
     # Auto-inject the .md into the PR body, replacing the stats-summary
@@ -314,7 +314,7 @@ bench-report:
     if printf '%s' "${current_body}" | grep -qF "${placeholder}"; then
         # Use python for the replacement so bench report content isn't
         # subject to sed's metachar quirks.
-        new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('benchmarks/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
+        new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('bench-results/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
         gh pr edit "${pr}" --body "${new_body}" >/dev/null
         echo "PR  body  : injected bench report block into PR #${pr}."
         # Detect remaining template placeholders and flag them explicitly —
@@ -328,7 +328,7 @@ bench-report:
             echo "            Fill them in with \`gh pr edit ${pr} --body ...\` before requesting review."
         fi
     else
-        echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste benchmarks/${slug}.md manually if needed."
+        echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste bench-results/${slug}.md manually if needed."
     fi
 
 # --- Queue ops ------------------------------------------------------------
