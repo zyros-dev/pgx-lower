@@ -4,50 +4,55 @@
 
 **Everything runs on thor.** The mac is an edit host only. Don't build, run Postgres, execute the extension, or run benchmarks locally — the toolchain (LLVM 20, MLIR 20, Postgres 17.6 from source) lives in a Docker image on thor.
 
-Edits sync to thor via a **mutagen** session. Main repo: session `pgx-lower` between `/Users/nickvandermerwe/repos/pgx-lower` (mac, alpha) and `comfy:/home/zel/repos/pgx-lower` (thor, beta). Worktrees get their own sessions (`pgx-lower-<slug>`), managed by `just worktree-new`. Give mutagen a second after editing a file before running a command on thor.
+Edits sync to thor via a single **mutagen** session named `pgx-lower`, between `/Users/nickvandermerwe/repos/pgx-lower` (mac, alpha) and `comfy:/home/zel/repos/pgx-lower` (thor, beta). We work in this one checkout — no worktrees. Feature work is a branch in this directory; the recipes always flush the `pgx-lower` session, so any branch's edits reach thor. Give mutagen a second after editing before running a command on thor (the recipes' `_preflight` flush handles this for you). If the session's ignore list drifts, `just sync-main-reset`.
 
 Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md`).
 
-## How to do work
+## How we work: spec-first, human-in-the-loop
 
-For any code change that ends in a PR, follow the **`/devops` skill** (`.claude/skills/devops/SKILL.md`). It covers worktree → test → implement → build → check → bench → report → PR, all via `justfile` recipes that queue through `tsp` on thor so concurrent agents don't collide. Run `just --list` for the recipe surface.
+Specs are **curated artifacts**, authored with the user, that live in the wiki and outlive any one PR. The user shapes them until they're ready, then triggers implementation. Nothing is autonomous — the user is in the loop for every spec.
 
-**The user only types short trigger phrases.** Everything else is on the agent.
+The two durable artifacts live at `~/repos/sandbox/wiki/specs/pgx-lower/`:
 
-| Trigger | Skill | What you do |
-|---------|-------|-------------|
-| `/pgx:start-spec NN` (or natural language: `start spec NN`) | `/devops` | Claim, worktree, TDD loop, open PR, mark in_review |
-| `/pgx:review-open-prs` (or natural language: `review pending PRs`) | `/merge` | Spawn `spec-reviewer`, handle conflicts, confirm once per PR, merge, mark done, remove worktree |
-| `spec NN merged` (manual case) | inline | `just spec-complete NN <PR>` + `just worktree-rm <slug>` |
+```
+designs/  YYYY-MM-DD-<topic>-design.md   # brainstorming output; being shaped, iterative
+plans/    YYYY-MM-DD-<topic>-plan.md     # writing-plans output; ready-to-execute = the work queue
+```
 
-Don't ask the user for branch names, slugs, PR numbers you can derive, worktree details, or permission to run recipes. Pick sensible defaults from the spec filename and proceed. Escalate only when something genuinely blocks (claim conflict, build broken in a way you can't diagnose, spec ambiguous, conflicts on rebase). The merge skill has one mandatory user-confirmation pause: just before `gh pr merge`. Everything else is autonomous.
+The lifecycle, driven by the **superpowers** skills:
 
-## Long-running subagents: always run in the background
+1. **Design** — user says "let's spec X" → `brainstorming` skill → design file in the wiki. Refined across as many sessions as the user wants.
+2. **Plan** — "plan it" → `writing-plans` skill → plan file in the wiki. The user can stack several plans across their own time.
+3. **Implement** — "implement the ready plans" → work the queue **sequentially** in this checkout: a branch + PR per plan, each gated by that plan's own acceptance criteria. PRs exist so the user reads diffs in Gitea/GitHub instead of opening CLion.
 
-When spawning a subagent that will take more than a few minutes (full `/devops` run, canary spec implementation, strengthen-harness inner agents, anything that runs `just compile` / `just bench` / `just test`), **always pass `run_in_background: true`** to the Agent tool. A foreground agent blocks this conversation, and if the user submits a message (or Ctrl-C's) while it's running, the subagent dies mid-flight and we lose the work. Background agents notify on completion and survive interjections. The only reason to run foreground is if the result is needed within ~60s to decide the very next tool call.
+Commit a wiki spec/plan from `~/repos/sandbox/`: `git add wiki/specs/ && git commit -m "specs: pgx-lower — <topic>"` (the sandbox cron pushes; don't push manually).
 
-## Red/green TDD is required
+## Per-plan gates (declared in the plan, not global)
 
-Write the failing test **first**. Run `just test` and confirm the expected failure before touching any implementation. Implement the minimum change to turn it green. Only then refactor. No exceptions — "I'll add the test after" produces untested code and we don't merge untested code.
+Default bar for every plan, before its PR opens:
 
-## Specs
+- **red/green TDD** — write the failing test first, run `just test`, confirm it fails, then implement the minimum to turn it green. No exceptions; we don't merge untested code.
+- `just check-diff` clean on touched files.
+- `just compile` + `just utest` + `just test` green (this includes the fast TPC-H-as-correctness regression checks — run a query, diff output vs stock PG).
 
-Performance-roadmap specs live in `specs/`. **`specs/00-dag.md`** defines what
-can be worked on and in what order. **`specs/STATUS.md`** is the live board of
-which specs are claimed / in progress / done — read it before starting any
-spec work. Update via `just spec-claim NN BRANCH`, `just spec-in-review NN PR`,
-`just spec-complete NN PR`. When working from a spec, the spec file is the
-authoritative description of what to build; the devops skill walks the
-implement-and-ship loop.
+Opt-in, only when the plan's "Done means" turns it on:
 
-Until you're given a spec, work from the user's task description.
+- `just bench` + `just bench-report` — the A/B speed report. Token-heavy (full TPC-H sweep on thor); most plans don't need it. Correctness ≠ benchmark: validate correctness always, benchmark only to prove a speedup the plan promised.
+
+Run `just --list` for the full recipe surface.
+
+## Long-running subagents: run in the background
+
+When spawning a subagent that will take more than a few minutes (implementing a plan, anything that runs `just compile` / `just bench` / `just test`), **pass `run_in_background: true`** to the Agent tool. A foreground agent blocks this conversation, and if the user submits a message (or Ctrl-C's) while it's running, the subagent dies mid-flight and we lose the work. Background agents notify on completion and survive interjections. Only run foreground if the result is needed within ~60s to decide the very next tool call.
 
 ## Skill catalog
 
 Skills are the primary knowledge layer. Each is loaded on demand.
 
-- **`/devops`** — implement-and-ship workflow (worktree → red → green → check → bench → PR).
-- **`/merge`** — review-and-merge workflow for spec PRs (spawns spec-reviewer subagent, handles conflicts, merges).
+The spec workflow uses the **superpowers** skills: `brainstorming` (design), `writing-plans` (plan), `executing-plans` / `subagent-driven-development` (implement), `test-driven-development` (the red/green discipline).
+
+Project architecture references:
+
 - **`/architecture-overview`** — top-level map; entry point if you're disoriented.
 - **`/architecture-execution-path`** — PG executor hook → MLIR runner → JIT chain.
 - **`/architecture-ast-translation`** — PG plan tree → MLIR RelAlg.

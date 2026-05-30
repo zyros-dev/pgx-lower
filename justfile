@@ -35,7 +35,7 @@ default:
 _preflight:
     @ssh {{_thor}} 'command -v tsp >/dev/null 2>&1 || { echo "ERROR: task-spooler not installed on thor. Run: ssh comfy sudo apt-get install -y task-spooler"; exit 1; }'
     @ssh {{_thor}} 'docker ps --format "{{{{.Names}}" | grep -q "^{{_ctr}}$" || { echo "ERROR: {{_ctr}} not running on thor. Run: just up"; exit 1; }'
-    @branch=$(git rev-parse --abbrev-ref HEAD); session="pgx-lower-${branch}"; [ "${branch}" = "main" ] && session="pgx-lower"; mutagen sync flush "${session}" >/dev/null 2>&1 || true
+    @mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
 
 # Start the dev container on thor (one-time per boot).
 up:
@@ -61,12 +61,9 @@ compile: _preflight
     set -o pipefail
     # Block until the mac→thor mutagen cycle completes so ninja sees the
     # file mtimes you just edited locally. Removes the "sleep 3 before
-    # just compile" cargo-cult. If we're on main the session is
-    # "pgx-lower" (no branch suffix); on a worktree it's "pgx-lower-<branch>".
-    branch=$(git rev-parse --abbrev-ref HEAD)
-    session="pgx-lower-${branch}"
-    [ "${branch}" = "main" ] && session="pgx-lower"
-    mutagen sync flush "${session}" >/dev/null 2>&1 || true
+    # just compile" cargo-cult. We always work in the main checkout now,
+    # so the session is always the bare "pgx-lower".
+    mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-compile.out
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ]; then
@@ -257,13 +254,9 @@ bench-merge: _preflight
 
 # Generate the PR benchmark report. Requires an open PR (the PR number
 # becomes part of the filename). Snapshots the current benchmark.db to
-# ./benchmarks/pr-<N>-spec-<NN>-<slug>.db (or pr-<N>-<slug>.db for
-# non-spec branches), pulls the baseline db directly from origin/main (not
-# committed to feature branches), and emits matching .png + .md.
-#
-# Naming rules:
-#   spec branch   (spec-NN-<slug>) → pr-<N>-spec-<NN>-<slug>.db
-#   non-spec      (<slug>)         → pr-<N>-<slug>.db
+# ./benchmarks/pr-<N>-<branch>.db, pulls the baseline db directly from
+# origin/main (not committed to feature branches), and emits matching
+# .png + .md.
 #
 # Baseline: the alphanumerically latest .db in origin/main:benchmarks/
 # (which is the most recently merged PR's db). Baseline dbs never land on
@@ -278,11 +271,7 @@ bench-report:
         exit 1
     fi
     # Derive artifact slug from branch name.
-    if [[ "${branch}" =~ ^spec-([0-9]+)-(.+)$ ]]; then
-        slug="pr-${pr}-spec-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-    else
-        slug="pr-${pr}-${branch}"
-    fi
+    slug="pr-${pr}-${branch}"
     mkdir -p benchmarks
     # Snapshot the run's db into the branch under the final name.
     src="{{_wdir}}/benchmark/output/benchmark.db"
@@ -325,10 +314,7 @@ bench-report:
     # below races: report.py finishes on thor, we immediately try to open
     # benchmarks/<slug>.md locally, and mutagen hasn't caught up yet.
     # `mutagen sync flush` blocks until the cycle completes.
-    session="pgx-lower-${branch}"
-    # If we're on main, the session name is "pgx-lower" (no branch suffix).
-    if [ "${branch}" = "main" ]; then session="pgx-lower"; fi
-    mutagen sync flush "${session}" >/dev/null 2>&1 || true
+    mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
     # Auto-inject the .md into the PR body, replacing the stats-summary
     # placeholder that `just pr` left. The agent still fills in Summary by
     # hand; everything else is assembled. Safe to re-run — idempotent
@@ -385,120 +371,15 @@ tail ID:
 cancel ID:
     ssh {{_thor}} 'TS_SOCKET=/tmp/{{_build_q}}.sock tsp -k {{ID}} || true; TS_SOCKET=/tmp/{{_build_q}}.sock tsp -r {{ID}}'
 
-# --- Worktree lifecycle ----------------------------------------------------
-
-# Create a git worktree on mac + thor and a mutagen sync session between them.
-# Usage: just worktree-new feat-foo
-#
-# Fully retry-idempotent: if a previous attempt aborted partway and left
-# detritus behind (a `.worktrees/<NAME>/` directory git no longer tracks,
-# a local `<NAME>` branch without a matching worktree, a thor-side
-# `.worktrees/<NAME>/` left by container-root writes, etc.), this recipe
-# cleans it up and proceeds. The clean-ops are wrapped in `|| true` so
-# a fresh invocation with nothing to clean no-ops through them. The
-# thor-side cleanup uses `docker exec` first (to delete container-root-
-# owned build artifacts) then a plain ssh rm -rf for anything else.
-# Mirrors the same rationale as `worktree-rm`'s cleanup comments.
-#
-# Rationale for not just erroring out: earlier versions refused to
-# reuse a slug when the local branch existed, which left agents having
-# to hand-run `rm -rf` + `git branch -D` to recover from a failed
-# worktree-new. `spec-abandon` wasn't the right tool either when the
-# spec had already been re-claimed — running abandon would undo the
-# claim. Making worktree-new self-healing removes the manual-recovery
-# path entirely: you re-run the recipe and it converges.
-worktree-new NAME:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    test -n "{{NAME}}" || { echo "NAME required"; exit 1; }
-    # --- preflight cleanup (idempotent) ------------------------------
-    # Prune stale worktree bookkeeping entries first. If a previous
-    # .worktrees/<NAME>/ was deleted behind git's back (manual rm -rf,
-    # crashed `git worktree add`), git still thinks it owns that path
-    # and will refuse `add` with "already exists". `prune` clears it.
-    git worktree prune 2>/dev/null || true
-    # Remove any leftover directory on mac. `git worktree add` hard-
-    # fails with "'.worktrees/<NAME>' already exists" if the path
-    # exists on disk but isn't a registered worktree.
-    rm -rf ".worktrees/{{NAME}}" 2>/dev/null || true
-    # Delete any dangling local branch. Without this, `git worktree add
-    # -b` fails with "a branch named '<NAME>' already exists". -D
-    # (force) is intentional: if we're here, either the branch was
-    # never pushed (safe to drop) or it was pushed and the caller knows
-    # they're throwing it away to restart.
-    git branch -D "{{NAME}}" 2>/dev/null || true
-    # Same cleanup on thor: prune its worktree bookkeeping, then
-    # delete any leftover .worktrees/<NAME>/ directory. Container-root-
-    # owned files inside build-docker-*/ subdirs can't be removed by
-    # the ssh user (uid 1000), so do the rm inside the container as
-    # root first; anything left over gets swept by the outer ssh rm.
-    # All four ops tolerate missing state.
-    ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree prune 2>/dev/null || true'
-    ssh {{_thor}} 'docker exec {{_ctr}} rm -rf /workspace/.worktrees/{{NAME}} 2>/dev/null || true'
-    ssh {{_thor}} 'rm -rf ~/repos/pgx-lower/.worktrees/{{NAME}} 2>/dev/null || true'
-    # --- create fresh state ------------------------------------------
-    git fetch origin main --quiet
-    git worktree add -b "{{NAME}}" ".worktrees/{{NAME}}" origin/main
-    ssh {{_thor}} 'cd ~/repos/pgx-lower && git fetch origin && git worktree add .worktrees/{{NAME}} 2>/dev/null || true'
-    # /benchmark/output/ must be in this ignore list. run.py on thor writes
-    # sqlite files there as docker root; without the ignore, mutagen syncs
-    # them back to mac with altered ownership mid-run, and subsequent writes
-    # hit "attempt to write a readonly database" partway through. This
-    # bit the canary (see round 7). Keep it aligned with `sync-main-reset`.
-    mutagen sync create \
-        --name=pgx-lower-{{NAME}} \
-        --sync-mode=two-way-resolved \
-        --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
-        --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
-        --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
-        --ignore='/benchmark/output/' \
-        .worktrees/{{NAME}} {{_thor}}:/home/zel/repos/pgx-lower/.worktrees/{{NAME}}
-    echo ""
-    echo "Worktree ready. On mac: cd .worktrees/{{NAME}}"
-    echo "Mutagen session: pgx-lower-{{NAME}}"
-
-# Tear down a worktree and its sync. Fully idempotent — every step is
-# allowed to fail (missing session, already-removed worktree, etc.)
-# because we want repeated calls and partial-state recovery to both
-# converge on "nothing here."
-#
-# After git-level removal, we unconditionally `rm -rf` the mac-side
-# .worktrees/<name>/ directory and the thor-side equivalent. `git
-# worktree remove --force` does NOT delete the dir if git no longer
-# recognizes it as a working tree (e.g. it was already pruned, or
-# previous cleanup pass lost the bookkeeping) — it bails with "not a
-# working tree" and leaves a full tree on disk. That residual tree is
-# a landmine: a subsequent `just worktree-new <same-name>` fails with
-# "path already exists," and a subsequent mutagen create sees stale
-# files that don't correspond to any branch. Removing it on the way
-# out guarantees re-creation works without manual `rm -rf`.
-#
-# The thor-side rm is done TWICE, in this order: first via `docker
-# exec` as container-root (uid 0), then via plain ssh as zel (uid
-# 1000). build-docker-ptest/ and build-docker-utest/ contain files
-# chowned to `postgres:postgres` by `cmake --install` + ctest inside
-# the container — the outer ssh rm can't unlink those and fails with
-# "Permission denied". The inner docker rm nukes the whole .worktrees/
-# <NAME>/ including the container-owned files; the outer rm mops up
-# anything the container didn't see (e.g. if the container had been
-# stopped or the mount wasn't active). Either alone may leave residue
-# depending on runtime state, so we run both.
-worktree-rm NAME:
-    -mutagen sync terminate pgx-lower-{{NAME}}
-    -ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree remove --force .worktrees/{{NAME}}'
-    -git worktree remove --force .worktrees/{{NAME}}
-    -rm -rf .worktrees/{{NAME}}
-    -ssh {{_thor}} 'docker exec {{_ctr}} rm -rf /workspace/.worktrees/{{NAME}} 2>/dev/null || true'
-    -ssh {{_thor}} 'rm -rf ~/repos/pgx-lower/.worktrees/{{NAME}}'
+# --- Sync ------------------------------------------------------------------
 
 # Terminate + recreate the main-repo mutagen session (name `pgx-lower`)
-# with the canonical ignore list. Use this when the main session's
-# ignore list has drifted from what `just worktree-new` creates for
-# worktrees — e.g. a missing `/benchmark/output/` ignore (the cause of
-# the "attempt to write a readonly database" bench failure that
-# prompted round 7). mutagen has no in-place ignore editor, so the
-# recipe is a full terminate + recreate. Safe to run at any time;
-# mutagen reconciles state on the next scan.
+# with the canonical ignore list. Use this when the session's ignore list
+# has drifted — e.g. a missing `/benchmark/output/` ignore lets run.py's
+# root-owned sqlite files sync back to mac and trip "attempt to write a
+# readonly database" on the next bench. mutagen has no in-place ignore
+# editor, so the recipe is a full terminate + recreate. Safe to run at any
+# time; mutagen reconciles state on the next scan.
 sync-main-reset:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -512,115 +393,6 @@ sync-main-reset:
         --ignore='/benchmark/output/' --ignore='/benchmark_results/' \
         "{{_main_root}}" {{_thor}}:/home/zel/repos/pgx-lower
     echo "sync-main-reset: main session recreated with canonical ignores."
-
-# Sweep dangling state from prior worktrees that merged or got abandoned
-# without a clean `just worktree-rm`: terminate mutagen sessions whose
-# local worktree dir is gone, prune thor-side git worktrees that show as
-# prunable, prune mac-side. Idempotent — safe to run whenever
-# `just worktree-list` shows noise.
-worktree-sweep:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "=== pruning git worktrees (mac) ==="
-    git worktree prune -v
-    echo ""
-    echo "=== pruning git worktrees (thor) ==="
-    ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree prune -v'
-    echo ""
-    echo "=== terminating stale mutagen sessions ==="
-    # For each session named pgx-lower-<slug>, if .worktrees/<slug> is gone
-    # locally, terminate it.
-    for name in $(mutagen sync list 2>/dev/null | awk -F': ' '/^Name:/ {print $2}' | grep '^pgx-lower-' || true); do
-        slug="${name#pgx-lower-}"
-        if [ ! -d ".worktrees/${slug}" ]; then
-            echo "  terminating ${name} (worktree .worktrees/${slug} is gone)"
-            mutagen sync terminate "${name}" >/dev/null 2>&1 || true
-        fi
-    done
-    echo ""
-    echo "Done."
-
-# List worktrees + their sync sessions, auto-pruning stale entries first so
-# thor-side rows labeled "prunable" don't leak in as live worktrees on the
-# mac side (and vice versa). Live and prunable are split visually so agents
-# can see at a glance which worktrees are actually on-disk.
-worktree-list:
-    #!/usr/bin/env bash
-    set -o pipefail
-    # Prune first — this clears out branches whose working-tree dir has been
-    # deleted behind git's back (common after mergers + manual rm -rf).
-    # `--dry-run` would merely warn; we actively prune because the next
-    # `git worktree list` on mac or thor would otherwise flag the same rows
-    # as "prunable" again on subsequent calls.
-    git worktree prune >/dev/null 2>&1 || true
-    ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree prune >/dev/null 2>&1' || true
-    _split_list() {
-        local label="$1"; shift
-        local raw="$1"
-        # Column layout from `git worktree list` is path/commit/branch; the
-        # "prunable" marker, when present, shows up on its own row (one per
-        # worktree). We walk the porcelain form which is unambiguous.
-        # Fall back to plain output if the porcelain variant isn't available.
-        echo "--- ${label} (live) ---"
-        printf '%s\n' "${raw}" | grep -v 'prunable' || true
-        local pruned=$(printf '%s\n' "${raw}" | grep 'prunable' || true)
-        if [ -n "${pruned}" ]; then
-            echo "--- ${label} (prunable) ---"
-            printf '%s\n' "${pruned}"
-        fi
-    }
-    echo "=== mac worktrees ==="
-    mac_raw=$(git worktree list --porcelain 2>/dev/null | awk '
-        /^worktree /{wt=$2}
-        /^HEAD /{head=$2}
-        /^branch /{branch=$2}
-        /^prunable/{pr=1}
-        /^$/{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":""); wt=""; head=""; branch=""; pr=0}}
-        END{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":"")}}')
-    _split_list "mac" "${mac_raw}"
-    echo ""
-    echo "=== thor worktrees ==="
-    thor_raw=$(ssh {{_thor}} 'cd ~/repos/pgx-lower && git worktree list --porcelain' 2>/dev/null | awk '
-        /^worktree /{wt=$2}
-        /^HEAD /{head=$2}
-        /^branch /{branch=$2}
-        /^prunable/{pr=1}
-        /^$/{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":""); wt=""; head=""; branch=""; pr=0}}
-        END{if(wt){printf "%s  %s  %s%s\n", wt, substr(head,1,7), branch, (pr?"  [prunable]":"")}}')
-    _split_list "thor" "${thor_raw}"
-    echo ""
-    echo "=== mutagen sessions ==="
-    mutagen sync list | grep -E '^Name:|^Status:' || true
-    echo ""
-    # Orphan detection: a mutagen session named pgx-lower-<slug> with no
-    # matching .worktrees/<slug>/ directory on mac is a zombie left over
-    # from an abandoned spec or a crashed worktree-rm. It still watches
-    # and syncs, which is how the benchmark/output/ readonly-db trap
-    # pops up silently on the *next* worktree's first bench. Surface
-    # these here so `just worktree-list` doubles as a doctor pass.
-    echo "=== orphaned mutagen sessions ==="
-    # Resolve to the main repo root so the .worktrees/ check works regardless
-    # of whether `just worktree-list` was invoked from the main checkout or
-    # from inside a worktree (where `.worktrees/` doesn't exist and every
-    # session would otherwise be misflagged as orphaned).
-    main_root="{{_main_root}}"
-    orphans=""
-    for name in $(mutagen sync list 2>/dev/null | awk -F': ' '/^Name:/ {print $2}' | grep -E '^pgx-lower-' || true); do
-        slug="${name#pgx-lower-}"
-        # The bare "pgx-lower" session maps to the main checkout, not a worktree.
-        if [ "${name}" = "pgx-lower" ]; then continue; fi
-        if [ ! -d "${main_root}/.worktrees/${slug}" ]; then
-            orphans+="  ${name}  (no .worktrees/${slug}/ on mac)"$'\n'
-        fi
-    done
-    if [ -n "${orphans}" ]; then
-        printf '%s' "${orphans}"
-        echo ""
-        echo "To clean up: \`just worktree-sweep\` terminates all of them in one pass,"
-        echo "or \`mutagen sync terminate <name>\` for a specific session."
-    else
-        echo "  (none)"
-    fi
 
 # --- PR --------------------------------------------------------------------
 
@@ -724,119 +496,3 @@ pr-summary SUMMARY:
     new_body=$(printf '%s' "${body}" | python3 -c "import os, sys; body = sys.stdin.read(); print(body.replace('<what and why>', os.environ['_PR_SUMMARY_TEXT']), end='')")
     gh pr edit "${pr}" --body "${new_body}" >/dev/null
     echo "pr-summary: replaced <what and why> on PR #${pr}."
-
-# --- Spec coordination ----------------------------------------------------
-# These wrap edits to specs/STATUS.md and commit atomically against main so
-# concurrent agents can't claim the same spec. Run from the main checkout
-# (not a worktree) — the helper script refuses otherwise.
-
-# Show the spec board.
-spec-status:
-    @cat specs/STATUS.md
-
-# Mark a spec as in_progress. NN is the spec number (e.g. 03), BRANCH is the
-# worktree name you'll use. Owner defaults to <git user.email username>-MMDD;
-# override via OWNER=...
-# Usage: just spec-claim 03 spec-03-cache
-#
-# Note on preflight: earlier iterations considered adding a check here
-# for local detritus (`.worktrees/<BRANCH>/` already on disk, local
-# branch already exists) so the claim wouldn't succeed-then-leave-you-
-# in-limbo if the follow-up `just worktree-new` failed. That preflight
-# is intentionally NOT done here; it lives in `worktree-new`, which is
-# now fully retry-idempotent: if you re-run it after a prior aborted
-# attempt, it prunes git's stale bookkeeping, removes leftover
-# directories on mac + thor (including container-root-owned files via
-# `docker exec`), and deletes dangling local branches before creating
-# fresh state. Net result: a failed claim→worktree-new sequence is
-# recoverable by simply re-running `just worktree-new <BRANCH>` — no
-# need to `spec-abandon` (which would undo the claim) and no need to
-# hand-run `rm -rf` + `git branch -D`. Keeping spec-claim as a pure
-# STATUS.md mutation means the two concerns stay separable: the claim
-# row reflects board state, worktree-new owns filesystem state.
-spec-claim NN BRANCH OWNER='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [ "$(git rev-parse --show-toplevel)" = "{{_main_root}}" ] || { echo "spec-claim: refusing to run from a worktree — STATUS.md must be edited on the main checkout. cd {{_main_root}} and retry." >&2; exit 1; }
-    OWNER="{{OWNER}}" python3 scripts/spec_status.py claim "{{NN}}" "{{BRANCH}}"
-
-# Release a claim (e.g. abandoning the work). Sets state back to available.
-# Use when the claim is still "just a row on the board" — no branch pushed,
-# no PR open, no worktree on disk. For in-between messes (in_review with a
-# closed PR, zombie worktree, dangling remote branch), use `spec-abandon` —
-# it does the full tear-down, including closing the PR and renaming it so
-# future agents don't resurrect it.
-spec-release NN:
-    python3 scripts/spec_status.py release "{{NN}}"
-
-# Full tear-down recovery path for a zombie in_progress / in_review spec.
-# Closes the PR (if open), renames it so it doesn't look implement-able,
-# deletes the remote branch, removes the worktree on mac + thor, terminates
-# the mutagen session, and flips the STATUS row back to available. Idempotent
-# — missing pieces just skip, it never hard-fails on "already gone".
-#
-# Usage: just spec-abandon NN "<reason>"
-spec-abandon NN REASON:
-    #!/usr/bin/env bash
-    set -uo pipefail
-    branch=$(python3 scripts/spec_status.py read_branch "{{NN}}" 2>/dev/null || true)
-    if [ -z "$branch" ]; then
-        echo "Spec {{NN}} has no branch recorded on STATUS; releasing claim only."
-        python3 scripts/spec_status.py release "{{NN}}"
-        exit 0
-    fi
-    echo "Tearing down spec {{NN}} (branch: ${branch})"
-    # Close the PR if one exists, and rewrite its title so future agents
-    # don't re-open it thinking it's implementable work.
-    pr=$(gh pr list --head "${branch}" --state all --json number,state -q '.[] | select(.state=="OPEN") | .number' | head -1)
-    if [ -n "$pr" ]; then
-        gh pr edit "$pr" --title "[abandoned] spec {{NN}} — {{REASON}}" >/dev/null 2>&1 || true
-        gh pr close "$pr" --delete-branch --comment "Abandoned: {{REASON}}. Do not re-open — use \`just spec-claim {{NN}} <new-branch>\` to start fresh." >/dev/null 2>&1 || true
-        echo "  PR #${pr} closed + renamed."
-    else
-        # Also rewrite any already-closed PR's title as a breadcrumb, per the
-        # feedback rule: abandoned PRs should read as abandoned so an agent
-        # skimming gh pr list doesn't try to resurrect them.
-        closed=$(gh pr list --head "${branch}" --state closed --json number,title -q '.[].number' | head -1)
-        if [ -n "$closed" ]; then
-            gh pr edit "$closed" --title "[abandoned] spec {{NN}} — {{REASON}}" >/dev/null 2>&1 || true
-            echo "  Previously-closed PR #${closed} retitled as abandoned."
-        fi
-    fi
-    # Delete remote branch if it still exists.
-    git push origin --delete "${branch}" 2>/dev/null && echo "  remote branch ${branch} deleted." || echo "  remote branch ${branch} already gone."
-    # Tear down the worktree (does mutagen sync terminate + worktree remove on both sides; all idempotent via `-`).
-    just worktree-rm "${branch}" || true
-    # Delete the LOCAL branch on the main checkout. If we skip this, a subsequent
-    # `just spec-claim NN <same-slug>` + `just worktree-new <same-slug>` will
-    # silently reuse the stale branch with the abandoned implementation still
-    # committed — surprising and nearly invisible. -D forces deletion even if
-    # unmerged (which is correct: we're abandoning).
-    git branch -D "${branch}" 2>/dev/null && echo "  local branch ${branch} deleted." || echo "  local branch ${branch} already gone."
-    # Flip STATUS.md back to available.
-    python3 scripts/spec_status.py release "{{NN}}"
-    echo "Spec {{NN}} abandoned and released."
-
-# Mark a spec done after its PR merges. PR is the PR number. Also tears
-# down the worktree + mutagen session automatically so those don't pile
-# up as "prunable" entries in `just worktree-list` after merges.
-spec-complete NN PR:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [ "$(git rev-parse --show-toplevel)" = "{{_main_root}}" ] || { echo "spec-complete: refusing to run from a worktree — STATUS.md must be edited on the main checkout. cd {{_main_root}} and retry." >&2; exit 1; }
-    branch=$(python3 scripts/spec_status.py read_branch "{{NN}}" 2>/dev/null || true)
-    python3 scripts/spec_status.py complete "{{NN}}" "{{PR}}"
-    if [ -n "${branch}" ] && [ -d ".worktrees/${branch}" ]; then
-        just worktree-rm "${branch}" || true
-    fi
-
-# Mark a spec as in_review (PR open). PR is the PR number.
-spec-in-review NN PR:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [ "$(git rev-parse --show-toplevel)" = "{{_main_root}}" ] || { echo "spec-in-review: refusing to run from a worktree — STATUS.md must be edited on the main checkout. cd {{_main_root}} and retry." >&2; exit 1; }
-    python3 scripts/spec_status.py in_review "{{NN}}" "{{PR}}"
-
-# Mark a spec as blocked, with a reason note.
-spec-block NN REASON:
-    python3 scripts/spec_status.py block "{{NN}}" "{{REASON}}"
