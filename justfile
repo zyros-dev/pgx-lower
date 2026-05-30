@@ -487,27 +487,24 @@ pr-summary SUMMARY:
     gh pr edit "${pr}" --body "${new_body}" >/dev/null
     echo "pr-summary: replaced <what and why> on PR #${pr}."
 
-# clang-tidy gate over the pgx-lower surface (lingodb is carved out by
-# src/lingodb/.clang-tidy). Binary: any diagnostic fails. CI calls `just lint`.
-lint:
-    @just _preflight
-    docker compose -f {{compose}} run --rm builder bash -lc " \
-        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh gate "
+# --- Lint (clang-tidy) -----------------------------------------------------
 
-# Auto-apply the mechanical clang-tidy fixes over the pgx-lower surface.
-lint-fix:
-    @just _preflight
-    docker compose -f {{compose}} run --rm builder bash -lc " \
-        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh fix "
+# clang-tidy gate over src/pgx-lower/ (src/lingodb is carved out by its own
+# '-*' .clang-tidy). Binary fail-on-any: -warnings-as-errors='*' so any
+# enabled diagnostic exits non-zero. Queued on the build queue (it stands up
+# a build-artifacts/lint compile DB on first run, then runs incrementally).
+lint: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} check") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
-# Fast local pre-push gate: only .cpp changed vs origin/main.
-lint-diff:
-    @just _preflight
-    docker compose -f {{compose}} run --rm builder bash -lc " \
-        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh diff "
+# Apply clang-tidy's automatic fixes over src/pgx-lower/ in place. Run, then
+# ALWAYS `just test` to confirm the fixes are semantics-preserving before commit.
+lint-fix: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} fix") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
-# Generate the violation inventory (advisory, non-failing): total + per-check histogram.
-lint-inventory:
-    @just _preflight
-    docker compose -f {{compose}} run --rm builder bash -lc " \
-        git config --global --add safe.directory /work && cd /work && ./scripts/run_lint.sh inventory "
+# Lint only the .cpp hunks changed vs origin/main — the cheap pre-push variant.
+lint-diff: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} diff") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Violation inventory (advisory, non-failing): total + per-check histogram.
+lint-inventory: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} inventory") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'

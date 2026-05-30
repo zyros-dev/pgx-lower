@@ -1,118 +1,85 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-# clang-tidy gate for the pgx-lower surface.
+# clang-tidy gate for pgx-lower. Runs inside the pgx-lower-dev container
+# (invoked from the lint/lint-fix/lint-diff/lint-inventory just recipes via
+# `tsp docker exec`). Scopes to src/pgx-lower/*.cpp only; src/lingodb/ is
+# carved out by its own .clang-tidy ('-*').
 #
-# Runs inside the builder container (see the `lint`/`lint-fix`/`lint-diff`
-# recipes). Vendored code under src/lingodb/ is exempt via its own
-# src/lingodb/.clang-tidy (Checks: '-*'); everything under src/pgx-lower/
-# inherits the repo-root .clang-tidy.
-#
-# Usage: run_lint.sh [gate|inventory|fix|diff]
-#   gate       any diagnostic fails the build (-warnings-as-errors='*')   [default]
-#   inventory  no failure; prints total + per-check histogram (Task 4)
-#   fix        auto-applies the mechanical fixes (clang-tidy --fix)
-#   diff       gate, restricted to .cpp changed vs origin/main
+# Usage: run_lint.sh <WDIR> <MODE>
+#   WDIR  workspace dir (the container path, e.g. /workspace)
+#   MODE  check (default) | fix | diff | inventory
+#     check      binary gate, -warnings-as-errors='*' — any diagnostic fails
+#     fix        clang-tidy --fix (auto-fix pass, no gate)
+#     diff       gate, only .cpp changed vs origin/main
+#     inventory  advisory: total + per-check histogram, never fails
+set -o pipefail
+WDIR="${1:-/workspace}"
+MODE="${2:-check}"
+cd "$WDIR" || { echo "LINT: cannot cd $WDIR"; exit 2; }
 
-MODE="${1:-gate}"
+# Dedicated lint build dir under build-artifacts/ (mutagen-ignored, sync-safe).
+# Configure with compile-commands export, then build once: clang-tidy needs the
+# generated MLIR TableGen .inc headers to exist. ccache makes re-runs cheap.
+LINT_DIR="$WDIR/build-artifacts/lint"
+mkdir -p "$LINT_DIR"
+( cd "$LINT_DIR" \
+  && { [ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+        -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache "$WDIR"; } \
+  && cmake --build . ) || { echo "LINT: configure/build failed"; exit 2; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# The compile DB. Reuse an existing build's compile_commands.json (exported
-# by the configure/build recipes via -DCMAKE_EXPORT_COMPILE_COMMANDS=ON);
-# otherwise stand up a lint-only build dir. Generated headers (tablegen, etc.)
-# must exist for clang-tidy to parse, so a fresh lint dir is configured AND
-# built once. build-artifacts/ is a named volume, so this persists on thor.
-LINT_BUILD="$REPO_ROOT/build-artifacts/lint"
-
-find_compile_db() {
-    for d in release lint debug relwithdebinfo; do
-        if [[ -f "$REPO_ROOT/build-artifacts/$d/compile_commands.json" ]]; then
-            echo "$REPO_ROOT/build-artifacts/$d"
-            return 0
-        fi
-    done
-    return 1
-}
-
-ensure_compile_db() {
-    if BUILD_DIR="$(find_compile_db)"; then
-        echo "[run_lint] using compile DB: $BUILD_DIR/compile_commands.json" >&2
-        return 0
-    fi
-    echo "[run_lint] no compile DB found; configuring + building $LINT_BUILD" >&2
-    cmake -S "$REPO_ROOT" -B "$LINT_BUILD" \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-        -DCMAKE_C_COMPILER=clang \
-        -DCMAKE_CXX_COMPILER=clang++ \
-        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-        -DCMAKE_C_COMPILER_LAUNCHER=ccache
-    # Build so generated headers exist for clang-tidy to parse.
-    cmake --build "$LINT_BUILD"
-    BUILD_DIR="$LINT_BUILD"
-    if [[ ! -f "$BUILD_DIR/compile_commands.json" ]]; then
-        echo "[run_lint] ERROR: compile_commands.json not produced in $BUILD_DIR" >&2
-        exit 2
-    fi
-    echo "[run_lint] using compile DB: $BUILD_DIR/compile_commands.json" >&2
-}
-
-# Files the gate covers: pgx-lower .cpp only. lingodb is carved out by its
-# own .clang-tidy, but we also never hand its files to the runner.
-gate_files() {
-    find "$REPO_ROOT/src/pgx-lower" -type f -name '*.cpp' \
-        ! -path '*/build/*' | sort
-}
-
-diff_files() {
-    git config --global --add safe.directory "$REPO_ROOT" >/dev/null 2>&1 || true
-    git -C "$REPO_ROOT" diff --name-only origin/main...HEAD -- 'src/pgx-lower/**/*.cpp' 2>/dev/null \
-        | sed "s#^#$REPO_ROOT/#" \
-        | while read -r f; do [[ -f "$f" ]] && echo "$f"; done
-}
-
-ensure_compile_db
-
-case "$MODE" in
-gate)
-    mapfile -t FILES < <(gate_files)
-    echo "[run_lint] gate: ${#FILES[@]} files, -warnings-as-errors='*'" >&2
-    run-clang-tidy -p "$BUILD_DIR" -warnings-as-errors='*' -quiet "${FILES[@]}"
-    ;;
-diff)
-    mapfile -t FILES < <(diff_files)
-    if [[ "${#FILES[@]}" -eq 0 ]]; then
-        echo "[run_lint] diff: no pgx-lower .cpp changed vs origin/main; nothing to lint" >&2
+# Files to lint. `check`/`fix`/`inventory` cover the whole pgx-lower surface;
+# `diff` narrows to .cpp changed vs origin/main.
+if [ "$MODE" = "diff" ]; then
+    git config --global --add safe.directory "$WDIR" >/dev/null 2>&1 || true
+    git fetch origin main --quiet 2>/dev/null || true
+    base=$(git merge-base origin/main HEAD 2>/dev/null || echo "")
+    if [ -z "$base" ]; then echo "LINT: cannot resolve origin/main merge-base"; exit 2; fi
+    mapfile -t files < <(git diff --name-only "$base" -- 'src/pgx-lower/*.cpp' 2>/dev/null | while read -r f; do [ -f "$f" ] && echo "$f"; done)
+    if [ "${#files[@]}" -eq 0 ]; then
+        echo "LINT: no src/pgx-lower/*.cpp changed vs origin/main — nothing to lint."
         exit 0
     fi
-    echo "[run_lint] diff: ${#FILES[@]} changed files, -warnings-as-errors='*'" >&2
-    run-clang-tidy -p "$BUILD_DIR" -warnings-as-errors='*' -quiet "${FILES[@]}"
+else
+    mapfile -t files < <(find src/pgx-lower -name '*.cpp' | sort)
+    if [ "${#files[@]}" -eq 0 ]; then echo "LINT: no src/pgx-lower/*.cpp found"; exit 2; fi
+fi
+
+case "$MODE" in
+check|diff)
+    rc=0
+    printf '%s\n' "${files[@]}" \
+      | xargs -P"$(nproc)" -I{} clang-tidy-20 -p "$LINT_DIR" --quiet -warnings-as-errors='*' {} \
+      || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "LINT CLEAN — ${#files[@]} file(s) in src/pgx-lower/ pass all enabled checks"
+    else
+        echo "LINT FAILED — violations above (exit $rc). Fix them, or delete the offending rule from .clang-tidy."
+    fi
+    exit "$rc"
     ;;
 fix)
-    mapfile -t FILES < <(gate_files)
-    echo "[run_lint] fix: applying clang-tidy --fix over ${#FILES[@]} files" >&2
-    run-clang-tidy -p "$BUILD_DIR" -fix -quiet "${FILES[@]}"
+    rc=0
+    printf '%s\n' "${files[@]}" \
+      | xargs -P"$(nproc)" -I{} clang-tidy-20 -p "$LINT_DIR" --quiet --fix --fix-errors {} \
+      || rc=$?
+    echo "LINT FIX applied over ${#files[@]} file(s). Review with 'git diff', then run 'just test'."
+    exit 0
     ;;
 inventory)
-    mapfile -t FILES < <(gate_files)
-    echo "[run_lint] inventory: scanning ${#FILES[@]} files (advisory, non-failing)" >&2
-    raw="$(run-clang-tidy -p "$BUILD_DIR" -quiet "${FILES[@]}" 2>/dev/null || true)"
-    # Diagnostics look like:  path:line:col: warning: msg [check-name]
-    # A line can carry multiple [a,b] aliases; count each.
-    hits="$(printf '%s\n' "$raw" \
-        | grep -oE '\[[a-z0-9]+[a-z0-9.-]*(,[a-z0-9.-]+)*\]$' \
-        | tr -d '[]' | tr ',' '\n' | grep -E '.' || true)"
-    total="$(printf '%s\n' "$hits" | grep -cE '.' || true)"
-    echo "=== pgx-lower clang-tidy inventory ==="
+    # Advisory only: never fail. Diagnostics end in [check-name] (possibly
+    # comma-joined aliases); split and tally each.
+    raw=$(printf '%s\n' "${files[@]}" \
+      | xargs -P"$(nproc)" -I{} clang-tidy-20 -p "$LINT_DIR" --quiet {} 2>/dev/null || true)
+    hits=$(printf '%s\n' "$raw" \
+      | grep -oE '\[[a-z0-9]+[a-z0-9.-]*(,[a-z0-9.-]+)*\]$' \
+      | tr -d '[]' | tr ',' '\n' | grep -E '.')
+    total=$(printf '%s\n' "$hits" | grep -cE '.')
+    echo "=== pgx-lower clang-tidy inventory (${#files[@]} files) ==="
     echo "total diagnostics: $total"
     echo "--- per-check histogram (desc) ---"
     printf '%s\n' "$hits" | sort | uniq -c | sort -rn
+    exit 0
     ;;
 *)
-    echo "[run_lint] unknown mode: $MODE (use gate|inventory|fix|diff)" >&2
-    exit 2
-    ;;
+    echo "LINT: unknown MODE '$MODE' (use check|fix|diff|inventory)"; exit 2 ;;
 esac
