@@ -1,0 +1,11 @@
+# Vendored LingoDB code — exempt from all clang-tidy checks.
+#
+# clang-tidy resolves config by walking up from each file to the nearest
+# .clang-tidy. Files under src/lingodb/ stop here; everything else under
+# src/pgx-lower/ inherits the repo-root .clang-tidy gate.
+#
+# We do not lint upstream code: it isn't ours to restyle, and churn here
+# would bury the pgx-lower diagnostics the gate exists to surface.
+Checks: '-*'
+WarningsAsErrors: ''
+HeaderFilterRegex: '$^'
