@@ -16,7 +16,7 @@ _ctr  := "pgx-lower-dev"
 _main_root := shell('dirname "$(git rev-parse --path-format=absolute --git-common-dir)"')
 _rel  := replace_regex(invocation_directory(), "^" + _main_root + "/?", "")
 _wdir := if _rel == "" { "/workspace" } else { "/workspace/" + _rel }
-_bdir := _wdir + "/build-docker-ptest"
+_bdir := _wdir + "/build-artifacts/ptest"
 
 # Serialized build queue: compile/test/bench share one slot on thor so they
 # don't skew each other's timings or OOM. Check runs on a separate queue.
@@ -64,7 +64,7 @@ compile: _preflight
     # just compile" cargo-cult. We always work in the main checkout now,
     # so the session is always the bare "pgx-lower".
     mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
-    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-compile.out
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-compile.out
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ]; then
         ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' /tmp/pgx-compile.out 2>/dev/null || echo 0)
@@ -150,7 +150,7 @@ ffix-diff: _preflight
 #
 # Usage: just expected-from-results 43_version
 # Requires: `just compile && just test` already ran for this branch — the
-# recipe reads build-docker-ptest/extension/results/<name>.out on thor.
+# recipe reads build-artifacts/ptest/extension/results/<name>.out on thor.
 expected-from-results TEST:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -191,12 +191,12 @@ expected-from-results TEST:
 #
 # Note: this is the OUTPUT-EQUIVALENCE suite — it proves pgx_lower
 # matches stock PG on a curated stable set of queries. For TDD on most
-# spec work, prefer `just utest` (faster, scoped to the thing you're
+# spec work, prefer `just utest-pg` (faster, scoped to the thing you're
 # actually changing). See SKILL.md step 2.
 test: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
-    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Fast PG-aware unit tests (spec 16). Runs each .sql under tests/regress-unit/sql/
 # with `psql -v ON_ERROR_STOP=on`. Each .sql is a DO block that PERFORMs the
@@ -206,7 +206,7 @@ utest-pg: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
     python3 {{invocation_directory()}}/scripts/gen_unit_test_sql.py
-    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "export PATH=/usr/local/pgsql/bin:\$PATH && mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}/tests/regress-unit && su postgres -c \"/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit\" && fail=0; for sql in {{_wdir}}/tests/regress-unit/sql/*.sql; do echo \"--- \$(basename \$sql) ---\"; su postgres -c \"/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \$sql\" || { fail=1; echo FAIL: \$sql; }; done; echo; if [ \$fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "export PATH=/usr/local/pgsql/bin:\$PATH && mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}/tests/regress-unit && su postgres -c \"/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit\" && fail=0; for sql in {{_wdir}}/tests/regress-unit/sql/*.sql; do echo \"--- \$(basename \$sql) ---\"; su postgres -c \"/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \$sql\" || { fail=1; echo FAIL: \$sql; }; done; echo; if [ \$fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Re-record the pg_regress baseline. Run only when you have consciously
 # accepted a new set of red tests on main — each entry that gets added
@@ -243,11 +243,11 @@ bench-merge: _preflight
 
 # Generate the PR benchmark report. Requires an open PR (the PR number
 # becomes part of the filename). Snapshots the current benchmark.db to
-# ./benchmarks/pr-<N>-<branch>.db, pulls the baseline db directly from
+# ./bench-results/pr-<N>-<branch>.db, pulls the baseline db directly from
 # origin/main (not committed to feature branches), and emits matching
 # .png + .md.
 #
-# Baseline: the alphanumerically latest .db in origin/main:benchmarks/
+# Baseline: the alphanumerically latest .db in origin/main:bench-results/
 # (which is the most recently merged PR's db). Baseline dbs never land on
 # feature branches — each PR commits exactly one .db (its own).
 bench-report:
@@ -261,10 +261,10 @@ bench-report:
     fi
     # Derive artifact slug from branch name.
     slug="pr-${pr}-${branch}"
-    mkdir -p benchmarks
+    mkdir -p bench-results
     # Snapshot the run's db into the branch under the final name.
     src="{{_wdir}}/benchmark/output/benchmark.db"
-    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/benchmarks/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
+    ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/bench-results/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
     # Fetch the baseline from origin/main. On a fresh repo there may be none;
     # in that case we self-compare (baseline == current) so the artifacts are
     # generated and the PR still gets chart + table + validation block. The
@@ -273,15 +273,15 @@ bench-report:
     # the NAY gate.
     git fetch origin main --quiet
     # git ls-tree pathspec doesn't expand shell-style wildcards — the quoted
-    # 'benchmarks/pr-*.db' was always returning empty, silently forcing the
+    # 'bench-results/pr-*.db' was always returning empty, silently forcing the
     # bootstrap branch even when a real baseline existed. List the whole
-    # benchmarks/ dir and grep instead. `sort -V` picks highest pr-N
+    # bench-results/ dir and grep instead. `sort -V` picks highest pr-N
     # numerically — de facto "most recent merge" in FIFO-merge order.
-    baseline_path=$(git ls-tree -r --name-only origin/main -- benchmarks/ 2>/dev/null | grep -E '^benchmarks/pr-.*\.db$' | sort -V | tail -1 || true)
+    baseline_path=$(git ls-tree -r --name-only origin/main -- bench-results/ 2>/dev/null | grep -E '^bench-results/pr-.*\.db$' | sort -V | tail -1 || true)
     if [ -z "${baseline_path}" ]; then
-        echo "NOTE: no baseline on origin/main:benchmarks/ — self-comparing. This PR will seed the baseline for future PRs." >&2
+        echo "NOTE: no baseline on origin/main:bench-results/ — self-comparing. This PR will seed the baseline for future PRs." >&2
         baseline_name="bootstrap-self.db"
-        ssh {{_thor}} "docker exec {{_ctr}} cp {{_wdir}}/benchmarks/${slug}.db /tmp/${baseline_name}"
+        ssh {{_thor}} "docker exec {{_ctr}} cp {{_wdir}}/bench-results/${slug}.db /tmp/${baseline_name}"
     else
         baseline_name=$(basename "${baseline_path}")
         # Stage the baseline on thor (not committed — just in /tmp for report.py).
@@ -292,16 +292,16 @@ bench-report:
     fi
     ssh {{_thor}} "docker exec {{_ctr}} python3 {{_wdir}}/benchmark/report.py \
         --baseline /tmp/${baseline_name} \
-        --current {{_wdir}}/benchmarks/${slug}.db \
-        --out {{_wdir}}/benchmarks/${slug} \
-        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/benchmarks/${slug}.png\""
+        --current {{_wdir}}/bench-results/${slug}.db \
+        --out {{_wdir}}/bench-results/${slug} \
+        --chart-url \"https://raw.githubusercontent.com/zyros-dev/pgx-lower/${branch}/bench-results/${slug}.png\""
     echo ""
-    echo "Artifacts: benchmarks/${slug}.{db,png,md}"
+    echo "Artifacts: bench-results/${slug}.{db,png,md}"
     echo "Baseline : ${baseline_name} (from origin/main)"
     # Force mutagen to finish syncing thor→mac before we try to read the
     # .md that report.py just wrote. Without this, the Python replace step
     # below races: report.py finishes on thor, we immediately try to open
-    # benchmarks/<slug>.md locally, and mutagen hasn't caught up yet.
+    # bench-results/<slug>.md locally, and mutagen hasn't caught up yet.
     # `mutagen sync flush` blocks until the cycle completes.
     mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
     # Auto-inject the .md into the PR body, replacing the stats-summary
@@ -314,7 +314,7 @@ bench-report:
     if printf '%s' "${current_body}" | grep -qF "${placeholder}"; then
         # Use python for the replacement so bench report content isn't
         # subject to sed's metachar quirks.
-        new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('benchmarks/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
+        new_body=$(printf '%s' "${current_body}" | python3 -c "import sys, pathlib; body = sys.stdin.read(); md = pathlib.Path('bench-results/${slug}.md').read_text(); print(body.replace('${placeholder}', md), end='')")
         gh pr edit "${pr}" --body "${new_body}" >/dev/null
         echo "PR  body  : injected bench report block into PR #${pr}."
         # Detect remaining template placeholders and flag them explicitly —
@@ -328,7 +328,7 @@ bench-report:
             echo "            Fill them in with \`gh pr edit ${pr} --body ...\` before requesting review."
         fi
     else
-        echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste benchmarks/${slug}.md manually if needed."
+        echo "PR  body  : placeholder already replaced — skipping auto-inject. Paste bench-results/${slug}.md manually if needed."
     fi
 
 # --- Queue ops ------------------------------------------------------------
@@ -376,7 +376,7 @@ sync-main-reset:
     mutagen sync create \
         --name=pgx-lower \
         --sync-mode=two-way-resolved \
-        --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
+        --ignore='/build-artifacts/' --ignore='/build-*/' --ignore='/build-docker-*/' --ignore='/postgres-debug/' \
         --ignore='/.worktrees/' \
         --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
         --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
