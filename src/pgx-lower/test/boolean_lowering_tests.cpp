@@ -42,13 +42,13 @@ struct Fixture {
         builder.setInsertionPointToStart(module.getBody());
     }
 
-    bool runDBToStd() {
+    bool run_db_to_std() {
         mlir::PassManager pm(&ctx);
         pm.addPass(mlir::db::createLowerToStdPass());
         return mlir::succeeded(pm.run(module));
     }
 
-    std::string asString() {
+    std::string as_string() {
         std::string s;
         llvm::raw_string_ostream os(s);
         module.print(os);
@@ -65,10 +65,10 @@ PGX_TEST_FN(boolean_not_lowering) {
         f.builder.getFunctionType({f.builder.getI1Type()}, {f.builder.getI1Type()}));
     auto* block = fn.addEntryBlock();
     f.builder.setInsertionPointToStart(block);
-    auto notOp = f.builder.create<mlir::db::NotOp>(f.builder.getUnknownLoc(), block->getArgument(0));
-    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), notOp.getResult());
-    if (!f.runDBToStd()) elog(ERROR, "DBToStd pass failed");
-    std::string ir = f.asString();
+    auto not_op = f.builder.create<mlir::db::NotOp>(f.builder.getUnknownLoc(), block->getArgument(0));
+    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), not_op.getResult());
+    if (!f.run_db_to_std()) elog(ERROR, "DBToStd pass failed");
+    std::string const ir = f.as_string();
     ASSERT_CONTAINS(ir, "arith.cmpi eq");
     ASSERT_NOT_CONTAINS(ir, "db.not");
     PG_RETURN_VOID();
@@ -81,12 +81,12 @@ PGX_TEST_FN(boolean_and_lowering) {
         f.builder.getFunctionType({f.builder.getI1Type(), f.builder.getI1Type()}, {f.builder.getI1Type()}));
     auto* block = fn.addEntryBlock();
     f.builder.setInsertionPointToStart(block);
-    auto andOp = f.builder.create<mlir::db::AndOp>(
+    auto and_op = f.builder.create<mlir::db::AndOp>(
         f.builder.getUnknownLoc(), f.builder.getI1Type(),
         mlir::ValueRange{block->getArgument(0), block->getArgument(1)});
-    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), andOp.getResult());
-    if (!f.runDBToStd()) elog(ERROR, "DBToStd pass failed");
-    std::string ir = f.asString();
+    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), and_op.getResult());
+    if (!f.run_db_to_std()) elog(ERROR, "DBToStd pass failed");
+    std::string const ir = f.as_string();
     ASSERT_CONTAINS(ir, "arith.andi");
     ASSERT_NOT_CONTAINS(ir, "db.and");
     ASSERT_NOT_CONTAINS(ir, "arith.select");
@@ -100,12 +100,12 @@ PGX_TEST_FN(boolean_or_lowering) {
         f.builder.getFunctionType({f.builder.getI1Type(), f.builder.getI1Type()}, {f.builder.getI1Type()}));
     auto* block = fn.addEntryBlock();
     f.builder.setInsertionPointToStart(block);
-    auto orOp = f.builder.create<mlir::db::OrOp>(
+    auto or_op = f.builder.create<mlir::db::OrOp>(
         f.builder.getUnknownLoc(), f.builder.getI1Type(),
         mlir::ValueRange{block->getArgument(0), block->getArgument(1)});
-    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), orOp.getResult());
-    if (!f.runDBToStd()) elog(ERROR, "DBToStd pass failed");
-    std::string ir = f.asString();
+    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), or_op.getResult());
+    if (!f.run_db_to_std()) elog(ERROR, "DBToStd pass failed");
+    std::string const ir = f.as_string();
     ASSERT_CONTAINS(ir, "arith.ori");
     ASSERT_NOT_CONTAINS(ir, "db.or");
     ASSERT_NOT_CONTAINS(ir, "arith.select");
@@ -123,15 +123,15 @@ PGX_TEST_FN(boolean_complex_expression) {
     auto a = block->getArgument(0);
     auto b = block->getArgument(1);
     auto c = block->getArgument(2);
-    auto andOp = f.builder.create<mlir::db::AndOp>(
+    auto and_op = f.builder.create<mlir::db::AndOp>(
         f.builder.getUnknownLoc(), f.builder.getI1Type(), mlir::ValueRange{a, b});
-    auto notOp = f.builder.create<mlir::db::NotOp>(f.builder.getUnknownLoc(), c);
-    auto orOp = f.builder.create<mlir::db::OrOp>(
+    auto not_op = f.builder.create<mlir::db::NotOp>(f.builder.getUnknownLoc(), c);
+    auto or_op = f.builder.create<mlir::db::OrOp>(
         f.builder.getUnknownLoc(), f.builder.getI1Type(),
-        mlir::ValueRange{andOp.getResult(), notOp.getResult()});
-    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), orOp.getResult());
-    if (!f.runDBToStd()) elog(ERROR, "DBToStd pass failed");
-    std::string ir = f.asString();
+        mlir::ValueRange{and_op.getResult(), not_op.getResult()});
+    f.builder.create<mlir::func::ReturnOp>(f.builder.getUnknownLoc(), or_op.getResult());
+    if (!f.run_db_to_std()) elog(ERROR, "DBToStd pass failed");
+    std::string const ir = f.as_string();
     ASSERT_CONTAINS(ir, "arith.andi");
     ASSERT_CONTAINS(ir, "arith.cmpi eq");
     ASSERT_CONTAINS(ir, "arith.ori");

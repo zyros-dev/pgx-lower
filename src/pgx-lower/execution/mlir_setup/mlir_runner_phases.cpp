@@ -28,19 +28,19 @@ namespace llvm { class Module; }
 
 namespace mlir_runner {
 
-extern void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase);
-extern void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
-extern bool validateModuleState(::mlir::ModuleOp module, const std::string& phase);
+extern void dump_module_with_stats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase);
+extern void dump_llvmir(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
+extern bool validate_module_state(::mlir::ModuleOp module, const std::string& phase);
 
 bool runPhase3a(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
     context.disableMultithreading();
 
-    if (!validateModuleState(module, "Phase 3a input")) {
-        dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
+    if (!validate_module_state(module, "Phase 3a input")) {
+        dump_module_with_stats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
         throw std::runtime_error("Phase 3a: Module validation failed before running passes");
     }
-    dumpModuleWithStats(module, "Phase 3a before optimization", pgx_lower::log::Category::AST_TRANSLATE);
+    dump_module_with_stats(module, "Phase 3a before optimization", pgx_lower::log::Category::AST_TRANSLATE);
 
     mlir::PassManager pm1(&context);
     pm1.enableVerifier(false);
@@ -49,13 +49,13 @@ bool runPhase3a(::mlir::ModuleOp module) {
     mlir::relalg::createQueryOptPipeline(pm1 /*, &db*/);
 
     if (mlir::failed(pm1.run(module))) {
-        dumpModuleWithStats(module, "Phase 3a AFTER: RelAlg -> Optimised RelAlg", pgx_lower::log::Category::RELALG_LOWER);
+        dump_module_with_stats(module, "Phase 3a AFTER: RelAlg -> Optimised RelAlg", pgx_lower::log::Category::RELALG_LOWER);
         throw std::runtime_error("Phase 3a failed: RelAlg → DB+DSA+Util lowering error");
     }
-    dumpModuleWithStats(module, "Phase 3a AFTER: RelAlg -> Optimised RelAlg", pgx_lower::log::Category::RELALG_LOWER);
+    dump_module_with_stats(module, "Phase 3a AFTER: RelAlg -> Optimised RelAlg", pgx_lower::log::Category::RELALG_LOWER);
 
-    if (!validateModuleState(module, "After optimization")) {
-        dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
+    if (!validate_module_state(module, "After optimization")) {
+        dump_module_with_stats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
         throw std::runtime_error("Phase 3a: Module validation failed before running passes");
     }
 
@@ -69,18 +69,18 @@ bool runPhase3a(::mlir::ModuleOp module) {
 
     // Run PassManager with pure C++ exception handling
     if (mlir::failed(pm.run(module))) {
-        dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
+        dump_module_with_stats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
         throw std::runtime_error("Phase 3a failed: RelAlg → DB+DSA+Util lowering error");
     }
 
     pgx_lower::log::verify_module_or_throw(module, "Phase 3a", "Module verification failed after lowering");
 
-    if (!validateModuleState(module, "Phase 3a output")) {
-        dumpModuleWithStats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
+    if (!validate_module_state(module, "Phase 3a output")) {
+        dump_module_with_stats(module, "Failed IR", pgx_lower::log::Category::RELALG_LOWER);
         throw std::runtime_error("Phase 3a: Module validation failed");
     }
 
-    dumpModuleWithStats(module, "Phase 3a AFTER: RelAlg -> DB+DSA+Util", pgx_lower::log::Category::RELALG_LOWER);
+    dump_module_with_stats(module, "Phase 3a AFTER: RelAlg -> DB+DSA+Util", pgx_lower::log::Category::RELALG_LOWER);
 
     return true;
 }
@@ -88,11 +88,11 @@ bool runPhase3a(::mlir::ModuleOp module) {
 bool runPhase3b(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
 
-    if (!validateModuleState(module, "Phase 3b input")) {
+    if (!validate_module_state(module, "Phase 3b input")) {
         throw std::runtime_error("Phase 3b: Module validation failed before running passes");
     }
     context.disableMultithreading();
-    dumpModuleWithStats(module, "Phase 3b BEFORE: DB+DSA -> Standard", pgx_lower::log::Category::DB_LOWER);
+    dump_module_with_stats(module, "Phase 3b BEFORE: DB+DSA -> Standard", pgx_lower::log::Category::DB_LOWER);
 
     {
         ::mlir::PassManager pm1(&context);
@@ -103,14 +103,14 @@ bool runPhase3b(::mlir::ModuleOp module) {
 #endif
         mlir::pgx_lower::createDBToStandardPipeline(pm1, false);
         if (mlir::failed(pm1.run(module))) {
-            dumpModuleWithStats(module, "Phase 3b failed: DB+DSA+Util → Standard lowering error", pgx_lower::log::Category::DB_LOWER);
+            dump_module_with_stats(module, "Phase 3b failed: DB+DSA+Util → Standard lowering error", pgx_lower::log::Category::DB_LOWER);
             throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
         }
-        if (!validateModuleState(module, "Phase 3b output")) {
-            dumpModuleWithStats(module, "Phase 3b: Module validation failed after lowering", pgx_lower::log::Category::DB_LOWER);
+        if (!validate_module_state(module, "Phase 3b output")) {
+            dump_module_with_stats(module, "Phase 3b: Module validation failed after lowering", pgx_lower::log::Category::DB_LOWER);
             throw std::runtime_error("Phase 3b: Module validation failed after lowering");
         }
-        dumpModuleWithStats(module, "After dsa standard pipeline pm1", pgx_lower::log::Category::DB_LOWER);
+        dump_module_with_stats(module, "After dsa standard pipeline pm1", pgx_lower::log::Category::DB_LOWER);
     }
 
     {
@@ -122,29 +122,29 @@ bool runPhase3b(::mlir::ModuleOp module) {
 #endif
         mlir::pgx_lower::createDSAToStandardPipeline(pm2, false);
         if (mlir::failed(pm2.run(module))) {
-            dumpModuleWithStats(module, "Phase 3b failed: DB+DSA+Util → Standard lowering error", pgx_lower::log::Category::DB_LOWER);
+            dump_module_with_stats(module, "Phase 3b failed: DB+DSA+Util → Standard lowering error", pgx_lower::log::Category::DB_LOWER);
             throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
         }
-        if (!validateModuleState(module, "Phase 3b output")) {
-            dumpModuleWithStats(module, "Phase 3b AFTER: RelAlg -> Optimised RelAlg", pgx_lower::log::Category::RELALG_LOWER);
+        if (!validate_module_state(module, "Phase 3b output")) {
+            dump_module_with_stats(module, "Phase 3b AFTER: RelAlg -> Optimised RelAlg", pgx_lower::log::Category::RELALG_LOWER);
             throw std::runtime_error("Phase 3b: Module validation failed after lowering");
         }
-        dumpModuleWithStats(module, "After dsa standard pipeline pm2", pgx_lower::log::Category::DB_LOWER);
+        dump_module_with_stats(module, "After dsa standard pipeline pm2", pgx_lower::log::Category::DB_LOWER);
     }
 
     {
-        mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
+        mlir::PassManager pm_func(&context, mlir::func::FuncOp::getOperationName());
 #ifndef PGX_RELEASE_MODE
-        pmFunc.enableVerifier(true);
+        pm_func.enableVerifier(true);
 #else
         pmFunc.enableVerifier(false);
 #endif
-        pmFunc.addPass(mlir::createLoopInvariantCodeMotionPass());
-        pmFunc.addPass(mlir::createSinkOpPass());
-        pmFunc.addPass(mlir::createCSEPass());
+        pm_func.addPass(mlir::createLoopInvariantCodeMotionPass());
+        pm_func.addPass(mlir::createSinkOpPass());
+        pm_func.addPass(mlir::createCSEPass());
     }
 
-    dumpModuleWithStats(module, "After func pipeline", pgx_lower::log::Category::DB_LOWER);
+    dump_module_with_stats(module, "After func pipeline", pgx_lower::log::Category::DB_LOWER);
 
     return true;
 }
@@ -154,16 +154,16 @@ bool runPhase3c(::mlir::ModuleOp module) {
         throw std::runtime_error("Phase 3c: Module is null!");
     }
 
-    if (!validateModuleState(module, "Phase 3c input")) {
+    if (!validate_module_state(module, "Phase 3c input")) {
         throw std::runtime_error("Phase 3c: Invalid module state before StandardLLVM lowering");
     }
 
-    auto* moduleContext = module.getContext();
-    if (!moduleContext) {
+    auto* module_context = module.getContext();
+    if (!module_context) {
         throw std::runtime_error("Phase 3c: Module context is null!");
     }
 
-    ::mlir::PassManager pm(moduleContext);
+    ::mlir::PassManager pm(module_context);
 #ifndef PGX_RELEASE_MODE
     pm.enableVerifier(true);
 #else
@@ -174,7 +174,7 @@ bool runPhase3c(::mlir::ModuleOp module) {
 
     mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
 
-    dumpModuleWithStats(module, "Phase 3c BEFORE: Standard -> LLVM", pgx_lower::log::Category::JIT);
+    dump_module_with_stats(module, "Phase 3c BEFORE: Standard -> LLVM", pgx_lower::log::Category::JIT);
 
     if (mlir::failed(pm.run(module))) {
         throw std::runtime_error("Phase 3c failed: Standard → LLVM lowering error");
@@ -182,23 +182,23 @@ bool runPhase3c(::mlir::ModuleOp module) {
 
     pgx_lower::log::verify_module_or_throw(module, "Phase 3c", "Module verification failed after lowering");
 
-    dumpModuleWithStats(module, "Phase 3c AFTER: Standard -> LLVM", pgx_lower::log::Category::JIT);
+    dump_module_with_stats(module, "Phase 3c AFTER: Standard -> LLVM", pgx_lower::log::Category::JIT);
 
-    if (!validateModuleState(module, "Phase 3c output")) {
+    if (!validate_module_state(module, "Phase 3c output")) {
         throw std::runtime_error("Phase 3c: Module validation failed after lowering");
     }
 
     // Ensure only LLVM operations remain
-    bool hasNonLLVMOps = false;
+    bool has_non_llvm_ops = false;
     module->walk([&](mlir::Operation* op) {
         if (!mlir::isa<mlir::ModuleOp>(op) && op->getDialect() && op->getDialect()->getNamespace() != "llvm") {
             if (op->getDialect()->getNamespace() != "func") {
-                hasNonLLVMOps = true;
+                has_non_llvm_ops = true;
             }
         }
     });
 
-    if (hasNonLLVMOps) {
+    if (has_non_llvm_ops) {
         throw std::runtime_error("Phase 3c failed: Module contains non-LLVM operations after lowering");
     }
 

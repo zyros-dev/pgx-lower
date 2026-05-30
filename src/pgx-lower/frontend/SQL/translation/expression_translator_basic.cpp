@@ -124,12 +124,13 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
 
-    std::string tableName, colName;
-    bool nullable;
+    std::string tableName;
+    std::string colName;
+    bool nullable = false;
     bool resolved_from_mapping = false;
 
-    std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
-    std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)
+    std::optional<int> const varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
+    std::optional<int> const varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)
                                                                       : std::nullopt;
 
     if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
@@ -142,7 +143,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     if (!resolved_from_mapping && var->varno == OUTER_VAR) {
-        auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+        const auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
                                                : throw std::runtime_error("OUTER_VAR without outer_result");
 
         if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
@@ -170,7 +171,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     if (!resolved_from_mapping) {
         // Final fallback: use PostgreSQL catalog
         // For synthetic varnos, need to get concrete varno for schema lookup
-        int schema_varno = IS_SPECIAL_VARNO(var->varno) ? var->varnosyn : var->varno;
+        int const schema_varno = IS_SPECIAL_VARNO(var->varno) ? var->varnosyn : var->varno;
         tableName = get_table_alias_from_rte(&ctx.current_stmt, schema_varno);
         colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, var->varattno);
         nullable = is_column_nullable(&ctx.current_stmt, schema_varno, var->varattno);
@@ -184,27 +185,27 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         throw std::runtime_error("Check logs");
     }
 
-    auto& columnManager = dialect->getColumnManager();
+    auto& column_manager = dialect->getColumnManager();
 
-    const auto type_mapper = PostgreSQLTypeMapper(context_);
-    auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
+    const auto TYPE_MAPPER = PostgreSQLTypeMapper(context_);
+    auto mlir_type = TYPE_MAPPER.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='%s', column='%s'",
             tableName.c_str(), colName.c_str());
 
-    auto colRef = columnManager.createRef(tableName, colName);
+    auto col_ref = column_manager.createRef(tableName, colName);
 
     // TODO: it's a bit goofy that we even need this safety check here
-    if (!colRef.getColumn().type) {
-        colRef.getColumn().type = mlirType;
+    if (!col_ref.getColumn().type) {
+        col_ref.getColumn().type = mlir_type;
     } else {
-        mlirType = colRef.getColumn().type;
+        mlir_type = col_ref.getColumn().type;
     }
 
-    auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlirType, colRef,
+    auto get_col_op = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlir_type, col_ref,
                                                                   ctx.current_tuple);
 
-    return getColOp.getRes();
+    return get_col_op.getRes();
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value {
@@ -219,18 +220,19 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
         throw std::runtime_error("Invalid Aggref parameters");
     }
 
-    char* rawFuncName = get_func_name(aggref->aggfnoid);
-    if (rawFuncName == nullptr) {
+    char* const raw_func_name = get_func_name(aggref->aggfnoid);
+    if (raw_func_name == nullptr) {
         PGX_ERROR("Unknown aggregate function OID: %u", aggref->aggfnoid);
         throw std::runtime_error("Unknown aggregate function OID");
     }
-    const std::string funcName(rawFuncName);
-    pfree(rawFuncName);
+    const std::string FUNC_NAME(raw_func_name);
+    pfree(raw_func_name);
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_aggref: Looking for Aggref with function %s (OID %u, aggno=%d, aggtype=%d)",
-            funcName.c_str(), aggref->aggfnoid, aggref->aggno, aggref->aggtype);
+            FUNC_NAME.c_str(), aggref->aggfnoid, aggref->aggno, aggref->aggtype);
 
-    std::string scopeName, columnName;
+    std::string scopeName;
+    std::string columnName;
 
     bool found = false;
     if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {
@@ -253,25 +255,25 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
         PGX_ERROR("RelAlg dialect not registered");
         throw std::runtime_error("RelAlg dialect not registered");
     }
-    auto& columnManager = dialect->getColumnManager();
+    auto& column_manager = dialect->getColumnManager();
 
     // Create column reference using the constructed scope and column name
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Aggref to GetColumnOp: scope=%s, column=%s", scopeName.c_str(),
             columnName.c_str());
-    auto colRef = columnManager.createRef(scopeName, columnName);
+    auto col_ref = column_manager.createRef(scopeName, columnName);
 
     // Get the actual type from the column that was created during aggregation
-    auto resultType = colRef.getColumn().type;
-    if (!resultType) {
-        std::string errorMsg = "Aggregate column type not found in column manager for scope='" + scopeName
+    auto result_type = col_ref.getColumn().type;
+    if (!result_type) {
+        std::string const error_msg = "Aggregate column type not found in column manager for scope='" + scopeName
                                + "', column='" + columnName + "'";
-        PGX_ERROR("%s", errorMsg.c_str());
-        throw std::runtime_error(errorMsg);
+        PGX_ERROR("%s", error_msg.c_str());
+        throw std::runtime_error(error_msg);
     }
 
-    auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), resultType, colRef,
+    auto get_col_op = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), result_type, col_ref,
                                                                   ctx.current_tuple);
-    return getColOp.getRes();
+    return get_col_op.getRes();
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const Param* param) -> mlir::Value {
@@ -287,41 +289,41 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
         throw std::runtime_error("Unsupported param kind");
     }
 
-    const auto it = ctx.params.find(param->paramid);
-    if (it == ctx.params.end()) {
+    const auto IT = ctx.params.find(param->paramid);
+    if (IT == ctx.params.end()) {
         PGX_ERROR("Unknown paramid=%d (not registered in params map)", param->paramid);
         throw std::runtime_error("Unknown paramid");
     }
 
-    const auto& resolved = it->second;
+    const auto& resolved = IT->second;
     PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved paramid=%d -> %s.%s", param->paramid, resolved.table_name.c_str(),
             resolved.column_name.c_str());
 
     if (resolved.cached_value) {
-        auto cachedValue = *resolved.cached_value;
-        if (!mlir::isa<mlir::relalg::TupleStreamType>(cachedValue.getType())) {
+        auto cached_value = *resolved.cached_value;
+        if (!mlir::isa<mlir::relalg::TupleStreamType>(cached_value.getType())) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using cached correlation scalar for paramid=%d", param->paramid);
-            return cachedValue;
+            return cached_value;
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Using cached InitPlan tuplestream for paramid=%d", param->paramid);
-        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-        auto column_ref = columnManager.createRef(resolved.table_name, resolved.column_name);
-        const mlir::Value scalar_value = ctx.builder.create<mlir::relalg::GetScalarOp>(
-            ctx.builder.getUnknownLoc(), resolved.mlir_type, column_ref, cachedValue);
+        auto& column_manager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto column_ref = column_manager.createRef(resolved.table_name, resolved.column_name);
+        const mlir::Value SCALAR_VALUE = ctx.builder.create<mlir::relalg::GetScalarOp>(
+            ctx.builder.getUnknownLoc(), resolved.mlir_type, column_ref, cached_value);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for InitPlan paramid=%d from %s.%s", param->paramid,
                 resolved.table_name.c_str(), resolved.column_name.c_str());
-        return scalar_value;
+        return SCALAR_VALUE;
     }
 
-    auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-    auto colRef = columnManager.createRef(resolved.table_name, resolved.column_name);
+    auto& column_manager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    auto col_ref = column_manager.createRef(resolved.table_name, resolved.column_name);
 
-    if (!colRef.getColumn().type) {
-        colRef.getColumn().type = resolved.mlir_type;
+    if (!col_ref.getColumn().type) {
+        col_ref.getColumn().type = resolved.mlir_type;
     }
 
-    return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), resolved.mlir_type, colRef,
+    return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), resolved.mlir_type, col_ref,
                                                          ctx.current_tuple);
 }
 

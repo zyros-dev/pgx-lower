@@ -43,8 +43,8 @@ auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_s
     }
 
     auto result = std::make_unique<mlir::ModuleOp>(module);
-    const auto num_ops = module.getBody()->getOperations().size();
-    PGX_LOG(AST_TRANSLATE, IO, "translate_query OUT: RelAlg MLIR Module with %zu operations", num_ops);
+    const auto NUM_OPS = module.getBody()->getOperations().size();
+    PGX_LOG(AST_TRANSLATE, IO, "translate_query OUT: RelAlg MLIR Module with %zu operations", NUM_OPS);
 
     return result;
 }
@@ -57,23 +57,23 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const PlannedStm
     assert(planned_stmt);
     auto* plan_tree = planned_stmt->planTree;
 
-    const auto translationResult = translate_plan_node(context, plan_tree);
-    if (!translationResult.op) {
+    const auto TRANSLATION_RESULT = translate_plan_node(context, plan_tree);
+    if (!TRANSLATION_RESULT.op) {
         PGX_ERROR("Failed to translate plan node");
         return false;
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Checking if translated operation has results");
-    mlir::Value returnValue;
-    if (translationResult.op->getNumResults() > 0) {
-        const auto result = translationResult.op->getResult(0);
-        if (mlir::isa<mlir::relalg::TupleStreamType>(result.getType())) {
-            returnValue = create_materialize_op(context, result, translationResult);
+    mlir::Value return_value;
+    if (TRANSLATION_RESULT.op->getNumResults() > 0) {
+        const auto RESULT = TRANSLATION_RESULT.op->getResult(0);
+        if (mlir::isa<mlir::relalg::TupleStreamType>(RESULT.getType())) {
+            return_value = create_materialize_op(context, RESULT, TRANSLATION_RESULT);
         }
     }
 
-    if (returnValue) {
-        context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc(), returnValue);
+    if (return_value) {
+        context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc(), return_value);
     } else {
         context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc());
     }

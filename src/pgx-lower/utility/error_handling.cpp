@@ -148,10 +148,10 @@ auto ErrorManager::makeError(ErrorSeverity severity,
     return {severity, category, message, context};
 }
 
-auto ErrorManager::queryAnalysisError(const std::string& message, const std::string& queryText) -> ErrorInfo {
+auto ErrorManager::queryAnalysisError(const std::string& message, const std::string& query_text) -> ErrorInfo {
     auto error = ErrorInfo(ErrorSeverity::ERROR_LEVEL, ErrorCategory::QUERY_ANALYSIS, message);
-    if (!queryText.empty()) {
-        error.context = "Query: " + queryText;
+    if (!query_text.empty()) {
+        error.context = "Query: " + query_text;
     }
     error.suggestion = "Check query syntax and ensure it uses supported SQL features";
     return error;
