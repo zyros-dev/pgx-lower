@@ -74,7 +74,7 @@ PGX_TEST_FN(numeric_add_basic) {
     std::vector<char> buf_r;
     Datum l = make_numeric(buf_l, false, 1, 0, {1, 2345}); // 12345
     Datum r = make_numeric(buf_r, false, 0, 0, {6789}); // 6789
-    ASSERT_NUMERIC_EQ_STR(pgx_numeric_add(l, r), "19134");
+    ASSERT_NUMERIC_EQ_STR(runtime::NumericRuntime::pgx_numeric_add(l, r), "19134");
     PG_RETURN_VOID();
 }
 
@@ -83,7 +83,7 @@ PGX_TEST_FN(numeric_sub_basic) {
     std::vector<char> buf_r;
     Datum l = make_numeric(buf_l, false, 1, 0, {1, 2345}); // 12345
     Datum r = make_numeric(buf_r, false, 0, 0, {6789}); // 6789
-    ASSERT_NUMERIC_EQ_STR(pgx_numeric_sub(l, r), "5556");
+    ASSERT_NUMERIC_EQ_STR(runtime::NumericRuntime::pgx_numeric_sub(l, r), "5556");
     PG_RETURN_VOID();
 }
 
@@ -92,7 +92,7 @@ PGX_TEST_FN(numeric_mul_basic) {
     std::vector<char> buf_r;
     Datum l = make_numeric(buf_l, false, 0, 0, {123}); // 123
     Datum r = make_numeric(buf_r, false, 0, 0, {456}); // 456
-    ASSERT_NUMERIC_EQ_STR(pgx_numeric_mul(l, r), "56088");
+    ASSERT_NUMERIC_EQ_STR(runtime::NumericRuntime::pgx_numeric_mul(l, r), "56088");
     PG_RETURN_VOID();
 }
 
@@ -108,14 +108,14 @@ PGX_TEST_FN(numeric_mul_basic) {
 PGX_TEST_FN(numeric_cmp_lt) {
     std::vector<char> a;
     std::vector<char> b;
-    ASSERT_CMP_SIGN(pgx_numeric_cmp(make_numeric(a, false, 0, 0, {100}), make_numeric(b, false, 0, 0, {200})), -1);
+    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(make_numeric(a, false, 0, 0, {100}), make_numeric(b, false, 0, 0, {200})), -1);
     PG_RETURN_VOID();
 }
 
 PGX_TEST_FN(numeric_cmp_eq) {
     std::vector<char> a;
     std::vector<char> b;
-    ASSERT_CMP_SIGN(pgx_numeric_cmp(make_numeric(a, false, 0, 0, {4242}), make_numeric(b, false, 0, 0, {4242})), 0);
+    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(make_numeric(a, false, 0, 0, {4242}), make_numeric(b, false, 0, 0, {4242})), 0);
     PG_RETURN_VOID();
 }
 
@@ -125,7 +125,7 @@ PGX_TEST_FN(numeric_cmp_wide) {
     Datum big = DirectFunctionCall3(numeric_in, CStringGetDatum("12345678901234567890123456789012345678901"),
                                     ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
     Datum small = DirectFunctionCall3(numeric_in, CStringGetDatum("1"), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
-    ASSERT_CMP_SIGN(pgx_numeric_cmp(big, small), 1);
+    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(big, small), 1);
     PG_RETURN_VOID();
 }
 
@@ -133,7 +133,7 @@ PGX_TEST_FN(numeric_cmp_nan_gt_finite) {
     Datum nan = DirectFunctionCall3(numeric_in, CStringGetDatum("NaN"), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
     Datum finite = DirectFunctionCall3(numeric_in, CStringGetDatum("999999"), ObjectIdGetDatum(InvalidOid),
                                        Int32GetDatum(-1));
-    ASSERT_CMP_SIGN(pgx_numeric_cmp(nan, finite), 1);
+    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(nan, finite), 1);
     PG_RETURN_VOID();
 }
 

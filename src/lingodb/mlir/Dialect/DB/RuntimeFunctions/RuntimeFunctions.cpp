@@ -6,6 +6,7 @@
 #include "runtime-defs/DateRuntime.h"
 #include "runtime-defs/DumpRuntime.h"
 #include "runtime-defs/StringRuntime.h"
+#include "runtime-defs/NumericRuntime.h"
 #include "runtime-defs/PrintRuntime.h"
 
 mlir::db::RuntimeFunction* mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
