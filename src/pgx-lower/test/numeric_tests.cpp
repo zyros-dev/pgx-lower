@@ -62,20 +62,78 @@ Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale
                  __FILE__, __LINE__, (long long) _e, (long long) _a); \
     } while (0)
 
-#define ASSERT_NUMERIC_EQ_STR(actual_datum, expected_cstr) \
-    do { \
-        char* _s = DatumGetCString(DirectFunctionCall1(numeric_out, (actual_datum))); \
-        if (std::strcmp(_s, (expected_cstr)) != 0) \
-            elog(ERROR, "%s:%d expected numeric '%s' got '%s'", \
-                 __FILE__, __LINE__, (expected_cstr), _s); \
+#define ASSERT_NUMERIC_EQ_STR(actual_datum, expected_cstr)                                                             \
+    do {                                                                                                               \
+        char* _s = DatumGetCString(DirectFunctionCall1(numeric_out, (actual_datum)));                                  \
+        if (std::strcmp(_s, (expected_cstr)) != 0)                                                                     \
+            elog(ERROR, "%s:%d expected numeric '%s' got '%s'", __FILE__, __LINE__, (expected_cstr), _s);              \
     } while (0)
 
 PGX_TEST_FN(numeric_add_basic) {
     std::vector<char> buf_l;
     std::vector<char> buf_r;
     Datum l = make_numeric(buf_l, false, 1, 0, {1, 2345}); // 12345
-    Datum r = make_numeric(buf_r, false, 0, 0, {6789});    // 6789
+    Datum r = make_numeric(buf_r, false, 0, 0, {6789}); // 6789
     ASSERT_NUMERIC_EQ_STR(pgx_numeric_add(l, r), "19134");
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(numeric_sub_basic) {
+    std::vector<char> buf_l;
+    std::vector<char> buf_r;
+    Datum l = make_numeric(buf_l, false, 1, 0, {1, 2345}); // 12345
+    Datum r = make_numeric(buf_r, false, 0, 0, {6789}); // 6789
+    ASSERT_NUMERIC_EQ_STR(pgx_numeric_sub(l, r), "5556");
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(numeric_mul_basic) {
+    std::vector<char> buf_l;
+    std::vector<char> buf_r;
+    Datum l = make_numeric(buf_l, false, 0, 0, {123}); // 123
+    Datum r = make_numeric(buf_r, false, 0, 0, {456}); // 456
+    ASSERT_NUMERIC_EQ_STR(pgx_numeric_mul(l, r), "56088");
+    PG_RETURN_VOID();
+}
+
+#define ASSERT_CMP_SIGN(actual, expected_sign)                                                                         \
+    do {                                                                                                               \
+        int32_t _a = (actual);                                                                                         \
+        int32_t _e = (expected_sign);                                                                                  \
+        int _as = (_a > 0) - (_a < 0);                                                                                 \
+        if (_as != _e)                                                                                                 \
+            elog(ERROR, "%s:%d expected cmp sign %d got %d (raw %d)", __FILE__, __LINE__, _e, _as, _a);                \
+    } while (0)
+
+PGX_TEST_FN(numeric_cmp_lt) {
+    std::vector<char> a;
+    std::vector<char> b;
+    ASSERT_CMP_SIGN(pgx_numeric_cmp(make_numeric(a, false, 0, 0, {100}), make_numeric(b, false, 0, 0, {200})), -1);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(numeric_cmp_eq) {
+    std::vector<char> a;
+    std::vector<char> b;
+    ASSERT_CMP_SIGN(pgx_numeric_cmp(make_numeric(a, false, 0, 0, {4242}), make_numeric(b, false, 0, 0, {4242})), 0);
+    PG_RETURN_VOID();
+}
+
+// 40-digit value: out of __int128 range. Build via numeric_in (string parse)
+// rather than make_numeric so we don't hand-pack NBASE digits.
+PGX_TEST_FN(numeric_cmp_wide) {
+    Datum big = DirectFunctionCall3(numeric_in, CStringGetDatum("12345678901234567890123456789012345678901"),
+                                    ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
+    Datum small = DirectFunctionCall3(numeric_in, CStringGetDatum("1"), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
+    ASSERT_CMP_SIGN(pgx_numeric_cmp(big, small), 1);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(numeric_cmp_nan_gt_finite) {
+    Datum nan = DirectFunctionCall3(numeric_in, CStringGetDatum("NaN"), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
+    Datum finite = DirectFunctionCall3(numeric_in, CStringGetDatum("999999"), ObjectIdGetDatum(InvalidOid),
+                                       Int32GetDatum(-1));
+    ASSERT_CMP_SIGN(pgx_numeric_cmp(nan, finite), 1);
     PG_RETURN_VOID();
 }
 
