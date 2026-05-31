@@ -46,6 +46,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/runtime/PostgreSQLDataSource.cpp
         ../src/pgx-lower/runtime/PostgreSQLRuntime.cpp
         ../src/pgx-lower/runtime/NumericConversion.cpp
+        ../src/pgx-lower/runtime/NumericRuntime.cpp
         ../src/pgx-lower/runtime/DateRuntime.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql

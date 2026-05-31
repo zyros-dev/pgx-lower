@@ -2,12 +2,15 @@ extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
 #include "varatt.h"
+#include "utils/numeric.h"
+#include "utils/fmgrprotos.h"
 }
 
 #include <cstring>
 #include <vector>
 
 #include "pgx-lower/runtime/NumericConversion.h"
+#include "pgx-lower/runtime/NumericRuntime.h"
 #include "pgx-lower/test/pgx_test_fn.h"
 
 namespace {
@@ -58,6 +61,23 @@ Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale
             elog(ERROR, "%s:%d expected %lld got %lld", \
                  __FILE__, __LINE__, (long long) _e, (long long) _a); \
     } while (0)
+
+#define ASSERT_NUMERIC_EQ_STR(actual_datum, expected_cstr) \
+    do { \
+        char* _s = DatumGetCString(DirectFunctionCall1(numeric_out, (actual_datum))); \
+        if (std::strcmp(_s, (expected_cstr)) != 0) \
+            elog(ERROR, "%s:%d expected numeric '%s' got '%s'", \
+                 __FILE__, __LINE__, (expected_cstr), _s); \
+    } while (0)
+
+PGX_TEST_FN(numeric_add_basic) {
+    std::vector<char> buf_l;
+    std::vector<char> buf_r;
+    Datum l = make_numeric(buf_l, false, 1, 0, {1, 2345}); // 12345
+    Datum r = make_numeric(buf_r, false, 0, 0, {6789});    // 6789
+    ASSERT_NUMERIC_EQ_STR(pgx_numeric_add(l, r), "19134");
+    PG_RETURN_VOID();
+}
 
 PGX_TEST_FN(numeric_to_i128_zero) {
     std::vector<char> buf;
