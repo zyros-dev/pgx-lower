@@ -24,6 +24,11 @@ struct NumericRuntime {
     // PG numeric_cmp semantics: <0, 0, >0. NaN sorts equal to NaN and greater
     // than all non-NaN; Inf/-Inf ordered as PG defines. Returned verbatim.
     static int32_t pgx_numeric_cmp(Datum left, Datum right);
+
+    // Materialize a PG Numeric datum from a scaled i128 (the arrow DECIMAL128
+    // physical value at scan, and the compile-time-parsed value of a decimal
+    // literal). `scale` is the decimal scale the i128 is expressed at.
+    static Datum pgx_i128_to_numeric(__int128 value, int32_t scale);
 };
 
 } // namespace runtime
