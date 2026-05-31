@@ -18,7 +18,7 @@ extern "C" {
 
 namespace postgresql_ast {
 auto translate_const(Const* const_node, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value;
-} // namespace postgresql_ast
+}
 
 #define REQUIRE(cond) \
     do { if (!(cond)) elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond); } while (0)
@@ -56,7 +56,7 @@ struct Fixture {
 PGX_TEST_FN(ast_const_int32) {
     Fixture f;
     auto c = Fixture::make_const(INT4OID, -1, Datum{42});
-    mlir::Value const v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
     REQUIRE(v);
     auto* op = v.getDefiningOp();
     REQUIRE(op);
@@ -69,7 +69,7 @@ PGX_TEST_FN(ast_const_int32) {
 PGX_TEST_FN(ast_const_int64) {
     Fixture f;
     auto c = Fixture::make_const(INT8OID, -1, Datum{123456789012LL});
-    mlir::Value const v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
     REQUIRE(v);
     REQUIRE(v.getType().isInteger(64));
     auto op = mlir::dyn_cast<mlir::arith::ConstantIntOp>(v.getDefiningOp());
@@ -81,7 +81,7 @@ PGX_TEST_FN(ast_const_int64) {
 PGX_TEST_FN(ast_const_bool) {
     Fixture f;
     auto c = Fixture::make_const(BOOLOID, -1, Datum{1});
-    mlir::Value const v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
     REQUIRE(v);
     REQUIRE(v.getType().isInteger(1));
     PG_RETURN_VOID();
@@ -90,7 +90,7 @@ PGX_TEST_FN(ast_const_bool) {
 PGX_TEST_FN(ast_const_null) {
     Fixture f;
     auto c = Fixture::make_const(INT4OID, -1, Datum{0}, true);
-    mlir::Value const v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
     REQUIRE(v);
     auto* op = v.getDefiningOp();
     REQUIRE(op);
@@ -101,7 +101,7 @@ PGX_TEST_FN(ast_const_null) {
 PGX_TEST_FN(ast_const_date) {
     Fixture f;
     auto c = Fixture::make_const(DATEOID, -1, Datum{1234});
-    mlir::Value const v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
     REQUIRE(v);
     auto* op = v.getDefiningOp();
     REQUIRE(op);

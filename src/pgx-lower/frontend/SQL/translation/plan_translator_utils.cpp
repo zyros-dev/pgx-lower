@@ -17,7 +17,7 @@ extern "C" {
 #include "catalog/namespace.h"
 #include "fmgr.h"
 
-extern "C" Oid compatible_oper_opid(List* op, Oid arg1, Oid arg2, bool no_error);
+extern "C" Oid compatible_oper_opid(List* op, Oid arg1, Oid arg2, bool noError);
 }
 
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
@@ -65,10 +65,10 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
         throw std::runtime_error("Plan node is null");
     }
 
-    const size_t PARAMS_BEFORE = ctx.params.size();
+    const size_t params_before = ctx.params.size();
     process_init_plans(ctx, plan);
     PGX_LOG(AST_TRANSLATE, DEBUG, "After processing InitPlans: context has %zu InitPlans (%zu new)", ctx.params.size(),
-            ctx.params.size() - PARAMS_BEFORE);
+            ctx.params.size() - params_before);
 
     TranslationResult result;
 
@@ -105,88 +105,85 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         return TranslationResult{};
     }
 
-    auto child_result = translate_plan_node(ctx, sort->plan.lefttree);
-    if (!child_result.op) {
+    auto childResult = translate_plan_node(ctx, sort->plan.lefttree);
+    if (!childResult.op) {
         PGX_ERROR("Failed to translate Sort child plan");
-        return child_result;
+        return childResult;
     }
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort node got %s", child_result.toString().data());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort node got %s", childResult.toString().data());
 
-    if ((sort->numCols == 0) || !sort->sortColIdx) {
-        return child_result;
+    if (!sort->numCols || !sort->sortColIdx) {
+        return childResult;
     }
 
-    auto& column_manager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-    std::vector<mlir::Attribute> sort_specs;
+    auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    std::vector<mlir::Attribute> sortSpecs;
     for (int i = 0; i < sort->numCols; i++) {
-        const AttrNumber COL_IDX = sort->sortColIdx[i];
-        if (COL_IDX <= 0 || COL_IDX >= MAX_COLUMN_INDEX) {
+        const AttrNumber colIdx = sort->sortColIdx[i];
+        if (colIdx <= 0 || colIdx >= MAX_COLUMN_INDEX)
             continue;
-}
 
         auto spec = mlir::relalg::SortSpec::asc;
         if (sort->sortOperators) {
-            if (char* const oprname = get_opname(sort->sortOperators[i])) {
+            if (char* oprname = get_opname(sort->sortOperators[i])) {
                 spec = (std::string(oprname) == ">" || std::string(oprname) == ">=") ? mlir::relalg::SortSpec::desc
                                                                                      : mlir::relalg::SortSpec::asc;
                 pfree(oprname);
             }
         }
 
-        ListCell* lc = nullptr;
+        ListCell* lc;
         int idx = 0;
         foreach (lc, sort->plan.targetlist) {
-            if (++idx != COL_IDX) {
+            if (++idx != colIdx)
                 continue;
-}
 
-            const TargetEntry* const tle = static_cast<TargetEntry*>(lfirst(lc));
+            const TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
             if (IsA(tle->expr, Var)) {
-                const Var* const var = reinterpret_cast<Var*>(tle->expr);
+                const Var* var = reinterpret_cast<Var*>(tle->expr);
 
-                if (var->varattno > 0 && var->varattno <= child_result.columns.size()) {
-                    const auto& column = child_result.columns[var->varattno - 1];
-                    sort_specs.push_back(mlir::relalg::SortSpecificationAttr::get(
-                        ctx.builder.getContext(), column_manager.createRef(column.table_name, column.column_name), spec));
+                if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
+                    const auto& column = childResult.columns[var->varattno - 1];
+                    sortSpecs.push_back(mlir::relalg::SortSpecificationAttr::get(
+                        ctx.builder.getContext(), columnManager.createRef(column.table_name, column.column_name), spec));
                 }
             }
             break;
         }
     }
 
-    if (sort_specs.empty()) {
-        return child_result;
+    if (sortSpecs.empty()) {
+        return childResult;
     }
 
-    auto tuple_stream_type = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-    const auto SORT_OP = ctx.builder.create<mlir::relalg::SortOp>(
-        ctx.builder.getUnknownLoc(), tuple_stream_type, child_result.op->getResult(0), ctx.builder.getArrayAttr(sort_specs));
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+    const auto sortOp = ctx.builder.create<mlir::relalg::SortOp>(
+        ctx.builder.getUnknownLoc(), tupleStreamType, childResult.op->getResult(0), ctx.builder.getArrayAttr(sortSpecs));
 
     TranslationResult result;
-    result.op = SORT_OP;
+    result.op = sortOp;
 
     if (sort->plan.targetlist) {
         result.columns.clear();
-        ListCell* lc = nullptr;
+        ListCell* lc;
         foreach (lc, sort->plan.targetlist) {
             const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (!tle) {
+            if (!tle)
                 continue;
-}
 
             if (tle->expr && IsA(tle->expr, Var)) {
                 const auto* var = reinterpret_cast<Var*>(tle->expr);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Sort targetentry: resjunk=%d, varattno=%d, childResult.columns.size()=%zu",
-                        tle->resjunk, var->varattno, child_result.columns.size());
-                if (var->varattno > 0 && var->varattno <= child_result.columns.size()) {
-                    const auto& col = child_result.columns[var->varattno - 1];
+                        tle->resjunk, var->varattno, childResult.columns.size());
+                if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
+                    const auto& col = childResult.columns[var->varattno - 1];
                     PGX_LOG(AST_TRANSLATE, DEBUG, "  Adding column: %s.%s", col.table_name.c_str(), col.column_name.c_str());
                     result.columns.push_back(col);
                 }
             }
         }
     } else {
-        result.columns = child_result.columns;
+        result.columns = childResult.columns;
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Sort returning %zu columns:", result.columns.size());
@@ -204,74 +201,74 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
         return TranslationResult{};
     }
 
-    TranslationResult child_result;
+    TranslationResult childResult;
 
-    if (Plan* const left_tree = limit->plan.lefttree) {
-        child_result = translate_plan_node(ctx, left_tree);
-        if (!child_result.op) {
+    if (Plan* leftTree = limit->plan.lefttree) {
+        childResult = translate_plan_node(ctx, leftTree);
+        if (!childResult.op) {
             PGX_ERROR("Failed to translate Limit child plan");
-            return child_result;
+            return childResult;
         }
     } else {
         PGX_WARNING("Limit node has no child plan");
         return TranslationResult{};
     }
 
-    auto child_output = child_result.op->getResult(0);
-    if (!child_output) {
+    auto childOutput = childResult.op->getResult(0);
+    if (!childOutput) {
         PGX_ERROR("Child operation has no result");
-        return child_result;
+        return childResult;
     }
 
-    int64_t limit_count = DEFAULT_LIMIT_COUNT;
-    int64_t limit_offset = 0;
+    int64_t limitCount = DEFAULT_LIMIT_COUNT;
+    int64_t limitOffset = 0;
 
-    Node* const limit_offset_node = limit->limitOffset;
+    Node* limitOffsetNode = limit->limitOffset;
 
-    if (Node* const limit_count_node = limit->limitCount) {
-        Node* const node = limit_count_node;
+    if (Node* limitCountNode = limit->limitCount) {
+        Node* node = limitCountNode;
         if (IsA(node, Const)) {
-            const Const* const const_node = reinterpret_cast<Const*>(node);
-            if (!const_node->constisnull) {
-                limit_count = static_cast<int64_t>(const_node->constvalue);
+            const Const* constNode = reinterpret_cast<Const*>(node);
+            if (!constNode->constisnull) {
+                limitCount = static_cast<int64_t>(constNode->constvalue);
             }
         } else {
             PGX_WARNING("Limit count is not a Const or Param node");
         }
     }
 
-    if (limit_offset_node) {
-        Node* const node = limit_offset_node;
+    if (limitOffsetNode) {
+        Node* node = limitOffsetNode;
         if (IsA(node, Const)) {
-            const Const* const const_node = reinterpret_cast<Const*>(node);
-            if (!const_node->constisnull) {
-                limit_offset = static_cast<int64_t>(const_node->constvalue);
+            const Const* constNode = reinterpret_cast<Const*>(node);
+            if (!constNode->constisnull) {
+                limitOffset = static_cast<int64_t>(constNode->constvalue);
             }
         }
     }
 
-    if (limit_count < 0) {
-        PGX_WARNING("Invalid negative limit count: %d", limit_count);
-        limit_count = DEFAULT_LIMIT_COUNT;
-    } else if (limit_count > MAX_LIMIT_COUNT) {
-        PGX_WARNING("Very large limit count: %d", limit_count);
+    if (limitCount < 0) {
+        PGX_WARNING("Invalid negative limit count: %d", limitCount);
+        limitCount = DEFAULT_LIMIT_COUNT;
+    } else if (limitCount > MAX_LIMIT_COUNT) {
+        PGX_WARNING("Very large limit count: %d", limitCount);
     }
 
-    if (limit_offset < 0) {
+    if (limitOffset < 0) {
         PGX_WARNING("Negative offset not supported, using 0");
-        limit_offset = 0;
+        limitOffset = 0;
     }
 
-    if (limit_count == -1) {
-        limit_count = INT32_MAX;
+    if (limitCount == -1) {
+        limitCount = INT32_MAX;
     }
 
-    const auto LIMIT_OP = ctx.builder.create<mlir::relalg::LimitOp>(
-        ctx.builder.getUnknownLoc(), ctx.builder.getI32IntegerAttr(static_cast<int32_t>(limit_count)), child_output);
+    const auto limitOp = ctx.builder.create<mlir::relalg::LimitOp>(
+        ctx.builder.getUnknownLoc(), ctx.builder.getI32IntegerAttr(static_cast<int32_t>(limitCount)), childOutput);
 
     TranslationResult result;
-    result.op = LIMIT_OP;
-    result.columns = child_result.columns;
+    result.op = limitOp;
+    result.columns = childResult.columns;
     return result;
 }
 
@@ -282,36 +279,36 @@ auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gathe
         return TranslationResult{};
     }
 
-    TranslationResult child_result;
+    TranslationResult childResult;
 
-    if (Plan* const left_tree = gather->plan.lefttree) {
-        child_result = translate_plan_node(ctx, left_tree);
-        if (!child_result.op) {
+    if (Plan* leftTree = gather->plan.lefttree) {
+        childResult = translate_plan_node(ctx, leftTree);
+        if (!childResult.op) {
             PGX_ERROR("Failed to translate Gather child plan");
-            return child_result;
+            return childResult;
         }
     } else {
         PGX_WARNING("Gather node has no child plan");
         return TranslationResult{};
     }
 
-    return child_result;
+    return childResult;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_gather_merge(QueryCtxT& ctx, const GatherMerge* gather_merge)
+auto PostgreSQLASTTranslator::Impl::translate_gather_merge(QueryCtxT& ctx, const GatherMerge* gatherMerge)
     -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
-    if (!gather_merge) {
+    if (!gatherMerge) {
         PGX_ERROR("Invalid GatherMerge parameters");
         return TranslationResult{};
     }
 
-    TranslationResult child_result;
-    if (Plan* const left_tree = gather_merge->plan.lefttree) {
-        child_result = translate_plan_node(ctx, left_tree);
-        if (!child_result.op) {
+    TranslationResult childResult;
+    if (Plan* leftTree = gatherMerge->plan.lefttree) {
+        childResult = translate_plan_node(ctx, leftTree);
+        if (!childResult.op) {
             PGX_ERROR("Failed to translate GatherMerge child plan");
-            return child_result;
+            return childResult;
         }
     } else {
         PGX_WARNING("GatherMerge node has no child plan");
@@ -321,7 +318,7 @@ auto PostgreSQLASTTranslator::Impl::translate_gather_merge(QueryCtxT& ctx, const
     // GatherMerge is parallel execution coordinator - pass through child for now
     // Note: Ignoring sort columns (numCols, sortColIdx, etc.) as child already sorted
     PGX_LOG(AST_TRANSLATE, DEBUG, "GatherMerge: passing through child result (parallel gathering not implemented)");
-    return child_result;
+    return childResult;
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, const Material* material) -> TranslationResult {
@@ -353,9 +350,9 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
         return;
     }
 
-    const List* const all_subplans = ctx.current_stmt.subplans;
-    const int NUM_SUBPLANS = list_length(all_subplans);
-    ListCell* lc = nullptr;
+    const List* all_subplans = ctx.current_stmt.subplans;
+    const int num_subplans = list_length(all_subplans);
+    ListCell* lc;
     foreach (lc, plan->initPlan) {
         const auto* subplan = static_cast<SubPlan*>(lfirst(lc));
         if (!subplan) {
@@ -363,44 +360,44 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
             continue;
         }
 
-        const int PLAN_ID = subplan->plan_id;
-        if (PLAN_ID < 1 || PLAN_ID > NUM_SUBPLANS) {
-            PGX_ERROR("SubPlan plan_id %d out of range (have %d subplans)", PLAN_ID, NUM_SUBPLANS);
+        const int plan_id = subplan->plan_id;
+        if (plan_id < 1 || plan_id > num_subplans) {
+            PGX_ERROR("SubPlan plan_id %d out of range (have %d subplans)", plan_id, num_subplans);
             continue;
         }
 
-        auto* initplan = static_cast<Plan*>(list_nth(all_subplans, PLAN_ID - 1));
+        auto* initplan = static_cast<Plan*>(list_nth(all_subplans, plan_id - 1));
         if (!initplan) {
-            PGX_ERROR("SubPlan plan_id %d points to null Plan", PLAN_ID);
+            PGX_ERROR("SubPlan plan_id %d points to null Plan", plan_id);
             continue;
         }
 
         auto initplan_result = translate_plan_node(ctx, initplan);
         if (!initplan_result.op) {
-            PGX_ERROR("Failed to translate InitPlan (plan_id=%d)", PLAN_ID);
+            PGX_ERROR("Failed to translate InitPlan (plan_id=%d)", plan_id);
             continue;
         }
 
-        const List* const set_param = subplan->setParam;
-        if (!set_param || list_length(set_param) == 0) {
+        const List* setParam = subplan->setParam;
+        if (!setParam || list_length(setParam) == 0) {
             PGX_ERROR("InitPlan has no setParam");
             continue;
         }
-        const int PARAMID = list_nth_int(set_param, 0);
+        const int paramid = list_nth_int(setParam, 0);
 
         if (initplan_result.columns.empty()) {
-            PGX_ERROR("InitPlan produced no columns for paramid=%d", PARAMID);
+            PGX_ERROR("InitPlan produced no columns for paramid=%d", paramid);
             continue;
         }
 
-        const bool IS_CTE = (subplan->subLinkType == 7) || (initplan_result.columns.size() > 1);
-        if (IS_CTE) {
-            ctx.initplan_results[PARAMID] = initplan_result;
+        const bool is_cte = (subplan->subLinkType == 7) || (initplan_result.columns.size() > 1);
+        if (is_cte) {
+            ctx.initplan_results[paramid] = initplan_result;
             PGX_LOG(AST_TRANSLATE, DEBUG, "Stored CTE InitPlan result for paramid=%d (plan_id=%d, %zu columns)",
-                    PARAMID, PLAN_ID, initplan_result.columns.size());
+                    paramid, plan_id, initplan_result.columns.size());
         } else {
             const auto& col = initplan_result.columns[0];
-            ctx.params[PARAMID] = pgx_lower::frontend::sql::ResolvedParam{
+            ctx.params[paramid] = pgx_lower::frontend::sql::ResolvedParam{
                 .table_name = col.table_name,
                 .column_name = col.column_name,
                 .type_oid = col.type_oid,
@@ -408,7 +405,7 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
                 .nullable = col.nullable,
                 .mlir_type = col.mlir_type,
                 .cached_value = initplan_result.op->getResult(0)};
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Stored scalar InitPlan result for paramid=%d (plan_id=%d)", PARAMID, PLAN_ID);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Stored scalar InitPlan result for paramid=%d (plan_id=%d)", paramid, plan_id);
         }
     }
 
@@ -418,14 +415,14 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
 
 auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp {
     PGX_IO(AST_TRANSLATE);
-    auto table_type = mlir::dsa::TableType::get(builder.getContext());
-    auto query_func_type = builder.getFunctionType({}, {table_type});
-    auto query_func = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, query_func_type);
+    auto tableType = mlir::dsa::TableType::get(builder.getContext());
+    auto queryFuncType = builder.getFunctionType({}, {tableType});
+    auto queryFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
 
-    auto& query_body = query_func.getBody().emplaceBlock();
-    builder.setInsertionPointToStart(&query_body);
+    auto& queryBody = queryFunc.getBody().emplaceBlock();
+    builder.setInsertionPointToStart(&queryBody);
 
-    return query_func;
+    return queryFunc;
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input,
@@ -437,61 +434,61 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         return input;
     }
 
-    auto input_value = input.op->getResult(0);
-    if (!input_value) {
+    auto inputValue = input.op->getResult(0);
+    if (!inputValue) {
         PGX_ERROR("Input operation has no result");
         throw std::runtime_error("Input operation has no result");
     }
 
-    auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), input_value);
+    auto selectionOp = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), inputValue);
 
     { // Build the predicate region
-        auto& predicate_region = selection_op.getPredicate();
-        auto* predicate_block = new mlir::Block;
-        predicate_region.push_back(predicate_block);
+        auto& predicateRegion = selectionOp.getPredicate();
+        auto* predicateBlock = new mlir::Block;
+        predicateRegion.push_back(predicateBlock);
 
-        const auto TUPLE_TYPE = mlir::relalg::TupleType::get(&context_);
-        const auto TUPLE_ARG = predicate_block->addArgument(TUPLE_TYPE, ctx.builder.getUnknownLoc());
+        const auto tupleType = mlir::relalg::TupleType::get(&context_);
+        const auto tupleArg = predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
 
         mlir::OpBuilder predicate_builder(&context_);
-        predicate_builder.setInsertionPointToStart(predicate_block);
+        predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        const auto TMP_CTX = QueryCtxT::createChildContext(ctx, predicate_builder, TUPLE_ARG);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", TMP_CTX.params.size());
+        const auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", tmp_ctx.params.size());
 
-        mlir::Value predicate_result = nullptr;
+        mlir::Value predicateResult = nullptr;
         if (qual && qual->length > 0) {
             if (!qual->elements) {
                 PGX_WARNING("Qual list has length but no elements array - continuing without filter");
             } else {
                 for (int i = 0; i < qual->length; i++) {
-                    const ListCell* const lc = &qual->elements[i];
+                    const ListCell* lc = &qual->elements[i];
                     if (!lc) {
                         PGX_WARNING("Null ListCell at index %d", i);
                         continue;
                     }
 
-                    auto *const QUAL_NODE = static_cast<Node*>(lfirst(lc));
+                    const auto qualNode = static_cast<Node*>(lfirst(lc));
 
-                    if (!QUAL_NODE) {
+                    if (!qualNode) {
                         PGX_WARNING("Null qual node at index %d", i);
                         continue;
                     }
 
-                    if (mlir::Value cond_value = translate_expression(TMP_CTX, reinterpret_cast<Expr*>(QUAL_NODE))) {
+                    if (mlir::Value condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode))) {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated HAVING condition %d", i);
-                        if (!cond_value.getType().isInteger(1)) {
-                            cond_value = predicate_builder.create<mlir::db::DeriveTruth>(
-                                predicate_builder.getUnknownLoc(), cond_value);
+                        if (!condValue.getType().isInteger(1)) {
+                            condValue = predicate_builder.create<mlir::db::DeriveTruth>(
+                                predicate_builder.getUnknownLoc(), condValue);
                         }
 
-                        if (!predicate_result) {
-                            predicate_result = cond_value;
+                        if (!predicateResult) {
+                            predicateResult = condValue;
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Set first HAVING predicate");
                         } else {
-                            predicate_result = predicate_builder.create<mlir::db::AndOp>(
+                            predicateResult = predicate_builder.create<mlir::db::AndOp>(
                                 predicate_builder.getUnknownLoc(), predicate_builder.getI1Type(),
-                                mlir::ValueRange{predicate_result, cond_value});
+                                mlir::ValueRange{predicateResult, condValue});
                             PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed HAVING predicate %d", i);
                         }
                     } else {
@@ -501,20 +498,20 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
             }
         }
 
-        if (!predicate_result) {
+        if (!predicateResult) {
             throw std::runtime_error("We parsed that there were predicates, but got nothing out of it!");
         }
-        if (!predicate_result.getType().isInteger(1)) { // is boolean
-            predicate_result = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
-                                                                              predicate_result);
+        if (!predicateResult.getType().isInteger(1)) { // is boolean
+            predicateResult = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
+                                                                              predicateResult);
         }
 
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(),
-                                                         mlir::ValueRange{predicate_result});
+                                                         mlir::ValueRange{predicateResult});
     }
 
     TranslationResult result;
-    result.op = selection_op;
+    result.op = selectionOp;
     result.columns = input.columns;
     return result;
 }
@@ -529,62 +526,62 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
         return input;
     }
 
-    auto input_value = input.op->getResult(0);
-    if (!input_value) {
+    auto inputValue = input.op->getResult(0);
+    if (!inputValue) {
         PGX_ERROR("Input operation has no result");
         throw std::runtime_error("Input operation has no result");
     }
 
-    auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), input_value);
+    auto selectionOp = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), inputValue);
 
     {
-        auto& predicate_region = selection_op.getPredicate();
-        auto* predicate_block = new mlir::Block;
-        predicate_region.push_back(predicate_block);
+        auto& predicateRegion = selectionOp.getPredicate();
+        auto* predicateBlock = new mlir::Block;
+        predicateRegion.push_back(predicateBlock);
 
-        const auto TUPLE_TYPE = mlir::relalg::TupleType::get(&context_);
-        const auto TUPLE_ARG = predicate_block->addArgument(TUPLE_TYPE, ctx.builder.getUnknownLoc());
+        const auto tupleType = mlir::relalg::TupleType::get(&context_);
+        const auto tupleArg = predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
 
         mlir::OpBuilder predicate_builder(&context_);
-        predicate_builder.setInsertionPointToStart(predicate_block);
+        predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        const auto TMP_CTX = QueryCtxT::createChildContext(ctx, predicate_builder, TUPLE_ARG);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", TMP_CTX.params.size());
+        const auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", tmp_ctx.params.size());
 
-        mlir::Value predicate_result = nullptr;
+        mlir::Value predicateResult = nullptr;
         if (qual && qual->length > 0) {
             if (!qual->elements) {
                 PGX_WARNING("Qual list has length but no elements array - continuing without filter");
             } else {
                 for (int i = 0; i < qual->length; i++) {
-                    const ListCell* const lc = &qual->elements[i];
+                    const ListCell* lc = &qual->elements[i];
                     if (!lc) {
                         PGX_WARNING("Null ListCell at index %d", i);
                         continue;
                     }
 
-                    auto *const QUAL_NODE = static_cast<Node*>(lfirst(lc));
+                    const auto qualNode = static_cast<Node*>(lfirst(lc));
 
-                    if (!QUAL_NODE) {
+                    if (!qualNode) {
                         PGX_WARNING("Null qual node at index %d", i);
                         continue;
                     }
 
-                    mlir::Value cond_value;
-                    cond_value = translate_expression(TMP_CTX, reinterpret_cast<Expr*>(QUAL_NODE));
+                    mlir::Value condValue;
+                    condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode));
 
-                    if (cond_value) {
-                        if (!cond_value.getType().isInteger(1)) {
-                            cond_value = predicate_builder.create<mlir::db::DeriveTruth>(
-                                predicate_builder.getUnknownLoc(), cond_value);
+                    if (condValue) {
+                        if (!condValue.getType().isInteger(1)) {
+                            condValue = predicate_builder.create<mlir::db::DeriveTruth>(
+                                predicate_builder.getUnknownLoc(), condValue);
                         }
 
-                        if (!predicate_result) {
-                            predicate_result = cond_value;
+                        if (!predicateResult) {
+                            predicateResult = condValue;
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Set first join predicate");
                         } else {
-                            predicate_result = predicate_builder.create<mlir::db::AndOp>(
-                                predicate_builder.getUnknownLoc(), mlir::ValueRange{predicate_result, cond_value});
+                            predicateResult = predicate_builder.create<mlir::db::AndOp>(
+                                predicate_builder.getUnknownLoc(), mlir::ValueRange{predicateResult, condValue});
                             PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed join predicate %d", i);
                         }
                     } else {
@@ -594,51 +591,50 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
             }
         }
 
-        if (!predicate_result) {
+        if (!predicateResult) {
             throw std::runtime_error("We parsed that there were predicates, but got nothing out of it!");
         }
-        if (!predicate_result.getType().isInteger(1)) {
-            predicate_result = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
-                                                                              predicate_result);
+        if (!predicateResult.getType().isInteger(1)) {
+            predicateResult = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
+                                                                              predicateResult);
         }
 
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(),
-                                                         mlir::ValueRange{predicate_result});
+                                                         mlir::ValueRange{predicateResult});
     }
 
     TranslationResult result;
-    result.op = selection_op;
+    result.op = selectionOp;
     result.columns = input.columns;
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 4] RESULT: %s", result.toString().c_str());
     return result;
 }
 
 auto PostgreSQLASTTranslator::Impl::build_scan_columns(List* targetlist,
-                                                       const std::vector<pgx_lower::frontend::sql::ColumnInfo>& all_columns,
+                                                       const std::vector<pgx_lower::frontend::sql::ColumnInfo>& allColumns,
                                                        const std::string& table_scope) const
     -> std::vector<TranslationResult::ColumnSchema> {
     std::vector<TranslationResult::ColumnSchema> columns;
-    const PostgreSQLTypeMapper TYPE_MAPPER(context_);
+    const PostgreSQLTypeMapper type_mapper(context_);
 
-    ListCell* lc = nullptr;
+    ListCell* lc;
     foreach (lc, targetlist) {
         const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle) {
+        if (!tle)
             continue;
-}
         if (tle->expr && IsA(tle->expr, Var)) {
             const auto* var = reinterpret_cast<Var*>(tle->expr);
-            if (var->varattno > 0 && var->varattno <= static_cast<int>(all_columns.size())) {
-                const auto& col_info = all_columns[var->varattno - 1];
-                const mlir::Type MLIR_TYPE = TYPE_MAPPER.map_postgre_sqltype(col_info.type_oid, col_info.typmod,
-                                                                            col_info.nullable);
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
+                const auto& colInfo = allColumns[var->varattno - 1];
+                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                            colInfo.nullable);
 
                 columns.push_back({.table_name = table_scope,
-                                   .column_name = col_info.name,
-                                   .type_oid = col_info.type_oid,
-                                   .typmod = col_info.typmod,
-                                   .mlir_type = MLIR_TYPE,
-                                   .nullable = col_info.nullable});
+                                   .column_name = colInfo.name,
+                                   .type_oid = colInfo.type_oid,
+                                   .typmod = colInfo.typmod,
+                                   .mlir_type = mlirType,
+                                   .nullable = colInfo.nullable});
             }
         }
     }
@@ -655,98 +651,97 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         return input;
     }
 
-    mlir::Value const input_value = input.op->getResult(0);
-    if (!input_value) {
+    mlir::Value inputValue = input.op->getResult(0);
+    if (!inputValue) {
         PGX_ERROR("Input operation has no result");
         return input;
     }
 
     // When we have join context, we need to handle ALL target entries, not just computed ones
     // This ensures we project only the requested columns, not all input columns
-    bool const handle_all_entries = (merged_join_child != nullptr);
+    bool handleAllEntries = (merged_join_child != nullptr);
 
-    auto target_entries = std::vector<TargetEntry*>();
-    auto computed_entries = std::vector<TargetEntry*>();
+    auto targetEntries = std::vector<TargetEntry*>();
+    auto computedEntries = std::vector<TargetEntry*>();
 
     for (int i = 0; i < target_list->length; i++) {
         auto* tle = static_cast<TargetEntry*>(lfirst(&target_list->elements[i]));
         if (tle) {
-            if (handle_all_entries) {
-                target_entries.push_back(tle);
+            if (handleAllEntries) {
+                targetEntries.push_back(tle);
                 if (tle->expr && tle->expr->type != T_Var) {
-                    computed_entries.push_back(tle);
+                    computedEntries.push_back(tle);
                 }
             } else {
-                target_entries.push_back(tle);
+                targetEntries.push_back(tle);
                 if (tle->expr && tle->expr->type != T_Var) {
-                    computed_entries.push_back(tle);
+                    computedEntries.push_back(tle);
                 }
             }
         }
     }
 
-    if (!handle_all_entries && computed_entries.empty()) {
+    if (!handleAllEntries && computedEntries.empty()) {
         return input;
     }
 
-    auto& column_manager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
     // First pass: Translate expressions to get their types. We need a tuple context, so create a temporary MapOp
-    auto expression_types = std::vector<mlir::Type>();
-    auto column_names = std::vector<std::string>();
-    auto expression_oids = std::vector<Oid>();
+    auto expressionTypes = std::vector<mlir::Type>();
+    auto columnNames = std::vector<std::string>();
+    auto expressionOids = std::vector<Oid>();
     {
-        auto placeholder_attrs = std::vector<mlir::Attribute>();
-        for (auto i = 0; i < computed_entries.size(); i++) {
-            auto temp_name = std::string("temp_") + std::to_string(i);
-            auto attr = column_manager.createDef(COMPUTED_EXPRESSION_SCOPE, temp_name);
+        auto placeholderAttrs = std::vector<mlir::Attribute>();
+        for (auto i = 0; i < computedEntries.size(); i++) {
+            auto tempName = std::string("temp_") + std::to_string(i);
+            auto attr = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, tempName);
             attr.getColumn().type = mlir::NoneType::get(&context_);
-            placeholder_attrs.push_back(attr);
+            placeholderAttrs.push_back(attr);
         }
 
-        auto temp_map_op = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_value,
-                                                                 ctx.builder.getArrayAttr(placeholder_attrs));
+        auto tempMapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), inputValue,
+                                                                 ctx.builder.getArrayAttr(placeholderAttrs));
 
         {
-            auto& temp_region = temp_map_op.getPredicate();
-            auto* temp_block = &temp_region.emplaceBlock();
-            auto tuple_arg = temp_block->addArgument(mlir::relalg::TupleType::get(&context_), ctx.builder.getUnknownLoc());
+            auto& tempRegion = tempMapOp.getPredicate();
+            auto* tempBlock = &tempRegion.emplaceBlock();
+            auto tupleArg = tempBlock->addArgument(mlir::relalg::TupleType::get(&context_), ctx.builder.getUnknownLoc());
 
             mlir::OpBuilder temp_builder(&context_);
-            temp_builder.setInsertionPointToStart(temp_block);
-            auto tmp_ctx = QueryCtxT::createChildContext(ctx, temp_builder, tuple_arg);
+            temp_builder.setInsertionPointToStart(tempBlock);
+            auto tmp_ctx = QueryCtxT::createChildContext(ctx, temp_builder, tupleArg);
 
-            for (auto* entry : computed_entries) {
-                auto col_name = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
-                if (col_name == "?column?") {
-                    col_name = "col_" + std::to_string(entry->resno);
-}
+            for (auto* entry : computedEntries) {
+                auto colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
+                if (colName == "?column?")
+                    colName = "col_" + std::to_string(entry->resno);
 
                 // TODO: NV: This is bad. This should be using the TranslationResult to find the name. Actually, most of
                 // this function
                 //           seems kind of bad to me. But oh well, it's working for now I guess.
                 if (!entry->resname && ctx.current_stmt.planTree) {
-                    const Plan* const top_plan = ctx.current_stmt.planTree;
-                    const Agg* agg_node = nullptr;
+                    const Plan* topPlan = ctx.current_stmt.planTree;
+                    const Agg* aggNode = nullptr;
 
-                    if (top_plan->type == T_Agg) {
-                        agg_node = reinterpret_cast<const Agg*>(top_plan);
-                    } else if (top_plan->type == T_Sort && top_plan->lefttree && top_plan->lefttree->type == T_Agg) {
-                        agg_node = reinterpret_cast<const Agg*>(top_plan->lefttree);
+                    if (topPlan->type == T_Agg) {
+                        aggNode = reinterpret_cast<const Agg*>(topPlan);
+                    } else if (topPlan->type == T_Sort && topPlan->lefttree && topPlan->lefttree->type == T_Agg) {
+                        aggNode = reinterpret_cast<const Agg*>(topPlan->lefttree);
                     }
 
-                    if (agg_node && agg_node->plan.targetlist) {
-                        ListCell* lc = nullptr;
+                    if (aggNode && aggNode->plan.targetlist) {
+                        ListCell* lc;
                         int idx = 0;
-                        foreach (lc, agg_node->plan.targetlist) {
+                        foreach (lc, aggNode->plan.targetlist) {
                             idx++;
                             if (idx == entry->resno) {
-                                const auto* agg_te = static_cast<const TargetEntry*>(lfirst(lc));
-                                if (agg_te->resname) {
-                                    col_name = agg_te->resname;
+                                const auto* aggTe = static_cast<const TargetEntry*>(lfirst(lc));
+                                if (aggTe->resname) {
+                                    colName = aggTe->resname;
                                     PGX_LOG(AST_TRANSLATE, DEBUG,
                                             "MapOp: Using name '%s' from parent Agg's targetlist for expression",
-                                            col_name.c_str());
+                                            colName.c_str());
                                 }
                                 break;
                             }
@@ -755,92 +750,92 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 }
 
                 PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "MapOp: Creating computed column '%s' from targetentry resno=%d resname='%s'", col_name.c_str(),
+                        "MapOp: Creating computed column '%s' from targetentry resno=%d resname='%s'", colName.c_str(),
                         entry->resno, entry->resname ? entry->resname : "<null>");
 
-                if (mlir::Value const expr_value = translate_expression(tmp_ctx, entry->expr)) {
-                    mlir::Type const expr_mlir_type = expr_value.getType();
-                    expression_types.push_back(expr_mlir_type);
-                    column_names.push_back(col_name);
-                    Oid const type_oid = PostgreSQLTypeMapper::map_mlir_type_to_oid(expr_mlir_type);
-                    expression_oids.push_back(type_oid);
+                if (mlir::Value exprValue = translate_expression(tmp_ctx, entry->expr)) {
+                    mlir::Type exprMlirType = exprValue.getType();
+                    expressionTypes.push_back(exprMlirType);
+                    columnNames.push_back(colName);
+                    Oid typeOid = PostgreSQLTypeMapper::map_mlir_type_to_oid(exprMlirType);
+                    expressionOids.push_back(typeOid);
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "MapOp column '%s': MLIR type mapped to OID=%u",
-                            col_name.c_str(), type_oid);
+                            colName.c_str(), typeOid);
                 } else {
                     PGX_WARNING("Failed to get expression!!");
                 }
             }
         }
-        temp_map_op.erase();
+        tempMapOp.erase();
 
-        if (expression_types.empty()) {
+        if (expressionTypes.empty()) {
             return input;
         }
     }
 
-    mlir::relalg::MapOp map_op;
+    mlir::relalg::MapOp mapOp;
     {
-        std::vector<mlir::Attribute> computed_col_attrs;
-        for (size_t i = 0; i < expression_types.size(); i++) {
-            auto column_ptr = column_manager.get(COMPUTED_EXPRESSION_SCOPE, column_names[i]);
-            column_ptr->type = expression_types[i];
-            computed_col_attrs.push_back(column_manager.createDef(COMPUTED_EXPRESSION_SCOPE, column_names[i]));
+        std::vector<mlir::Attribute> computedColAttrs;
+        for (size_t i = 0; i < expressionTypes.size(); i++) {
+            auto columnPtr = columnManager.get(COMPUTED_EXPRESSION_SCOPE, columnNames[i]);
+            columnPtr->type = expressionTypes[i];
+            computedColAttrs.push_back(columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, columnNames[i]));
         }
 
-        map_op = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_value,
-                                                        ctx.builder.getArrayAttr(computed_col_attrs));
+        mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), inputValue,
+                                                        ctx.builder.getArrayAttr(computedColAttrs));
 
         // Build computation region
-        auto& predicate_region = map_op.getPredicate();
-        auto* predicate_block = new mlir::Block;
-        predicate_region.push_back(predicate_block);
-        auto tuple_arg = predicate_block->addArgument(mlir::relalg::TupleType::get(&context_), ctx.builder.getUnknownLoc());
+        auto& predicateRegion = mapOp.getPredicate();
+        auto* predicateBlock = new mlir::Block;
+        predicateRegion.push_back(predicateBlock);
+        auto tupleArg = predicateBlock->addArgument(mlir::relalg::TupleType::get(&context_), ctx.builder.getUnknownLoc());
 
         mlir::OpBuilder predicate_builder(&context_);
-        predicate_builder.setInsertionPointToStart(predicate_block);
-        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tuple_arg);
+        predicate_builder.setInsertionPointToStart(predicateBlock);
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
 
-        std::vector<mlir::Value> computed_values;
-        for (auto* entry : computed_entries) {
-            mlir::Value expr_value;
+        std::vector<mlir::Value> computedValues;
+        for (auto* entry : computedEntries) {
+            mlir::Value exprValue;
             if (merged_join_child != nullptr) {
-                expr_value = translate_expression(tmp_ctx, entry->expr);
+                exprValue = translate_expression(tmp_ctx, entry->expr);
             } else {
-                expr_value = translate_expression(tmp_ctx, entry->expr);
+                exprValue = translate_expression(tmp_ctx, entry->expr);
             }
 
-            if (expr_value) {
-                computed_values.push_back(expr_value);
+            if (exprValue) {
+                computedValues.push_back(exprValue);
             } else {
                 PGX_WARNING("Failed to get expression!!");
             }
         }
 
-        predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(), computed_values);
+        predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(), computedValues);
     }
 
-    std::vector<TranslationResult::ColumnSchema> all_columns = input.columns;
-    for (size_t i = 0; i < expression_types.size(); i++) {
-        all_columns.push_back({.table_name = COMPUTED_EXPRESSION_SCOPE,
-                             .column_name = column_names[i],
-                             .type_oid = expression_oids[i],
+    std::vector<TranslationResult::ColumnSchema> allColumns = input.columns;
+    for (size_t i = 0; i < expressionTypes.size(); i++) {
+        allColumns.push_back({.table_name = COMPUTED_EXPRESSION_SCOPE,
+                             .column_name = columnNames[i],
+                             .type_oid = expressionOids[i],
                              .typmod = -1,
-                             .mlir_type = expression_types[i],
+                             .mlir_type = expressionTypes[i],
                              .nullable = true});
     }
 
-    TranslationResult intermediate_result;
-    intermediate_result.op = map_op;
+    TranslationResult intermediateResult;
+    intermediateResult.op = mapOp;
 
-    if (!handle_all_entries) {
+    if (!handleAllEntries) {
         // Build result columns in TARGETLIST ORDER (not input-first order)
         // Include ALL entries (both resjunk and non-resjunk) for downstream operations like Sort
-        size_t computed_idx = 0;
+        size_t computedIdx = 0;
         PGX_LOG(AST_TRANSLATE, DEBUG, "Building columns from %zu targetEntries, input has %zu columns, %zu computed",
-                target_entries.size(), input.columns.size(), expression_types.size());
-        for (size_t i = 0; i < target_entries.size(); i++) {
-            auto* tle = target_entries[i];
+                targetEntries.size(), input.columns.size(), expressionTypes.size());
+        for (size_t i = 0; i < targetEntries.size(); i++) {
+            auto* tle = targetEntries[i];
 
             PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] resno=%d, resjunk=%d, expr type=%d",
                     i, tle->resno, tle->resjunk, tle->expr ? tle->expr->type : -1);
@@ -852,12 +847,11 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 PGX_LOG(AST_TRANSLATE, DEBUG, "    Var: varno=%d, varattno=%d", var->varno, var->varattno);
 
                 // Resolve the Var to get table and column name
-                std::string tableName;
-                std::string colName;
+                std::string tableName, colName;
                 bool nullable = false;
 
-                std::optional<int> const varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
-                std::optional<int> const varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
+                std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
+                std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
 
                 if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
                     tableName = resolved->table_name;
@@ -866,7 +860,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                     PGX_LOG(AST_TRANSLATE, DEBUG, "    Resolved via varno_resolution to %s.%s", tableName.c_str(), colName.c_str());
                 } else {
                     // Fallback: use PostgreSQL catalog
-                    int const schema_varno = IS_SPECIAL_VARNO(var->varno) ? var->varnosyn : var->varno;
+                    int schema_varno = IS_SPECIAL_VARNO(var->varno) ? var->varnosyn : var->varno;
                     tableName = get_table_alias_from_rte(&ctx.current_stmt, schema_varno);
                     colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, var->varattno);
                     nullable = is_column_nullable(&ctx.current_stmt, schema_varno, var->varattno);
@@ -878,7 +872,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 for (const auto& col : input.columns) {
                     if (col.table_name == tableName && col.column_name == colName) {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "    Adding from input: %s.%s", col.table_name.c_str(), col.column_name.c_str());
-                        intermediate_result.columns.push_back(col);
+                        intermediateResult.columns.push_back(col);
                         found = true;
                         break;
                     }
@@ -888,96 +882,96 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 }
             } else {
                 // This is a computed expression - use the computedIdx
-                PGX_LOG(AST_TRANSLATE, DEBUG, "    Computed expr, computedIdx=%zu", computed_idx);
-                if (computed_idx < expression_types.size()) {
-                    size_t const column_index = input.columns.size() + computed_idx;
-                    const auto& col = all_columns[column_index];
+                PGX_LOG(AST_TRANSLATE, DEBUG, "    Computed expr, computedIdx=%zu", computedIdx);
+                if (computedIdx < expressionTypes.size()) {
+                    size_t columnIndex = input.columns.size() + computedIdx;
+                    const auto& col = allColumns[columnIndex];
                     PGX_LOG(AST_TRANSLATE, DEBUG, "    Adding computed: %s.%s", col.table_name.c_str(), col.column_name.c_str());
-                    intermediate_result.columns.push_back(col);
-                    computed_idx++;
+                    intermediateResult.columns.push_back(col);
+                    computedIdx++;
                 }
             }
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "apply_projection returning intermediateResult with %zu columns (handleAllEntries=false, includes resjunk):", intermediate_result.columns.size());
-        for (size_t i = 0; i < intermediate_result.columns.size(); i++) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s", i, intermediate_result.columns[i].table_name.c_str(), intermediate_result.columns[i].column_name.c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "apply_projection returning intermediateResult with %zu columns (handleAllEntries=false, includes resjunk):", intermediateResult.columns.size());
+        for (size_t i = 0; i < intermediateResult.columns.size(); i++) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s", i, intermediateResult.columns[i].table_name.c_str(), intermediateResult.columns[i].column_name.c_str());
         }
-        return intermediate_result;
+        return intermediateResult;
     }
 
-    intermediate_result.columns = all_columns;
+    intermediateResult.columns = allColumns;
 
     // When handling all entries we need to add a ProjectionOp to select only the columns from the target list
-    std::vector<mlir::Attribute> projected_column_refs;
-    std::vector<TranslationResult::ColumnSchema> projected_columns;
+    std::vector<mlir::Attribute> projectedColumnRefs;
+    std::vector<TranslationResult::ColumnSchema> projectedColumns;
 
-    size_t computed_idx = 0;
-    for (auto* tle : target_entries) {
+    size_t computedIdx = 0;
+    for (auto* tle : targetEntries) {
         if (tle->expr && IsA(tle->expr, Var)) {
             const auto* var = reinterpret_cast<const Var*>(tle->expr);
 
-            size_t const left_column_count = merged_join_child ? merged_join_child->left_child_column_count : 0;
-            size_t const right_column_count = merged_join_child ? (merged_join_child->columns.size() - left_column_count) : 0;
-            bool const input_contains_both_sides = (merged_join_child != nullptr)
+            size_t left_column_count = merged_join_child ? merged_join_child->left_child_column_count : 0;
+            size_t right_column_count = merged_join_child ? (merged_join_child->columns.size() - left_column_count) : 0;
+            bool inputContainsBothSides = merged_join_child
                                           && (input.columns.size() >= merged_join_child->columns.size());
 
-            size_t column_index = SIZE_MAX;
+            size_t columnIndex = SIZE_MAX;
             if (var->varno == OUTER_VAR && merged_join_child && left_column_count > 0) {
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(left_column_count)) {
-                    column_index = var->varattno - 1;
+                    columnIndex = var->varattno - 1;
                 }
             } else if (var->varno == INNER_VAR && merged_join_child && right_column_count > 0) {
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(right_column_count)) {
-                    if (input_contains_both_sides) {
-                        column_index = left_column_count + (var->varattno - 1);
+                    if (inputContainsBothSides) {
+                        columnIndex = left_column_count + (var->varattno - 1);
                     } else {
-                        column_index = var->varattno - 1;
+                        columnIndex = var->varattno - 1;
                     }
                 }
             } else if (var->varattno > 0 && var->varattno <= static_cast<int>(input.columns.size())) {
-                column_index = var->varattno - 1;
+                columnIndex = var->varattno - 1;
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Var (varno=%d, varattno=%d) to input column %zu: %s.%s",
-                        var->varno, var->varattno, column_index, input.columns[column_index].table_name.c_str(),
-                        input.columns[column_index].column_name.c_str());
+                        var->varno, var->varattno, columnIndex, input.columns[columnIndex].table_name.c_str(),
+                        input.columns[columnIndex].column_name.c_str());
             } else {
                 throw std::runtime_error("Failed");
             }
 
-            if (column_index < intermediate_result.columns.size()) {
-                const auto& col = intermediate_result.columns[column_index];
-                auto col_ref = column_manager.createRef(col.table_name, col.column_name);
-                projected_column_refs.push_back(col_ref);
-                projected_columns.push_back(col);
+            if (columnIndex < intermediateResult.columns.size()) {
+                const auto& col = intermediateResult.columns[columnIndex];
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                projectedColumnRefs.push_back(colRef);
+                projectedColumns.push_back(col);
             }
         } else {
-            size_t const column_index = input.columns.size() + computed_idx;
-            if (column_index < intermediate_result.columns.size()) {
-                const auto& col = intermediate_result.columns[column_index];
-                auto col_ref = column_manager.createRef(col.table_name, col.column_name);
-                projected_column_refs.push_back(col_ref);
-                projected_columns.push_back(col);
-                computed_idx++;
+            size_t columnIndex = input.columns.size() + computedIdx;
+            if (columnIndex < intermediateResult.columns.size()) {
+                const auto& col = intermediateResult.columns[columnIndex];
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                projectedColumnRefs.push_back(colRef);
+                projectedColumns.push_back(col);
+                computedIdx++;
             }
         }
     }
 
     // Create ProjectionOp
-    auto tuple_stream_type = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-    const auto PROJECTION_OP = ctx.builder.create<mlir::relalg::ProjectionOp>(
-        ctx.builder.getUnknownLoc(), tuple_stream_type,
-        mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), map_op.getResult(),
-        ctx.builder.getArrayAttr(projected_column_refs));
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+    const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+        ctx.builder.getUnknownLoc(), tupleStreamType,
+        mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), mapOp.getResult(),
+        ctx.builder.getArrayAttr(projectedColumnRefs));
 
     TranslationResult result;
-    result.op = PROJECTION_OP;
-    result.columns = projected_columns;
+    result.op = projectionOp;
+    result.columns = projectedColumns;
     return result;
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     const QueryCtxT& ctx, const TranslationResult& input, const TranslationResult& merged_join_child,
-    const List* target_list, const JoinType JOIN_TYPE) -> TranslationResult {
+    const List* target_list, const JoinType join_type) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
 
     if (!input.op || !target_list || target_list->length <= 0) {
@@ -985,49 +979,48 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         return input;
     }
 
-    auto input_value = input.op->getResult(0);
-    if (!input_value) {
+    auto inputValue = input.op->getResult(0);
+    if (!inputValue) {
         PGX_ERROR("Input operation has no result");
         return input;
     }
 
-    std::vector<TranslationResult::ColumnSchema> projected_columns;
-    std::vector<mlir::Attribute> column_refs;
-    auto& column_manager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    std::vector<TranslationResult::ColumnSchema> projectedColumns;
+    std::vector<mlir::Attribute> columnRefs;
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-    size_t const left_column_count = merged_join_child.left_child_column_count;
-    size_t const right_column_count = merged_join_child.columns.size() - left_column_count;
+    size_t left_column_count = merged_join_child.left_child_column_count;
+    size_t right_column_count = merged_join_child.columns.size() - left_column_count;
 
-    ListCell* lc = nullptr;
+    ListCell* lc;
     foreach (lc, target_list) {
         const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle) {
+        if (!tle)
             continue;
-}
 
         if (tle->expr && IsA(tle->expr, Var)) {
             const auto* var = reinterpret_cast<Var*>(tle->expr);
-            size_t column_index = SIZE_MAX;
+            size_t columnIndex = SIZE_MAX;
 
             if (var->varno == OUTER_VAR) {
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(left_column_count)) {
-                    column_index = var->varattno - 1;
+                    columnIndex = var->varattno - 1;
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: OUTER_VAR varattno=%d maps to position %zu",
-                            var->varattno, column_index);
+                            var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
-                const bool IS_EXISTS_JOIN = (JOIN_TYPE == JOIN_SEMI || JOIN_TYPE == JOIN_ANTI
-                                             || JOIN_TYPE == JOIN_RIGHT_ANTI);
-                if (IS_EXISTS_JOIN) {
+                const bool is_exists_join = (join_type == JOIN_SEMI || join_type == JOIN_ANTI
+                                             || join_type == JOIN_RIGHT_ANTI);
+                if (is_exists_join) {
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Projection: Skipping INNER_VAR reference after %s join (right columns not in output)",
-                            JOIN_TYPE == JOIN_SEMI ? "SEMI" : (JOIN_TYPE == JOIN_ANTI ? "ANTI" : "RIGHT_ANTI"));
+                            join_type == JOIN_SEMI ? "SEMI" : (join_type == JOIN_ANTI ? "ANTI" : "RIGHT_ANTI"));
                     continue;
                 }
 
-                std::optional<int> const varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn)
+                std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn)
                                                                                : std::nullopt;
-                std::optional<int> const varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)
+                std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)
                                                                                   : std::nullopt;
 
                 if (auto mapping = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
@@ -1038,34 +1031,34 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
 
                     for (size_t i = 0; i < input.columns.size(); ++i) {
                         if (input.columns[i].table_name == table_name && input.columns[i].column_name == col_name) {
-                            column_index = i;
+                            columnIndex = i;
                             break;
                         }
                     }
                 }
 
-                if (column_index == SIZE_MAX && var->varattno > 0 && var->varattno <= static_cast<int>(right_column_count))
+                if (columnIndex == SIZE_MAX && var->varattno > 0 && var->varattno <= static_cast<int>(right_column_count))
                 {
-                    column_index = left_column_count + (var->varattno - 1);
+                    columnIndex = left_column_count + (var->varattno - 1);
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: INNER_VAR varattno=%d maps to position %zu (fallback)",
-                            var->varattno, column_index);
+                            var->varattno, columnIndex);
                 }
             } else {
                 PGX_WARNING("Unexpected varno %d in join projection", var->varno);
                 continue;
             }
 
-            if (column_index < input.columns.size()) {
-                const auto& col = input.columns[column_index];
-                projected_columns.push_back(col);
+            if (columnIndex < input.columns.size()) {
+                const auto& col = input.columns[columnIndex];
+                projectedColumns.push_back(col);
 
-                auto col_ref = column_manager.createRef(col.table_name, col.column_name);
-                column_refs.push_back(col_ref);
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                columnRefs.push_back(colRef);
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Projecting column: %s.%s from position %zu", col.table_name.c_str(),
-                        col.column_name.c_str(), column_index);
+                        col.column_name.c_str(), columnIndex);
             } else {
-                PGX_ERROR("Column index %zu out of bounds (have %zu columns)", column_index, input.columns.size());
+                PGX_ERROR("Column index %zu out of bounds (have %zu columns)", columnIndex, input.columns.size());
             }
         } else if (tle->expr) {
             PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -1076,32 +1069,30 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         }
     }
 
-    const auto COLUMNS_IDENTICAL = [&]() {
-        if (projected_columns.size() != input.columns.size()) {
+    const auto columns_identical = [&]() {
+        if (projectedColumns.size() != input.columns.size())
             return false;
-}
-        for (size_t i = 0; i < projected_columns.size(); ++i) {
-            if (projected_columns[i].table_name != input.columns[i].table_name
-                || projected_columns[i].column_name != input.columns[i].column_name) {
+        for (size_t i = 0; i < projectedColumns.size(); ++i) {
+            if (projectedColumns[i].table_name != input.columns[i].table_name
+                || projectedColumns[i].column_name != input.columns[i].column_name)
                 return false;
-}
         }
         return true;
     };
 
-    if (!projected_columns.empty() && !COLUMNS_IDENTICAL()) {
-        auto tuple_stream_type = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-        const auto PROJECTION_OP = ctx.builder.create<mlir::relalg::ProjectionOp>(
-            ctx.builder.getUnknownLoc(), tuple_stream_type,
-            mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), input_value,
-            ctx.builder.getArrayAttr(column_refs));
+    if (!projectedColumns.empty() && !columns_identical()) {
+        auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+        const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+            ctx.builder.getUnknownLoc(), tupleStreamType,
+            mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), inputValue,
+            ctx.builder.getArrayAttr(columnRefs));
 
         TranslationResult result;
-        result.op = PROJECTION_OP;
-        result.columns = projected_columns;
+        result.op = projectionOp;
+        result.columns = projectedColumns;
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created ProjectionOp: projecting %zu columns from %zu input columns",
-                projected_columns.size(), input.columns.size());
+                projectedColumns.size(), input.columns.size());
         PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 2] RESULT: %s", result.toString().c_str());
         return result;
     }
@@ -1111,58 +1102,59 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     return input;
 }
 
-auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& context, const mlir::Value TUPLE_STREAM,
+auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& context, const mlir::Value tuple_stream,
                                                           const TranslationResult& translation_result) const
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!translation_result.columns.empty()) {
-        auto& column_manager = context.builder.getContext()
+        auto& columnManager = context.builder.getContext()
                                   ->getOrLoadDialect<mlir::relalg::RelAlgDialect>()
                                   ->getColumnManager();
-        std::vector<mlir::Attribute> column_ref_attrs;
-        std::vector<mlir::Attribute> column_name_attrs;
+        std::vector<mlir::Attribute> columnRefAttrs;
+        std::vector<mlir::Attribute> columnNameAttrs;
 
-        const auto* top_plan = context.current_stmt.planTree;
-        const auto* target_list = top_plan ? top_plan->targetlist : nullptr;
+        const auto* topPlan = context.current_stmt.planTree;
+        const auto* targetList = topPlan ? topPlan->targetlist : nullptr;
 
-        for (size_t col_index = 0; col_index < translation_result.columns.size(); col_index++) {
-            const auto& column = translation_result.columns[col_index];
-            if (target_list && col_index < static_cast<size_t>(list_length(target_list))) {
-                const auto* tle = static_cast<TargetEntry*>(list_nth(target_list, col_index));
+        for (size_t colIndex = 0; colIndex < translation_result.columns.size(); colIndex++) {
+            const auto& column = translation_result.columns[colIndex];
+            if (targetList && colIndex < static_cast<size_t>(list_length(targetList))) {
+                const auto* tle = static_cast<TargetEntry*>(list_nth(targetList, colIndex));
                 if (tle && tle->resjunk) {
                     continue;
                 }
             }
 
-            auto output_name = column.column_name;
+            auto outputName = column.column_name;
 
-            if (target_list && col_index < static_cast<size_t>(list_length(target_list))) {
-                const auto* tle = static_cast<TargetEntry*>(list_nth(target_list, col_index));
+            if (targetList && colIndex < static_cast<size_t>(list_length(targetList))) {
+                const auto* tle = static_cast<TargetEntry*>(list_nth(targetList, colIndex));
                 if (tle && tle->resname) {
-                    output_name = tle->resname;
+                    outputName = tle->resname;
                 }
             }
 
-            PGX_LOG(AST_TRANSLATE, DEBUG, "MaterializeOp column %zu: %s.%s -> output name '%s'", col_index,
-                    column.table_name.c_str(), column.column_name.c_str(), output_name.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "MaterializeOp column %zu: %s.%s -> output name '%s'", colIndex,
+                    column.table_name.c_str(), column.column_name.c_str(), outputName.c_str());
 
-            auto col_ref = column_manager.createRef(column.table_name, column.column_name);
-            column_ref_attrs.push_back(col_ref);
+            auto colRef = columnManager.createRef(column.table_name, column.column_name);
+            columnRefAttrs.push_back(colRef);
 
-            auto name_attr = context.builder.getStringAttr(output_name);
-            column_name_attrs.push_back(name_attr);
+            auto nameAttr = context.builder.getStringAttr(outputName);
+            columnNameAttrs.push_back(nameAttr);
         }
 
-        auto column_refs = context.builder.getArrayAttr(column_ref_attrs);
-        auto column_names = context.builder.getArrayAttr(column_name_attrs);
-        auto table_type = mlir::dsa::TableType::get(&context_);
+        auto columnRefs = context.builder.getArrayAttr(columnRefAttrs);
+        auto columnNames = context.builder.getArrayAttr(columnNameAttrs);
+        auto tableType = mlir::dsa::TableType::get(&context_);
 
-        auto materialize_op = context.builder.create<mlir::relalg::MaterializeOp>(
-            context.builder.getUnknownLoc(), table_type, TUPLE_STREAM, column_refs, column_names);
-        return materialize_op.getResult();
-    }         throw std::runtime_error("Should be impossible");
-   
-    return {};
+        auto materializeOp = context.builder.create<mlir::relalg::MaterializeOp>(
+            context.builder.getUnknownLoc(), tableType, tuple_stream, columnRefs, columnNames);
+        return materializeOp.getResult();
+    } else {
+        throw std::runtime_error("Should be impossible");
+    }
+    return mlir::Value();
 }
 
 auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationResult* left_child,

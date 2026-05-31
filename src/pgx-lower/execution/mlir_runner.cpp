@@ -52,14 +52,14 @@ extern "C" {
 
 namespace mlir_runner {
 
-
-
-
+bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
+bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
+bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 
 #ifdef POSTGRESQL_EXTENSION
-auto run_mlir_with_dest_receiver(PlannedStmt* planned_stmt, EState* estate, ExprContext*  /*econtext*/, DestReceiver* dest)
+auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest)
     -> bool {
-    if (!planned_stmt || !estate || !dest) {
+    if (!plannedStmt || !estate || !dest) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null parameters provided to MLIR runner with "
                                                               "DestReceiver");
         pgx_lower::ErrorManager::reportError(error);
@@ -79,7 +79,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* planned_stmt, EState* estate, Expr
             return false;
         }
 
-        auto module = translator->translate_query(planned_stmt);
+        auto module = translator->translate_query(plannedStmt);
         if (!module) {
             PGX_ERROR("Failed to translate PostgreSQL AST to RelAlg MLIR");
             return false;
@@ -94,39 +94,43 @@ auto run_mlir_with_dest_receiver(PlannedStmt* planned_stmt, EState* estate, Expr
         }
 
         // Phase 2-3: Run complete lowering pipeline with PostgreSQL safety wrapper
-        bool pipeline_success = false;
+        bool pipelineSuccess = false;
 #ifndef BUILDING_UNIT_TESTS
         PG_TRY();
         {
 #endif
             try {
                 runCompleteLoweringPipeline(*module);
-                pipeline_success = true;
+                pipelineSuccess = true;
             } catch (const std::exception& e) {
                 PGX_ERROR("MLIR pipeline exception: %s", e.what());
 #ifndef BUILDING_UNIT_TESTS
                 ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), 
                                errmsg("MLIR lowering pipeline failed: %s", e.what())));
 #endif
-                pipeline_success = false;
+                pipelineSuccess = false;
             }
 #ifndef BUILDING_UNIT_TESTS
         }
         PG_CATCH();
         {
             PGX_WARNING("PostgreSQL exception during MLIR pipeline execution");
-            pipeline_success = false;
+            pipelineSuccess = false;
             PG_RE_THROW();
         }
         PG_END_TRY();
 #endif
 
-        if (!pipeline_success) {
+        if (!pipelineSuccess) {
             return false;
         }
 
         // Phase 4: JIT execution
-        return executeJITWithDestReceiver(*module, estate, dest);
+        if (!executeJITWithDestReceiver(*module, estate, dest)) {
+            return false;
+        }
+
+        return true;
 
     } catch (const std::exception& e) {
         PGX_ERROR("MLIR runner exception: %s", e.what());

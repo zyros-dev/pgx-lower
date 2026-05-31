@@ -17,7 +17,7 @@ namespace {
 #define NUMERIC_NEG 0x4000
 #define NUMERIC_DSCALE_MASK 0x3FFF
 
-using NumericDigit = int16;
+typedef int16 NumericDigit;
 
 struct NumericLong {
     uint16 n_sign_dscale;
@@ -31,17 +31,17 @@ union NumericChoice {
 };
 
 struct NumericData {
-    int32 vl_len;
+    int32 vl_len_;
     union NumericChoice choice;
 };
 
 Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale,
                    const std::vector<NumericDigit>& digits) {
-    const size_t HDR = VARHDRSZ + sizeof(uint16) + sizeof(int16);
-    const size_t TOTAL = HDR + digits.size() * sizeof(NumericDigit);
-    buf.assign(TOTAL, 0);
+    const size_t hdr = VARHDRSZ + sizeof(uint16) + sizeof(int16);
+    const size_t total = hdr + digits.size() * sizeof(NumericDigit);
+    buf.assign(total, 0);
     auto* num = reinterpret_cast<NumericData*>(buf.data());
-    SET_VARSIZE(num, TOTAL);
+    SET_VARSIZE(num, total);
     num->choice.n_long.n_sign_dscale = (neg ? NUMERIC_NEG : NUMERIC_POS) | (dscale & NUMERIC_DSCALE_MASK);
     num->choice.n_long.n_weight = weight;
     std::memcpy(num->choice.n_long.n_data, digits.data(), digits.size() * sizeof(NumericDigit));

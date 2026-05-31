@@ -17,7 +17,7 @@
 #include "pgx-lower/utility/logging.h"
 
 // Need access to g_computed_results for decimal handling
-
+extern ComputedResultStorage g_computed_results;
 
 extern "C" {
 #include "postgres.h"
@@ -32,14 +32,14 @@ extern "C" {
 }
 
 extern "C" {
-
-
-extern void store_bool_result(int32_t column_index, bool value, bool is_null);
-
-
-
-
-
+extern void mark_results_ready_for_streaming();
+extern void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
+extern void store_bool_result(int32_t columnIndex, bool value, bool isNull);
+extern void prepare_computed_results(int32_t numColumns);
+extern bool add_tuple_to_result(int64_t value);
+extern void* open_postgres_table(const char* tableName);
+extern int64_t read_next_tuple_from_table(void* tableHandle);
+extern TupleDesc get_table_handle_tupledesc(void* tableHandle);
 }
 
 static void* g_execution_context = nullptr;
@@ -105,8 +105,8 @@ struct ColumnDecodeMeta {
 };
 
 struct BatchStorage {
-    MemoryContext batch_context;
-    TupleDesc tuple_desc;
+    MemoryContext batchContext;
+    TupleDesc tupleDesc;
 
     size_t capacity;
     size_t num_rows;
@@ -152,10 +152,10 @@ struct TableSpec {
 static int get_column_position(const std::string& table_name, const std::string& column_name) {
     PGX_IO(RUNTIME);
     extern int32_t get_column_attnum(const char* p_table_name, const char* p_column_name);
-    const int32_t ATTNUM = get_column_attnum(table_name.c_str(), column_name.c_str());
-    if (ATTNUM > 0) {
+    const int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
+    if (attnum > 0) {
         // Convert from 1-based PostgreSQL attnum to 0-based index
-        return ATTNUM - 1;
+        return attnum - 1;
     }
 
     PGX_ERROR("Failed to find column! %s %s", table_name.c_str(), column_name.c_str());
@@ -169,8 +169,8 @@ static TableSpec parse_table_spec(const char* json_str) {
     try {
         PGX_LOG(RUNTIME, DEBUG, "parse_table_spec: parsing JSON: %s", json_str);
 
-        using Json = nlohmann::json;
-        Json j = Json::parse(json_str);
+        using json = nlohmann::json;
+        json j = json::parse(json_str);
 
         if (j.contains("table") && j["table"].is_string()) {
             spec.table_name = j["table"];
@@ -197,7 +197,7 @@ static TableSpec parse_table_spec(const char* json_str) {
 static void cleanup_tablebuilder_callback(void* arg) {
     PGX_IO(RUNTIME);
     // ReSharper disable once CppDeclaratorNeverUsed
-    auto *tb = static_cast<runtime::TableBuilder*>(arg);
+    auto tb = static_cast<runtime::TableBuilder*>(arg);
 }
 
 namespace runtime {
@@ -209,27 +209,27 @@ TableBuilder::TableBuilder()
 , total_columns(0) {}
 
 // ReSharper disable once CppParameterNeverUsed
-TableBuilder* TableBuilder::create(VarLen32  /*schema_param*/) {
+TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     PGX_IO(RUNTIME);
 
-    const MemoryContext OLDCONTEXT = MemoryContextSwitchTo(CurrentMemoryContext);
+    const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
-    void* const builder_memory = palloc(sizeof(TableBuilder));
-    auto *const BUILDER = new (builder_memory) TableBuilder();
+    void* builder_memory = palloc(sizeof(TableBuilder));
+    const auto builder = new (builder_memory) TableBuilder();
 
-    BUILDER->total_columns = 0;
+    builder->total_columns = 0;
     PGX_LOG(RUNTIME, DEBUG, "Initialized with dynamic column tracking");
 
-    auto *const CALLBACK = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
-    CALLBACK->func = cleanup_tablebuilder_callback;
-    CALLBACK->arg = BUILDER;
-    MemoryContextRegisterResetCallback(CurrentMemoryContext, CALLBACK);
+    const auto callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
+    callback->func = cleanup_tablebuilder_callback;
+    callback->arg = builder;
+    MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
 
-    MemoryContextSwitchTo(OLDCONTEXT);
-    return BUILDER;
+    MemoryContextSwitchTo(oldcontext);
+    return builder;
 }
 
-void TableBuilder::destroy(void*  /*builder*/) {
+void TableBuilder::destroy(void* builder) {
     PGX_IO(RUNTIME);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
@@ -278,72 +278,72 @@ void TableBuilder::nextRow() {
     PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: reset column index to 0 for row %ld", row_count);
 }
 
-void TableBuilder::addBool(const bool IS_VALID, const bool VALUE) {
+void TableBuilder::addBool(const bool is_valid, const bool value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<bool>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<bool>(this, is_valid, value);
 }
 
-void TableBuilder::addInt8(const bool IS_VALID, const int8_t VALUE) {
+void TableBuilder::addInt8(const bool is_valid, const int8_t value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int8_t>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<int8_t>(this, is_valid, value);
 }
 
-void TableBuilder::addInt16(const bool IS_VALID, const int16_t VALUE) {
+void TableBuilder::addInt16(const bool is_valid, const int16_t value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int16_t>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<int16_t>(this, is_valid, value);
 }
 
-void TableBuilder::addInt32(const bool IS_VALID, const int32_t VALUE) {
+void TableBuilder::addInt32(const bool is_valid, const int32_t value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int32_t>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<int32_t>(this, is_valid, value);
 }
 
-void TableBuilder::addInt64(const bool IS_VALID, const int64_t VALUE) {
+void TableBuilder::addInt64(const bool is_valid, const int64_t value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int64_t>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
 }
 
-void TableBuilder::addFloat32(const bool IS_VALID, const float VALUE) {
+void TableBuilder::addFloat32(const bool is_valid, const float value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<float>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<float>(this, is_valid, value);
 }
 
-void TableBuilder::addFloat64(const bool IS_VALID, const double VALUE) {
+void TableBuilder::addFloat64(const bool is_valid, const double value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<double>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<double>(this, is_valid, value);
 }
 
-void TableBuilder::addDecimal(const bool IS_VALID, const __int128 VALUE) {
+void TableBuilder::addDecimal(const bool is_valid, const __int128 value) {
     PGX_IO(RUNTIME);
 
-    if (!IS_VALID) {
+    if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
     } else {
         if (!this->next_decimal_scale.has_value()) {
             PGX_ERROR("Never set the decimal scale");
             throw std::runtime_error("Have no decimal scale");
         }
-        const int32_t SCALE = this->next_decimal_scale.value();
+        const int32_t scale = this->next_decimal_scale.value();
 
-        const Datum NUMERIC_DATUM = i128_to_numeric(VALUE, SCALE);
-        auto *const NUMERIC_VALUE = DatumGetNumeric(NUMERIC_DATUM);
+        const Datum numeric_datum = i128_to_numeric(value, scale);
+        const auto numeric_value = DatumGetNumeric(numeric_datum);
 
         PGX_LOG(RUNTIME, DEBUG, "addDecimal: created Numeric at %p (scale=%d, value=%lld)",
-                NUMERIC_VALUE, SCALE, static_cast<long long>(VALUE));
+                numeric_value, scale, static_cast<long long>(value));
 
-        pgx_lower::runtime::table_builder_add_numeric(this, false, NUMERIC_VALUE);
+        pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
         this->next_decimal_scale = std::nullopt;
     }
 }
 
-void TableBuilder::addFixedSized(const bool IS_VALID, const int64_t VALUE) {
+void TableBuilder::addFixedSized(const bool is_valid, const int64_t value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int64_t>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
 }
 
-void TableBuilder::addBinary(const bool IS_VALID, const VarLen32 VALUE) {
+void TableBuilder::addBinary(const bool is_valid, const VarLen32 value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<VarLen32>(this, IS_VALID, VALUE);
+    pgx_lower::runtime::table_builder_add<VarLen32>(this, is_valid, value);
 }
 
 void TableBuilder::setNextDecimalScale(int32_t scale) {
@@ -353,8 +353,8 @@ void TableBuilder::setNextDecimalScale(int32_t scale) {
 
 static void cleanup_datasourceiterator_callback(void* arg) {
     PGX_IO(RUNTIME);
-    if (auto *const ITER = static_cast<DataSourceIterator*>(arg)) {
-        ITER->~DataSourceIterator();
+    if (const auto iter = static_cast<DataSourceIterator*>(arg)) {
+        iter->~DataSourceIterator();
     }
 }
 
@@ -362,8 +362,8 @@ static void cleanup_datasourceiterator_callback(void* arg) {
 // fixing it now since it does its job and its just an abstracted away black box
 static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterator* iter) {
     PGX_IO(RUNTIME);
-    uint32_t const actual_len = varlen32_param.getLen();
-    const char* const json_spec = varlen32_param.data();
+    uint32_t actual_len = varlen32_param.getLen();
+    const char* json_spec = varlen32_param.data();
 
     PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: LingoDB runtime::VarLen32 len=%u", actual_len);
 
@@ -383,10 +383,10 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
             TableSpec spec = parse_table_spec(json_string.c_str());
 
             if (!spec.table_name.empty()) {
-                size_t const pipe_pos = spec.table_name.find("|oid:");
+                size_t pipe_pos = spec.table_name.find("|oid:");
                 if (pipe_pos != std::string::npos) {
-                    std::string const oid_str = spec.table_name.substr(pipe_pos + 5); // Skip "|oid:"
-                    Oid const table_oid = static_cast<Oid>(std::stoul(oid_str));
+                    std::string oid_str = spec.table_name.substr(pipe_pos + 5); // Skip "|oid:"
+                    Oid table_oid = static_cast<Oid>(std::stoul(oid_str));
                     g_jit_table_oid = table_oid;
                     PGX_LOG(RUNTIME, DEBUG, "Extracted table OID %u from spec", table_oid);
 
@@ -403,7 +403,7 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
 
                 // Use PostgreSQL's maximum column limit
                 ColumnMetadata metadata[MaxTupleAttributeNumber];
-                int32_t const total_columns = get_all_column_metadata(spec.table_name.c_str(), metadata,
+                int32_t total_columns = get_all_column_metadata(spec.table_name.c_str(), metadata,
                                                                 MaxTupleAttributeNumber);
 
                 if (total_columns <= 0) {
@@ -485,26 +485,26 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
 // BatchStorage Helper Functions
 // ============================================================================
 
-static size_t calculate_batch_capacity(const TupleDesc TUPLE_DESC) {
+static size_t calculate_batch_capacity(const TupleDesc tupleDesc) {
     PGX_IO(RUNTIME);
     extern int work_mem;
-    const size_t WORK_MEM_BYTES = static_cast<size_t>(work_mem) * 1024L;
+    const size_t work_mem_bytes = static_cast<size_t>(work_mem) * 1024L;
 
     size_t bytes_per_row = 0;
-    for (int i = 0; i < TUPLE_DESC->natts; i++) {
-        const Form_pg_attribute ATTR = TupleDescAttr(TUPLE_DESC, i);
-        if (ATTR->attlen > 0) {
-            bytes_per_row += ATTR->attlen;
-        } else if (ATTR->attlen == -1) {
+    for (int i = 0; i < tupleDesc->natts; i++) {
+        const Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
+        if (attr->attlen > 0) {
+            bytes_per_row += attr->attlen;
+        } else if (attr->attlen == -1) {
             bytes_per_row += 100;
         } else {
             bytes_per_row += 64;
         }
     }
 
-    bytes_per_row += TUPLE_DESC->natts * (sizeof(Datum) + sizeof(bool));
+    bytes_per_row += tupleDesc->natts * (sizeof(Datum) + sizeof(bool));
 
-    size_t max_rows = WORK_MEM_BYTES / bytes_per_row;
+    size_t max_rows = work_mem_bytes / bytes_per_row;
 
     constexpr size_t MIN_BATCH_SIZE = 5;
     constexpr size_t MAX_BATCH_SIZE = 100000;
@@ -521,57 +521,57 @@ static size_t calculate_batch_capacity(const TupleDesc TUPLE_DESC) {
     return max_rows;
 }
 
-static BatchStorage* create_batch_storage(const TupleDesc TUPLE_DESC, const size_t NUM_COLS, const size_t CAPACITY) {
+static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_t num_cols, const size_t capacity) {
     PGX_IO(RUNTIME);
 
     // ReSharper disable once CppStaticAssertFailure
-    const MemoryContext BATCH_CONTEXT = AllocSetContextCreate(CurrentMemoryContext, "BatchStorage",
+    const MemoryContext batchContext = AllocSetContextCreate(CurrentMemoryContext, "BatchStorage",
                                                              ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE,
                                                              ALLOCSET_DEFAULT_MAXSIZE);
 
-    const MemoryContext OLD_CONTEXT = MemoryContextSwitchTo(BATCH_CONTEXT);
+    const MemoryContext oldContext = MemoryContextSwitchTo(batchContext);
 
-    auto *const BATCH = static_cast<BatchStorage*>(palloc(sizeof(BatchStorage)));
-    BATCH->batch_context = BATCH_CONTEXT;
-    BATCH->tuple_desc = TUPLE_DESC;
-    BATCH->capacity = CAPACITY;
-    BATCH->num_rows = 0;
+    const auto batch = static_cast<BatchStorage*>(palloc(sizeof(BatchStorage)));
+    batch->batchContext = batchContext;
+    batch->tupleDesc = tupleDesc;
+    batch->capacity = capacity;
+    batch->num_rows = 0;
 
-    BATCH->column_values = static_cast<Datum**>(palloc(NUM_COLS * sizeof(Datum*)));
-    BATCH->column_nulls = static_cast<bool**>(palloc(NUM_COLS * sizeof(bool*)));
-    BATCH->string_lengths = static_cast<int32_t**>(palloc(NUM_COLS * sizeof(int32_t*)));
-    BATCH->string_data_ptrs = static_cast<uint8_t***>(palloc(NUM_COLS * sizeof(uint8_t**)));
-    BATCH->decimal_values = static_cast<__int128**>(palloc(NUM_COLS * sizeof(__int128*)));
+    batch->column_values = static_cast<Datum**>(palloc(num_cols * sizeof(Datum*)));
+    batch->column_nulls = static_cast<bool**>(palloc(num_cols * sizeof(bool*)));
+    batch->string_lengths = static_cast<int32_t**>(palloc(num_cols * sizeof(int32_t*)));
+    batch->string_data_ptrs = static_cast<uint8_t***>(palloc(num_cols * sizeof(uint8_t**)));
+    batch->decimal_values = static_cast<__int128**>(palloc(num_cols * sizeof(__int128*)));
 
-    for (size_t col = 0; col < NUM_COLS; col++) {
-        BATCH->column_values[col] = static_cast<Datum*>(palloc(CAPACITY * sizeof(Datum)));
-        BATCH->column_nulls[col] = static_cast<bool*>(palloc(CAPACITY * sizeof(bool)));
-        memset(BATCH->column_nulls[col], 1, CAPACITY * sizeof(bool));
+    for (size_t col = 0; col < num_cols; col++) {
+        batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
+        batch->column_nulls[col] = static_cast<bool*>(palloc(capacity * sizeof(bool)));
+        memset(batch->column_nulls[col], true, capacity * sizeof(bool));
 
-        BATCH->string_lengths[col] = static_cast<int32_t*>(palloc(CAPACITY * sizeof(int32_t)));
-        BATCH->string_data_ptrs[col] = static_cast<uint8_t**>(palloc(CAPACITY * sizeof(uint8_t*)));
-        memset(BATCH->string_lengths[col], 0, CAPACITY * sizeof(int32_t));
-        memset(BATCH->string_data_ptrs[col], 0, CAPACITY * sizeof(uint8_t*));
+        batch->string_lengths[col] = static_cast<int32_t*>(palloc(capacity * sizeof(int32_t)));
+        batch->string_data_ptrs[col] = static_cast<uint8_t**>(palloc(capacity * sizeof(uint8_t*)));
+        memset(batch->string_lengths[col], 0, capacity * sizeof(int32_t));
+        memset(batch->string_data_ptrs[col], 0, capacity * sizeof(uint8_t*));
 
         // __int128 requires 16-byte alignment. palloc() only guarantees 8-byte (MAXALIGN).
-        const size_t ALLOC_SIZE = CAPACITY * sizeof(__int128) + 16;
-        void* const raw_ptr = palloc(ALLOC_SIZE);
-        const uintptr_t RAW_ADDR = reinterpret_cast<uintptr_t>(raw_ptr);
-        const uintptr_t ALIGNED_ADDR = (RAW_ADDR + 15) & ~static_cast<uintptr_t>(15);
-        BATCH->decimal_values[col] = reinterpret_cast<__int128*>(ALIGNED_ADDR);
-        memset(BATCH->decimal_values[col], 0, CAPACITY * sizeof(__int128));
+        const size_t alloc_size = capacity * sizeof(__int128) + 16;
+        void* raw_ptr = palloc(alloc_size);
+        const uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw_ptr);
+        const uintptr_t aligned_addr = (raw_addr + 15) & ~static_cast<uintptr_t>(15);
+        batch->decimal_values[col] = reinterpret_cast<__int128*>(aligned_addr);
+        memset(batch->decimal_values[col], 0, capacity * sizeof(__int128));
 
-        if ((reinterpret_cast<uintptr_t>(BATCH->decimal_values[col]) & 15) != 0) {
+        if ((reinterpret_cast<uintptr_t>(batch->decimal_values[col]) & 15) != 0) {
             ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-                            errmsg("decimal_values[%zu] alignment failed: %p", col, BATCH->decimal_values[col])));
+                            errmsg("decimal_values[%zu] alignment failed: %p", col, batch->decimal_values[col])));
         }
     }
 
-    MemoryContextSwitchTo(OLD_CONTEXT);
+    MemoryContextSwitchTo(oldContext);
 
-    PGX_LOG(RUNTIME, DEBUG, "Created batch with capacity=%zu, columns=%zu, context=%p", CAPACITY, NUM_COLS, BATCH_CONTEXT);
+    PGX_LOG(RUNTIME, DEBUG, "Created batch with capacity=%zu, columns=%zu, context=%p", capacity, num_cols, batchContext);
 
-    return BATCH;
+    return batch;
 }
 
 static void destroy_batch_storage(const BatchStorage* batch) {
@@ -579,13 +579,13 @@ static void destroy_batch_storage(const BatchStorage* batch) {
     if (!batch) {
         return;
     }
-    PGX_LOG(RUNTIME, DEBUG, "Deleting context %p with %zu rows", batch->batch_context, batch->num_rows);
-    MemoryContextDelete(batch->batch_context);
+    PGX_LOG(RUNTIME, DEBUG, "Deleting context %p with %zu rows", batch->batchContext, batch->num_rows);
+    MemoryContextDelete(batch->batchContext);
 }
 
 static void* open_table_connection(const std::string& table_name) {
     PGX_IO(RUNTIME);
-    void* const table_handle = open_postgres_table(table_name.c_str());
+    void* table_handle = open_postgres_table(table_name.c_str());
 
     if (!table_handle) {
         PGX_WARNING("open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
@@ -594,41 +594,41 @@ static void* open_table_connection(const std::string& table_name) {
     return table_handle;
 }
 
-DataSourceIteration* DataSourceIteration::start(ExecutionContext* execution_context, const VarLen32 VARLEN32_PARAM) {
+DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionContext, const VarLen32 varlen32_param) {
     PGX_IO(RUNTIME);
-    const MemoryContext OLDCONTEXT = MemoryContextSwitchTo(CurrentMemoryContext);
+    const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
-    void* const iter_memory = palloc(sizeof(DataSourceIterator));
-    auto *const ITER = new (iter_memory) DataSourceIterator();
+    void* iter_memory = palloc(sizeof(DataSourceIterator));
+    const auto iter = new (iter_memory) DataSourceIterator();
 
-    auto *const CALLBACK = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
-    CALLBACK->func = cleanup_datasourceiterator_callback;
-    CALLBACK->arg = ITER;
-    MemoryContextRegisterResetCallback(CurrentMemoryContext, CALLBACK);
+    const auto callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
+    callback->func = cleanup_datasourceiterator_callback;
+    callback->arg = iter;
+    MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
 
-    MemoryContextSwitchTo(OLDCONTEXT);
+    MemoryContextSwitchTo(oldcontext);
 
-    ITER->context = execution_context;
-    ITER->batch = nullptr;
-    ITER->current_row_in_batch = 0;
+    iter->context = executionContext;
+    iter->batch = nullptr;
+    iter->current_row_in_batch = 0;
 
-    ITER->current_value = 0;
-    ITER->current_is_null = true;
-    const bool JSON_PARSED = decode_table_specification(VARLEN32_PARAM, ITER);
-    if (!JSON_PARSED) {
+    iter->current_value = 0;
+    iter->current_is_null = true;
+    const bool json_parsed = decode_table_specification(varlen32_param, iter);
+    if (!json_parsed) {
         PGX_ERROR("JSON parsing failed");
         throw std::runtime_error("Failed to parse the json");
     }
-    ITER->table_handle = open_table_connection(ITER->table_name);
-    if (!ITER->table_handle) {
-        return reinterpret_cast<DataSourceIteration*>(ITER);
+    iter->table_handle = open_table_connection(iter->table_name);
+    if (!iter->table_handle) {
+        return reinterpret_cast<DataSourceIteration*>(iter);
     }
 
-    ITER->column_positions.reserve(ITER->columns.size());
-    for (const auto& col_spec : ITER->columns) {
-        const int32_t PG_IDX = get_column_position(ITER->table_name, col_spec.name);
-        ITER->column_positions.push_back(PG_IDX);
-        PGX_LOG(RUNTIME, DEBUG, "Cached column '%s' at position %d", col_spec.name.c_str(), PG_IDX);
+    iter->column_positions.reserve(iter->columns.size());
+    for (const auto& col_spec : iter->columns) {
+        const int32_t pg_idx = get_column_position(iter->table_name, col_spec.name);
+        iter->column_positions.push_back(pg_idx);
+        PGX_LOG(RUNTIME, DEBUG, "Cached column '%s' at position %d", col_spec.name.c_str(), pg_idx);
     }
 
     // Pre-resolve per-column decode metadata once. The per-row hot loop in
@@ -636,39 +636,39 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* execution_cont
     // TupleDescAttr lookup + type-OID re-dispatch + atttypmod→scale on every
     // tuple.
     {
-        const TupleDesc TUPLE_DESC = get_table_handle_tupledesc(ITER->table_handle);
-        ITER->column_decode_meta.reserve(ITER->columns.size());
-        for (size_t i = 0; i < ITER->columns.size(); i++) {
+        const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
+        iter->column_decode_meta.reserve(iter->columns.size());
+        for (size_t i = 0; i < iter->columns.size(); i++) {
             ColumnDecodeMeta meta{};
-            const int32_t PG_IDX = ITER->column_positions[i];
-            if (PG_IDX < 0 || !TUPLE_DESC || PG_IDX >= TUPLE_DESC->natts) {
+            const int32_t pg_idx = iter->column_positions[i];
+            if (pg_idx < 0 || !tupleDesc || pg_idx >= tupleDesc->natts) {
                 meta.kind = DecodeKind::DATUM_BYVAL;
-                ITER->column_decode_meta.push_back(meta);
+                iter->column_decode_meta.push_back(meta);
                 continue;
             }
-            const Form_pg_attribute ATTR = TupleDescAttr(TUPLE_DESC, PG_IDX);
-            meta.attbyval = ATTR->attbyval;
-            meta.attlen = ATTR->attlen;
-            if (ITER->columns[i].type == ::ColumnType::STRING) {
+            const Form_pg_attribute attr = TupleDescAttr(tupleDesc, pg_idx);
+            meta.attbyval = attr->attbyval;
+            meta.attlen = attr->attlen;
+            if (iter->columns[i].type == ::ColumnType::STRING) {
                 meta.kind = DecodeKind::STRING;
-            } else if (ATTR->atttypid == NUMERICOID) {
+            } else if (attr->atttypid == NUMERICOID) {
                 meta.kind = DecodeKind::NUMERIC;
-                if (ATTR->atttypmod >= 0) {
-                    meta.numeric_scale = (ATTR->atttypmod - 4) & 0xFFFF;
+                if (attr->atttypmod >= 0) {
+                    meta.numeric_scale = (attr->atttypmod - 4) & 0xFFFF;
                 } else {
                     meta.numeric_scale = 6;
                 }
-            } else if (ATTR->atttypid == INTERVALOID) {
+            } else if (attr->atttypid == INTERVALOID) {
                 meta.kind = DecodeKind::INTERVAL;
             } else {
-                meta.kind = ATTR->attbyval ? DecodeKind::DATUM_BYVAL : DecodeKind::DATUM_BYREF;
+                meta.kind = attr->attbyval ? DecodeKind::DATUM_BYVAL : DecodeKind::DATUM_BYREF;
             }
-            ITER->column_decode_meta.push_back(meta);
+            iter->column_decode_meta.push_back(meta);
         }
     }
 
-    g_current_iterator = ITER;
-    return reinterpret_cast<DataSourceIteration*>(ITER);
+    g_current_iterator = iter;
+    return reinterpret_cast<DataSourceIteration*>(iter);
 }
 
 namespace {
@@ -687,7 +687,7 @@ namespace {
         return false;
     }
 
-    void prepare_new_batch(DataSourceIterator* iter, TupleDesc tuple_desc) {
+    void prepare_new_batch(DataSourceIterator* iter, TupleDesc tupleDesc) {
         if (iter->batch) {
             PGX_LOG(RUNTIME, DEBUG, "Destroying exhausted batch (had %zu rows)", iter->batch->num_rows);
             destroy_batch_storage(iter->batch);
@@ -695,103 +695,103 @@ namespace {
             iter->current_row_in_batch = 0;
         }
 
-        const size_t CAPACITY = calculate_batch_capacity(tuple_desc);
-        const size_t NUM_COLS = iter->columns.size();
-        iter->batch = create_batch_storage(tuple_desc, NUM_COLS, CAPACITY);
-        PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu", CAPACITY, NUM_COLS);
+        const size_t capacity = calculate_batch_capacity(tupleDesc);
+        const size_t num_cols = iter->columns.size();
+        iter->batch = create_batch_storage(tupleDesc, num_cols, capacity);
+        PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu", capacity, num_cols);
     }
 
-    void process_tuple_into_batch(DataSourceIterator* iter, TupleDesc tuple_desc,
+    void process_tuple_into_batch(DataSourceIterator* iter, TupleDesc tupleDesc,
                                    Datum* temp_values, bool* temp_nulls) {
-        auto *const TUPLE = g_current_tuple_passthrough.originalTuple;
-        if (!TUPLE) {
+        const auto tuple = g_current_tuple_passthrough.originalTuple;
+        if (!tuple) {
             PGX_ERROR("g_current_tuple_passthrough.originalTuple is NULL");
             return;
         }
 
-        heap_deform_tuple(TUPLE, tuple_desc, temp_values, temp_nulls);
-        const size_t ROW_IDX = iter->batch->num_rows;
-        const size_t NUM_COLS = iter->columns.size();
-        const ColumnDecodeMeta* const metas = iter->column_decode_meta.data();
-        const int32_t* const positions = iter->column_positions.data();
+        heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
+        const size_t row_idx = iter->batch->num_rows;
+        const size_t num_cols = iter->columns.size();
+        const ColumnDecodeMeta* metas = iter->column_decode_meta.data();
+        const int32_t* positions = iter->column_positions.data();
 
-        for (size_t json_col_idx = 0; json_col_idx < NUM_COLS; json_col_idx++) {
+        for (size_t json_col_idx = 0; json_col_idx < num_cols; json_col_idx++) {
             const ColumnDecodeMeta& meta = metas[json_col_idx];
-            const int PG_COL_IDX = positions[json_col_idx];
-            const bool IS_NULL = temp_nulls[PG_COL_IDX];
-            const Datum VALUE = temp_values[PG_COL_IDX];
+            const int pg_col_idx = positions[json_col_idx];
+            const bool is_null = temp_nulls[pg_col_idx];
+            const Datum value = temp_values[pg_col_idx];
 
             switch (meta.kind) {
             case DecodeKind::STRING: {
-                if (IS_NULL) {
-                    iter->batch->string_lengths[json_col_idx][ROW_IDX] = 0;
-                    iter->batch->string_data_ptrs[json_col_idx][ROW_IDX] = nullptr;
+                if (is_null) {
+                    iter->batch->string_lengths[json_col_idx][row_idx] = 0;
+                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
                 } else {
-                    const Datum TRANSFERRED_DATUM = datumTransfer(VALUE, meta.attbyval, meta.attlen);
-                    auto *const PG_TEXT = DatumGetTextPP(TRANSFERRED_DATUM);
-                    iter->batch->string_lengths[json_col_idx][ROW_IDX] = VARSIZE_ANY_EXHDR(PG_TEXT);
-                    iter->batch->string_data_ptrs[json_col_idx][ROW_IDX] = reinterpret_cast<uint8_t*>(
-                        const_cast<char*>(VARDATA_ANY(PG_TEXT)));
-                    iter->batch->column_values[json_col_idx][ROW_IDX] = TRANSFERRED_DATUM;
+                    const Datum transferred_datum = datumTransfer(value, meta.attbyval, meta.attlen);
+                    const auto pg_text = DatumGetTextPP(transferred_datum);
+                    iter->batch->string_lengths[json_col_idx][row_idx] = VARSIZE_ANY_EXHDR(pg_text);
+                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(
+                        const_cast<char*>(VARDATA_ANY(pg_text)));
+                    iter->batch->column_values[json_col_idx][row_idx] = transferred_datum;
                 }
                 break;
             }
             case DecodeKind::NUMERIC: {
-                iter->batch->decimal_values[json_col_idx][ROW_IDX] = IS_NULL
+                iter->batch->decimal_values[json_col_idx][row_idx] = is_null
                                                                          ? __int128{0}
-                                                                         : numeric_to_i128(VALUE, meta.numeric_scale);
+                                                                         : numeric_to_i128(value, meta.numeric_scale);
                 break;
             }
             case DecodeKind::INTERVAL: {
-                if (IS_NULL) {
-                    iter->batch->column_values[json_col_idx][ROW_IDX] = 0;
-                    iter->batch->column_nulls[json_col_idx][ROW_IDX] = false;
+                if (is_null) {
+                    iter->batch->column_values[json_col_idx][row_idx] = 0;
+                    iter->batch->column_nulls[json_col_idx][row_idx] = false;
                 } else {
-                    Interval* const interval = DatumGetIntervalP(VALUE);
-                    int64_t total_microseconds = interval->time +
+                    Interval* interval = DatumGetIntervalP(value);
+                    int64_t totalMicroseconds = interval->time +
                         (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
                     if (interval->month != 0) {
                         constexpr int64_t AVERAGE_DAYS_PER_MONTH = 30;
-                        total_microseconds += static_cast<int64_t>(interval->month) * AVERAGE_DAYS_PER_MONTH
+                        totalMicroseconds += static_cast<int64_t>(interval->month) * AVERAGE_DAYS_PER_MONTH
                                              * USECS_PER_DAY;
                     }
-                    iter->batch->column_values[json_col_idx][ROW_IDX] = Int64GetDatum(total_microseconds);
+                    iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
                 }
                 break;
             }
             case DecodeKind::DATUM_BYVAL: {
-                iter->batch->column_values[json_col_idx][ROW_IDX] = IS_NULL ? Datum{0} : VALUE;
+                iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0} : value;
                 break;
             }
             case DecodeKind::DATUM_BYREF: {
-                iter->batch->column_values[json_col_idx][ROW_IDX] = IS_NULL ? Datum{0}
-                                                                            : datumTransfer(VALUE, meta.attbyval,
+                iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0}
+                                                                            : datumTransfer(value, meta.attbyval,
                                                                                             meta.attlen);
                 break;
             }
             }
 
-            iter->batch->column_nulls[json_col_idx][ROW_IDX] = !IS_NULL;
+            iter->batch->column_nulls[json_col_idx][row_idx] = !is_null;
         }
 
         iter->batch->num_rows++;
     }
 
-    [[nodiscard]] bool read_and_fill_batch(DataSourceIterator* iter, TupleDesc tuple_desc) {
+    [[nodiscard]] bool read_and_fill_batch(DataSourceIterator* iter, TupleDesc tupleDesc) {
         Datum temp_values[MaxTupleAttributeNumber];
         bool temp_nulls[MaxTupleAttributeNumber];
-        const size_t CAPACITY = iter->batch->capacity;
+        const size_t capacity = iter->batch->capacity;
 
-        while (iter->batch->num_rows < CAPACITY) {
+        while (iter->batch->num_rows < capacity) {
             PGX_HOT_LOG(RUNTIME, TRACE, "Reading tuple %zu", iter->batch->num_rows);
-            const int64_t READ_RESULT = read_next_tuple_from_table(iter->table_handle);
+            const int64_t read_result = read_next_tuple_from_table(iter->table_handle);
 
-            if (READ_RESULT != 1) {
+            if (read_result != 1) {
                 PGX_LOG(RUNTIME, DEBUG, "End of table after %zu rows", iter->batch->num_rows);
                 break;
             }
 
-            process_tuple_into_batch(iter, tuple_desc, temp_values, temp_nulls);
+            process_tuple_into_batch(iter, tupleDesc, temp_values, temp_nulls);
         }
 
         return iter->batch->num_rows > 0;
@@ -814,16 +814,16 @@ bool DataSourceIteration::isValid() {
     auto* iter = reinterpret_cast<DataSourceIterator*>(this);
 
     // Fast path: Check if we have valid batch data
-    const bool HAS_VALID_BATCH = check_batch_validity(iter);
-    if (HAS_VALID_BATCH || !iter->table_handle) {
-        return HAS_VALID_BATCH;
+    const bool has_valid_batch = check_batch_validity(iter);
+    if (has_valid_batch || !iter->table_handle) {
+        return has_valid_batch;
     }
 
     // Need to fetch new batch
-    const TupleDesc TUPLE_DESC = get_table_handle_tupledesc(iter->table_handle);
+    const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
 
-    prepare_new_batch(iter, TUPLE_DESC);
-    read_and_fill_batch(iter, TUPLE_DESC);
+    prepare_new_batch(iter, tupleDesc);
+    read_and_fill_batch(iter, tupleDesc);
     return finalize_batch(iter);
 }
 
@@ -841,19 +841,19 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
         return;
     }
 
-    const size_t ROW_IDX = iter->current_row_in_batch;
-    const size_t NUM_COLUMNS = iter->columns.size();
+    const size_t row_idx = iter->current_row_in_batch;
+    const size_t num_columns = iter->columns.size();
 
-    PGX_LOG(RUNTIME, DEBUG, "Accessing row %zu/%zu from batch (batch has %zu JSON columns)", ROW_IDX,
-            iter->batch->num_rows, NUM_COLUMNS);
+    PGX_LOG(RUNTIME, DEBUG, "Accessing row %zu/%zu from batch (batch has %zu JSON columns)", row_idx,
+            iter->batch->num_rows, num_columns);
 
     // RecordBatchInfo structure (from lingodb):
     // [numRows: size_t][columnInfo[0]...][columnInfo[1]...]...
     // Each columnInfo has 5 fields: offset, validMultiplier, validBuffer, dataBuffer, varLenBuffer
-    auto *const ROW_DATA_PTR = reinterpret_cast<size_t*>(row_data);
-    ROW_DATA_PTR[0] = 1;
+    const auto row_data_ptr = reinterpret_cast<size_t*>(row_data);
+    row_data_ptr[0] = 1;
 
-    for (size_t col = 0; col < NUM_COLUMNS; ++col) {
+    for (size_t col = 0; col < num_columns; ++col) {
         constexpr size_t COLUMN_OFFSET_IDX = 0;
         constexpr size_t VALID_MULTIPLIER_IDX = 1;
         constexpr size_t VALID_BUFFER_IDX = 2;
@@ -861,38 +861,38 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
         constexpr size_t VARLEN_BUFFER_IDX = 4;
         constexpr size_t COLUMN_INFO_SIZE = 5;
 
-        size_t* const column_info_ptr = &ROW_DATA_PTR[1 + col * COLUMN_INFO_SIZE];
+        size_t* column_info_ptr = &row_data_ptr[1 + col * COLUMN_INFO_SIZE];
 
         column_info_ptr[COLUMN_OFFSET_IDX] = 0;
         column_info_ptr[VALID_MULTIPLIER_IDX] = 0; // validMultiplier (unused)
 
-        column_info_ptr[VALID_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_nulls[col][ROW_IDX]);
+        column_info_ptr[VALID_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_nulls[col][row_idx]);
 
         // For string columns, pass Arrow format pointers (length and data pointer)
         // For simple types, Datum contains the value directly
         if (iter->columns[col].type == ::ColumnType::STRING) {
             // Arrow format: DATA_BUFFER points to int32_t length, VARLEN_BUFFER points to uint8_t* data pointer
-            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->string_lengths[col][ROW_IDX]);
-            column_info_ptr[VARLEN_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->string_data_ptrs[col][ROW_IDX]);
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->string_lengths[col][row_idx]);
+            column_info_ptr[VARLEN_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->string_data_ptrs[col][row_idx]);
 
             PGX_LOG(RUNTIME, TRACE, "access() col=%zu STRING (Arrow format):", col);
-            PGX_LOG(RUNTIME, TRACE, "  Length: %d (at %p)", iter->batch->string_lengths[col][ROW_IDX],
-                    &iter->batch->string_lengths[col][ROW_IDX]);
-            PGX_LOG(RUNTIME, TRACE, "  Data pointer: %p (at %p)", iter->batch->string_data_ptrs[col][ROW_IDX],
-                    &iter->batch->string_data_ptrs[col][ROW_IDX]);
+            PGX_LOG(RUNTIME, TRACE, "  Length: %d (at %p)", iter->batch->string_lengths[col][row_idx],
+                    &iter->batch->string_lengths[col][row_idx]);
+            PGX_LOG(RUNTIME, TRACE, "  Data pointer: %p (at %p)", iter->batch->string_data_ptrs[col][row_idx],
+                    &iter->batch->string_data_ptrs[col][row_idx]);
             PGX_LOG(RUNTIME, TRACE, "  DATA_BUFFER_IDX → %p", reinterpret_cast<void*>(column_info_ptr[DATA_BUFFER_IDX]));
             PGX_LOG(RUNTIME, TRACE, "  VARLEN_BUFFER_IDX → %p",
                     reinterpret_cast<void*>(column_info_ptr[VARLEN_BUFFER_IDX]));
         } else if (iter->columns[col].type == ::ColumnType::DECIMAL) {
-            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->decimal_values[col][ROW_IDX]);
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->decimal_values[col][row_idx]);
             column_info_ptr[VARLEN_BUFFER_IDX] = 0;
 
             PGX_LOG(RUNTIME, DEBUG, "access() col=%zu DECIMAL i128 at %p, value=%lld", col,
-                    &iter->batch->decimal_values[col][ROW_IDX],
-                    static_cast<long long>(iter->batch->decimal_values[col][ROW_IDX]));
+                    &iter->batch->decimal_values[col][row_idx],
+                    static_cast<long long>(iter->batch->decimal_values[col][row_idx]));
         } else {
             // Pass address of Datum itself (contains value)
-            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][ROW_IDX]);
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);
             column_info_ptr[VARLEN_BUFFER_IDX] = 0;
         }
     }
@@ -920,7 +920,7 @@ void DataSourceIteration::end(DataSourceIteration* iterator) {
         auto* iter = reinterpret_cast<DataSourceIterator*>(iterator);
 
         if (iter->table_handle) {
-            
+            extern void close_postgres_table(void* tableHandle);
             close_postgres_table(iter->table_handle);
             iter->table_handle = nullptr;
         }
@@ -935,12 +935,12 @@ void DataSourceIteration::end(DataSourceIteration* iterator) {
 } // namespace runtime
 
 // Global context functions
-void* get_execution_context() {
+void* getExecutionContext() {
     PGX_IO(RUNTIME);
     return rt_get_execution_context();
 }
 
-void set_execution_context(void* context) {
+void setExecutionContext(void* context) {
     PGX_IO(RUNTIME);
     rt_set_execution_context(context);
 }
