@@ -199,6 +199,7 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    auto builtinRegistry = std::make_shared<RuntimeFunctionRegistry>(context);
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(64); };
+   auto resTypeIsI32 = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(32); };
    auto resTypeIsBool = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(1); };
    auto resTypeIsString = [](::mlir::Type t, ::mlir::TypeRange) { return t.isa<mlir::db::StringType>(); };
    builtinRegistry->add("Substring").implementedAs(rt::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
@@ -218,6 +219,13 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument()).implementedAs(absIntImpl);
    builtinRegistry->add("AbsDecimal").handlesInvalid().matchesTypes({RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(absDecimalImpl);
    builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateSubImpl);
+
+   // PG-native NUMERIC: decimal arithmetic/compare go through PostgreSQL's own
+   // numeric_* functions (full precision, NaN/Inf, any scale) instead of i128.
+   builtinRegistry->add("NumericAdd").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(rt::NumericRuntime::pgx_numeric_add);
+   builtinRegistry->add("NumericSub").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(rt::NumericRuntime::pgx_numeric_sub);
+   builtinRegistry->add("NumericMul").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(rt::NumericRuntime::pgx_numeric_mul);
+   builtinRegistry->add("NumericCmp").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, resTypeIsI32).implementedAs(rt::NumericRuntime::pgx_numeric_cmp);
 
    // Print functions for runtime debugging
    builtinRegistry->add("Print").implementedAs(rt::PrintRuntime::print).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::noReturnType);
