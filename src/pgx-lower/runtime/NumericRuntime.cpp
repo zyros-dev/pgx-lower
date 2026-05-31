@@ -1,4 +1,5 @@
 #include "pgx-lower/runtime/NumericRuntime.h"
+#include "pgx-lower/runtime/NumericConversion.h"
 
 extern "C" {
 #include "postgres.h"
@@ -25,6 +26,13 @@ Datum NumericRuntime::pgx_numeric_mul(Datum left, Datum right) {
 
 int32_t NumericRuntime::pgx_numeric_cmp(Datum left, Datum right) {
     return DatumGetInt32(DirectFunctionCall2(numeric_cmp, left, right));
+}
+
+Datum NumericRuntime::pgx_i128_to_numeric(__int128 value, int32_t scale) {
+    // Delegates to the existing scaled-i128 → Numeric builder. (That helper is
+    // removed in PR3 once nothing else depends on the i128 path; this stub
+    // remains as the scan-decode / constant materialization entry point.)
+    return i128_to_numeric(value, scale);
 }
 
 } // namespace runtime
