@@ -24,6 +24,14 @@ Datum NumericRuntime::pgx_numeric_mul(Datum left, Datum right) {
     return DirectFunctionCall2(numeric_mul, left, right);
 }
 
+Datum NumericRuntime::pgx_numeric_div(Datum left, Datum right) {
+    return DirectFunctionCall2(numeric_div, left, right);
+}
+
+Datum NumericRuntime::pgx_numeric_mod(Datum left, Datum right) {
+    return DirectFunctionCall2(numeric_mod, left, right);
+}
+
 int32_t NumericRuntime::pgx_numeric_cmp(Datum left, Datum right) {
     return DatumGetInt32(DirectFunctionCall2(numeric_cmp, left, right));
 }

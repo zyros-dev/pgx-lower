@@ -21,6 +21,8 @@ struct NumericRuntime {
     static Datum pgx_numeric_add(Datum left, Datum right);
     static Datum pgx_numeric_sub(Datum left, Datum right);
     static Datum pgx_numeric_mul(Datum left, Datum right);
+    static Datum pgx_numeric_div(Datum left, Datum right);
+    static Datum pgx_numeric_mod(Datum left, Datum right);
     // PG numeric_cmp semantics: <0, 0, >0. NaN sorts equal to NaN and greater
     // than all non-NaN; Inf/-Inf ordered as PG defines. Returned verbatim.
     static int32_t pgx_numeric_cmp(Datum left, Datum right);
