@@ -151,6 +151,22 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "Key string[%d] (inlined): len=%u, no deep copy needed", i, len);
                 }
+            } else if (type_oid == NUMERICOID) {
+                // PGX-LOWER: the i128 slot carries a PG Numeric datum (pointer in
+                // low 64 bits) that lives in the scan batch context — it would
+                // dangle once the batch is reused. Deep-copy the varlena into the
+                // hashtable context and rewrite the pointer.
+                uint8_t* col_data = kv_region + offset;
+                uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
+                const uint64_t datum = *reinterpret_cast<uint64_t*>(i128_data);
+                if (datum != 0) {
+                    const auto* src = reinterpret_cast<const struct varlena*>(datum);
+                    const Size sz = VARSIZE_ANY(src);
+                    void* copy = palloc(sz);
+                    memcpy(copy, src, sz);
+                    *reinterpret_cast<uint64_t*>(i128_data) = reinterpret_cast<uint64_t>(copy);
+                    *reinterpret_cast<uint64_t*>(i128_data + 8) = 0;
+                }
             }
 
             offset += col.is_nullable ? (1 + col_size) : col_size;
@@ -181,6 +197,19 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                     PGX_LOG(RUNTIME, DEBUG, "  Copied to %p: '%s'", static_cast<void*>(new_str), new_str);
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "Value string[%d] (inlined): len=%u, no deep copy needed", i, len);
+                }
+            } else if (type_oid == NUMERICOID) {
+                // PGX-LOWER: deep-copy the Numeric datum (see key path above).
+                uint8_t* col_data = kv_region + offset;
+                uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
+                const uint64_t datum = *reinterpret_cast<uint64_t*>(i128_data);
+                if (datum != 0) {
+                    const auto* src = reinterpret_cast<const struct varlena*>(datum);
+                    const Size sz = VARSIZE_ANY(src);
+                    void* copy = palloc(sz);
+                    memcpy(copy, src, sz);
+                    *reinterpret_cast<uint64_t*>(i128_data) = reinterpret_cast<uint64_t>(copy);
+                    *reinterpret_cast<uint64_t*>(i128_data + 8) = 0;
                 }
             }
 
