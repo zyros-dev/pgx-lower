@@ -65,7 +65,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
         throw std::runtime_error("Invalid parameters for translate_expression_for_stream");
     }
 
-    mlir::Value const input_stream = child_result.op->getResult(0);
+    mlir::Value input_stream = child_result.op->getResult(0);
     const auto& child_columns = child_result.columns;
 
     auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -73,98 +73,98 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
         PGX_ERROR("RelAlg dialect not registered");
         throw std::runtime_error("RelAlg dialect not registered");
     }
-    auto& column_manager = dialect->getColumnManager();
+    auto& columnManager = dialect->getColumnManager();
 
     if (nodeTag(expr) == T_Var) {
-        auto *const VAR = reinterpret_cast<Var*>(expr);
+        const auto var = reinterpret_cast<Var*>(expr);
 
-        std::string table_name;
-        std::string column_name;
+        std::string tableName;
+        std::string columnName;
 
         // Both OUTER_VAR (-2) and regular vars should use child output positions
-        if (VAR->varattno > 0 && VAR->varattno <= static_cast<int>(child_columns.size())) {
-            const auto& child_col = child_columns[VAR->varattno - 1];
-            table_name = child_col.table_name;
-            column_name = child_col.column_name;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Var (varno=%d) resolved to child output column %d: %s.%s", VAR->varno,
-                    VAR->varattno, table_name.c_str(), column_name.c_str());
+        if (var->varattno > 0 && var->varattno <= static_cast<int>(child_columns.size())) {
+            const auto& childCol = child_columns[var->varattno - 1];
+            tableName = childCol.table_name;
+            columnName = childCol.column_name;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Var (varno=%d) resolved to child output column %d: %s.%s", var->varno,
+                    var->varattno, tableName.c_str(), columnName.c_str());
         } else {
             throw std::runtime_error("bad situation");
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Expression is already a column reference: %s.%s", table_name.c_str(),
-                column_name.c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Expression is already a column reference: %s.%s", tableName.c_str(),
+                columnName.c_str());
 
-        auto col_ref = column_manager.createRef(table_name, column_name);
+        auto colRef = columnManager.createRef(tableName, columnName);
 
-        auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), column_name)};
-        auto symbol_ref = mlir::SymbolRefAttr::get(ctx.builder.getContext(), table_name, nested);
-        auto column_ref_attr = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbol_ref, col_ref.getColumnPtr());
+        auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
+        auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), tableName, nested);
+        auto columnRefAttr = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colRef.getColumnPtr());
 
-        return {.stream = input_stream, .column_ref = column_ref_attr, .column_name = column_name, .table_name = table_name};
+        return {.stream = input_stream, .column_ref = columnRefAttr, .column_name = columnName, .table_name = tableName};
     }
 
     // Temp map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     PGX_LOG(AST_TRANSLATE, DEBUG, "Creating MapOp for complex expression (type=%d)", expr->type);
-    static size_t expr_id = 0;
-    const std::string SCOPE_NAME = "map_expr";
-    const std::string COLUMN_NAME = suggested_name.empty() ? "expr_" + std::to_string(expr_id++) : suggested_name;
+    static size_t exprId = 0;
+    const std::string scopeName = "map_expr";
+    const std::string columnName = suggested_name.empty() ? "expr_" + std::to_string(exprId++) : suggested_name;
 
-    auto col_def = column_manager.createDef(SCOPE_NAME, COLUMN_NAME);
+    auto colDef = columnManager.createDef(scopeName, columnName);
 
-    auto temp_map_op = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
-                                                             ctx.builder.getArrayAttr({col_def}));
+    auto tempMapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
+                                                             ctx.builder.getArrayAttr({colDef}));
 
-    auto& predicate_region = temp_map_op.getPredicate();
+    auto& predicateRegion = tempMapOp.getPredicate();
     auto* block = new mlir::Block;
-    predicate_region.push_back(block);
+    predicateRegion.push_back(block);
 
-    auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
-    auto tuple_arg = block->addArgument(tuple_type, ctx.builder.getUnknownLoc());
+    auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+    auto tupleArg = block->addArgument(tupleType, ctx.builder.getUnknownLoc());
 
-    auto block_builder = mlir::OpBuilder(ctx.builder.getContext());
-    block_builder.setInsertionPointToStart(block);
+    auto blockBuilder = mlir::OpBuilder(ctx.builder.getContext());
+    blockBuilder.setInsertionPointToStart(block);
 
-    auto block_ctx = QueryCtxT::createChildContext(ctx, block_builder, tuple_arg);
+    auto blockCtx = QueryCtxT::createChildContext(ctx, blockBuilder, tupleArg);
 
     // Pass through the child_result so varno_resolution is available
-    auto expr_value = translate_expression(block_ctx, expr);
-    verify_and_print(expr_value);
+    auto exprValue = translate_expression(blockCtx, expr);
+    verify_and_print(exprValue);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
-    if (!expr_value) {
+    if (!exprValue) {
         PGX_ERROR("Failed to translate expression in MapOp");
         throw std::runtime_error("Failed to translate expression in MapOp");
     }
 
-    mlir::Type const expr_type = expr_value.getType();
-    block_builder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{expr_value});
-    temp_map_op.erase();
+    mlir::Type exprType = exprValue.getType();
+    blockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{exprValue});
+    tempMapOp.erase();
 
     // map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    col_def.getColumn().type = expr_type;
-    auto map_op = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
-                                                         ctx.builder.getArrayAttr({col_def}));
-    auto& real_region = map_op.getPredicate();
-    auto* real_block = new mlir::Block;
-    real_region.push_back(real_block);
+    colDef.getColumn().type = exprType;
+    auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
+                                                         ctx.builder.getArrayAttr({colDef}));
+    auto& realRegion = mapOp.getPredicate();
+    auto* realBlock = new mlir::Block;
+    realRegion.push_back(realBlock);
 
-    auto real_tuple_arg = real_block->addArgument(tuple_type, ctx.builder.getUnknownLoc());
+    auto realTupleArg = realBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
 
-    mlir::OpBuilder real_block_builder(ctx.builder.getContext());
-    real_block_builder.setInsertionPointToStart(real_block);
+    mlir::OpBuilder realBlockBuilder(ctx.builder.getContext());
+    realBlockBuilder.setInsertionPointToStart(realBlock);
 
-    auto real_block_ctx = QueryCtxT::createChildContext(ctx, real_block_builder, real_tuple_arg);
-    auto real_expr_value = translate_expression(real_block_ctx, expr);
-    verify_and_print(real_expr_value);
-    real_block_builder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{real_expr_value});
+    auto realBlockCtx = QueryCtxT::createChildContext(ctx, realBlockBuilder, realTupleArg);
+    auto realExprValue = translate_expression(realBlockCtx, expr);
+    verify_and_print(realExprValue);
+    realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
 
-    auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), COLUMN_NAME)};
-    auto symbol_ref = mlir::SymbolRefAttr::get(ctx.builder.getContext(), SCOPE_NAME, nested);
-    auto column_ref = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbol_ref, col_def.getColumnPtr());
+    auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
+    auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), scopeName, nested);
+    auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colDef.getColumnPtr());
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Created MapOp with computed column: %s.%s", SCOPE_NAME.c_str(), COLUMN_NAME.c_str());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Created MapOp with computed column: %s.%s", scopeName.c_str(), columnName.c_str());
 
-    return {.stream = map_op.getResult(), .column_ref = column_ref, .column_name = COLUMN_NAME, .table_name = SCOPE_NAME};
+    return {.stream = mapOp.getResult(), .column_ref = columnRef, .column_name = columnName, .table_name = scopeName};
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
@@ -187,11 +187,11 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             throw std::runtime_error("FuncExpr args list has length but no elements array");
         }
 
-        ListCell* lc = nullptr;
+        ListCell* lc;
         foreach (lc, func_expr->args) {
-            if (auto *const ARG_NODE = static_cast<Node*>(lfirst(lc))) {
-                if (mlir::Value const arg_value = translate_expression(ctx, reinterpret_cast<Expr*>(ARG_NODE))) {
-                    args.push_back(arg_value);
+            if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+                if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
+                    args.push_back(argValue);
                 }
             }
         }
@@ -199,13 +199,13 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
     const auto loc = ctx.builder.getUnknownLoc();
 
-    char* const funcname = get_func_name(func_expr->funcid);
+    char* funcname = get_func_name(func_expr->funcid);
     if (!funcname) {
         PGX_ERROR("Unknown function OID %d", func_expr->funcid);
         throw std::runtime_error("Unknown function OID " + std::to_string(func_expr->funcid));
     }
 
-    std::string const func(funcname);
+    std::string func(funcname);
     pfree(funcname);
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating function %s", func.c_str());
@@ -218,16 +218,16 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         verify_and_print(args[0]);
         print_type(args[0].getType());
 
-        auto base_type = getBaseType(args[0].getType());
-        const auto *abs_function_name = "AbsInt";
-        if (mlir::isa<mlir::db::DecimalType>(base_type)) {
-            abs_function_name = "AbsDecimal";
+        auto baseType = getBaseType(args[0].getType());
+        auto absFunctionName = "AbsInt";
+        if (mlir::isa<mlir::db::DecimalType>(baseType)) {
+            absFunctionName = "AbsDecimal";
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using AbsDecimal for decimal type");
         }
 
-        auto runtime_call = ctx.builder.create<mlir::db::RuntimeCall>(loc, args[0].getType(), abs_function_name, args[0]);
-        return runtime_call.getRes();
-    } if (func == "upper") {
+        auto runtimeCall = ctx.builder.create<mlir::db::RuntimeCall>(loc, args[0].getType(), absFunctionName, args[0]);
+        return runtimeCall.getRes();
+    } else if (func == "upper") {
         if (args.size() != 1) {
             PGX_ERROR("UPPER requires exactly 1 argument");
             throw std::runtime_error("Check logs");
@@ -433,7 +433,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             throw std::runtime_error("Invalid SubPlan plan_id");
         }
 
-        auto *subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
+        auto subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
 
         struct CorrelationInfo {
             std::string table_scope;
@@ -444,16 +444,16 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         };
         std::unordered_map<int, CorrelationInfo> correlation_mapping;
         if (subplan->parParam && subplan->args) {
-            int const num_params = list_length(subplan->parParam);
+            int num_params = list_length(subplan->parParam);
             for (int i = 0; i < num_params; i++) {
-                int const param_id = lfirst_int(list_nth_cell(subplan->parParam, i));
-                auto *arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
+                int param_id = lfirst_int(list_nth_cell(subplan->parParam, i));
+                auto arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
 
                 if (arg_expr && nodeTag(arg_expr) == T_Var) {
-                    auto *var = reinterpret_cast<Var*>(arg_expr);
+                    auto var = reinterpret_cast<Var*>(arg_expr);
                     std::string table_scope;
                     std::string column_name;
-                    bool nullable = false;
+                    bool nullable;
                     Oid type_oid = var->vartype;
                     int32 typmod = var->vartypmod;
 
@@ -470,7 +470,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                     "Resolved synthetic varno=%d via varno_resolution -> %s.%s (nullable=%d)",
                                     var->varno, table_scope.c_str(), column_name.c_str(), nullable);
                         } else if (var->varno == OUTER_VAR) {
-                            const auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+                            auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
                                                                    : throw std::runtime_error("OUTER_VAR without outer_result");
 
                             if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
@@ -501,11 +501,11 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s (nullable=%d)", param_id,
                             table_scope.c_str(), column_name.c_str(), nullable);
                 } else if (arg_expr && nodeTag(arg_expr) == T_Param) {
-                    auto *param = reinterpret_cast<Param*>(arg_expr);
-                    const auto PARAM_IT = ctx.params.find(param->paramid);
+                    auto param = reinterpret_cast<Param*>(arg_expr);
+                    const auto param_it = ctx.params.find(param->paramid);
 
-                    if (PARAM_IT != ctx.params.end()) {
-                        const auto& resolved = PARAM_IT->second;
+                    if (param_it != ctx.params.end()) {
+                        const auto& resolved = param_it->second;
                         correlation_mapping[param_id] = {resolved.table_name, resolved.column_name, resolved.nullable,
                                                          resolved.type_oid, resolved.typmod};
                         PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -525,16 +525,16 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         }
 
         auto subquery_ctx = QueryCtxT::createChildContext(ctx);
-        auto& column_manager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         for (const auto& [param_id, info] : correlation_mapping) {
-            auto col_ref = column_manager.createRef(info.table_scope, info.column_name);
-            PostgreSQLTypeMapper const mapper(*ctx.builder.getContext());
+            auto colRef = columnManager.createRef(info.table_scope, info.column_name);
+            PostgreSQLTypeMapper mapper(*ctx.builder.getContext());
             auto mlir_type = mapper.map_postgre_sqltype(info.type_oid, info.typmod, info.nullable);
 
             mlir::Value correlation_value = ctx.builder.create<mlir::relalg::GetColumnOp>(
                 ctx.builder.getUnknownLoc(),
                 mlir_type,
-                col_ref,
+                colRef,
                 ctx.current_tuple
             );
 
@@ -556,7 +556,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         }
 
         const auto& result_column = subquery_result.columns[0];
-        auto column_ref = column_manager.createRef(result_column.table_name, result_column.column_name);
+        auto column_ref = columnManager.createRef(result_column.table_name, result_column.column_name);
 
         mlir::Type result_type = result_column.mlir_type;
         if (!isa<mlir::db::NullableType>(result_type)) {
@@ -578,9 +578,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 
     case ANY_SUBLINK:
     case ALL_SUBLINK: {
-        const bool IS_ALL = (subplan->subLinkType == ALL_SUBLINK);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "%s: Translating %s pattern", IS_ALL ? "ALL_SUBLINK" : "ANY_SUBLINK",
-                IS_ALL ? "x > ALL (subquery)" : "x IN (subquery)");
+        const bool is_all = (subplan->subLinkType == ALL_SUBLINK);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "%s: Translating %s pattern", is_all ? "ALL_SUBLINK" : "ANY_SUBLINK",
+                is_all ? "x > ALL (subquery)" : "x IN (subquery)");
 
         auto translate_quantified = [&](bool negate_predicate) -> mlir::Value {
             if (subplan->plan_id < 1 || subplan->plan_id > list_length(ctx.current_stmt.subplans)) {
@@ -601,13 +601,13 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                 throw std::runtime_error("Quantified subquery requires testexpr");
             }
 
-            const auto TUPLE_TYPE = mlir::relalg::TupleType::get(ctx.builder.getContext());
+            const auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
             auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(),
                                                                               subquery_stream);
 
             auto& pred_region = selection_op.getPredicate();
             auto& pred_block = pred_region.emplaceBlock();
-            auto inner_tuple = pred_block.addArgument(TUPLE_TYPE, ctx.builder.getUnknownLoc());
+            auto inner_tuple = pred_block.addArgument(tuple_type, ctx.builder.getUnknownLoc());
 
             mlir::OpBuilder pred_builder(&pred_block, pred_block.begin());
 
@@ -616,16 +616,16 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             inner_ctx.varno_resolution = ctx.varno_resolution;
 
             if (subplan->paramIds) {
-                const int NUM_PARAMS = list_length(subplan->paramIds);
+                const int num_params = list_length(subplan->paramIds);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "%s: Mapping %d paramIds to subquery columns",
-                        negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK", NUM_PARAMS);
+                        negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK", num_params);
 
-                for (int i = 0; i < NUM_PARAMS; ++i) {
-                    const int PARAM_ID = lfirst_int(list_nth_cell(subplan->paramIds, i));
+                for (int i = 0; i < num_params; ++i) {
+                    const int param_id = lfirst_int(list_nth_cell(subplan->paramIds, i));
 
                     if (i < static_cast<int>(subquery_result.columns.size())) {
                         const auto& column_schema = subquery_result.columns[i];
-                        inner_ctx.params[PARAM_ID] = pgx_lower::frontend::sql::ResolvedParam{
+                        inner_ctx.params[param_id] = pgx_lower::frontend::sql::ResolvedParam{
                             .table_name = column_schema.table_name,
                             .column_name = column_schema.column_name,
                             .type_oid = column_schema.type_oid,
@@ -634,10 +634,10 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                             .mlir_type = column_schema.mlir_type
                         };
 
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "  Mapped paramId=%d to column %s.%s (index %d)", PARAM_ID,
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "  Mapped paramId=%d to column %s.%s (index %d)", param_id,
                                 column_schema.table_name.c_str(), column_schema.column_name.c_str(), i);
                     } else {
-                        PGX_ERROR("ParamId=%d index %d exceeds subquery columns (%zu)", PARAM_ID, i,
+                        PGX_ERROR("ParamId=%d index %d exceeds subquery columns (%zu)", param_id, i,
                                   subquery_result.columns.size());
                         throw std::runtime_error("ParamId index out of range");
                     }
@@ -671,7 +671,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             return exists_op.getResult();
         };
 
-        return translate_quantified(IS_ALL);
+        return translate_quantified(is_all);
     }
 
     default: {
@@ -684,7 +684,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan,
-                                                            const PlannedStmt*  /*parent_stmt*/)
+                                                            const PlannedStmt* parent_stmt)
     -> std::pair<mlir::Value, TranslationResult> {
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_subquery_plan: Starting subquery translation");
     auto subquery_ctx = QueryCtxT::createChildContext(parent_ctx, parent_ctx.builder, mlir::Value());
@@ -695,7 +695,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& par
         throw std::runtime_error("Subquery translation failed");
     }
 
-    mlir::Value const subquery_stream = subquery_result.op->getResult(0);
+    mlir::Value subquery_stream = subquery_result.op->getResult(0);
 
     if (!subquery_stream) {
         PGX_ERROR("translate_subquery_plan: SubPlan operation has no result stream");

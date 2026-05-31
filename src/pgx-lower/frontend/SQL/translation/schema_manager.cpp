@@ -38,88 +38,88 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int VARNO) -> std::string {
+auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string {
     PGX_IO(AST_TRANSLATE);
-    if (!current_planned_stmt || !current_planned_stmt->rtable || VARNO <= INVALID_VARNO) {
-        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, VARNO);
+    if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
+        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
         throw std::runtime_error("Invalid RTE");
     }
 
-    if (VARNO > list_length(current_planned_stmt->rtable)) {
-        PGX_ERROR("varno %d exceeds rtable length %d", VARNO, list_length(current_planned_stmt->rtable));
+    if (varno > list_length(current_planned_stmt->rtable)) {
+        PGX_ERROR("varno %d exceeds rtable length %d", varno, list_length(current_planned_stmt->rtable));
         throw std::runtime_error("Invalid RTE");
     }
 
-    auto *const RTE = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, VARNO - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
-    if (!RTE || RTE->relid == InvalidOid) {
-        PGX_ERROR("Invalid RTE for varno %d", VARNO);
+    if (!rte || rte->relid == InvalidOid) {
+        PGX_ERROR("Invalid RTE for varno %d", varno);
         throw std::runtime_error("Invalid RTE");
     }
 
 #ifdef BUILDING_UNIT_TESTS
     return std::string(UNIT_TEST_TABLE_PREFIX) + std::to_string(varno);
 #else
-    char* const relname = get_rel_name(RTE->relid);
-    std::string table_name = relname ? relname : ("unknown_table_" + std::to_string(VARNO));
+    char* relname = get_rel_name(rte->relid);
+    std::string tableName = relname ? relname : ("unknown_table_" + std::to_string(varno));
 
-    return table_name;
+    return tableName;
 #endif
 }
 
-auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, const int VARNO) -> std::string {
+auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string {
     PGX_IO(AST_TRANSLATE);
-    if (!current_planned_stmt || !current_planned_stmt->rtable || VARNO <= INVALID_VARNO) {
-        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, VARNO);
+    if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
+        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
         throw std::runtime_error("Invalid RTE");
     }
 
-    if (VARNO > list_length(current_planned_stmt->rtable)) {
-        PGX_ERROR("varno %d exceeds rtable length %d", VARNO, list_length(current_planned_stmt->rtable));
+    if (varno > list_length(current_planned_stmt->rtable)) {
+        PGX_ERROR("varno %d exceeds rtable length %d", varno, list_length(current_planned_stmt->rtable));
         throw std::runtime_error("Invalid RTE");
     }
 
-    auto *const RTE = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, VARNO - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
-    if (!RTE) {
-        PGX_ERROR("Invalid RTE for varno %d", VARNO);
+    if (!rte) {
+        PGX_ERROR("Invalid RTE for varno %d", varno);
         throw std::runtime_error("Invalid RTE");
     }
 
 #ifdef BUILDING_UNIT_TESTS
     return std::string(UNIT_TEST_TABLE_PREFIX) + std::to_string(varno);
 #else
-    if (RTE->eref && RTE->eref->aliasname) {
-        return std::string(RTE->eref->aliasname);
+    if (rte->eref && rte->eref->aliasname) {
+        return std::string(rte->eref->aliasname);
     }
 
-    if (RTE->relid == InvalidOid) {
-        PGX_ERROR("Invalid RTE for varno %d", VARNO);
+    if (rte->relid == InvalidOid) {
+        PGX_ERROR("Invalid RTE for varno %d", varno);
         throw std::runtime_error("Invalid RTE");
     }
 
-    char* const relname = get_rel_name(RTE->relid);
-    return relname ? relname : ("unknown_table_" + std::to_string(VARNO));
+    char* relname = get_rel_name(rte->relid);
+    return relname ? relname : ("unknown_table_" + std::to_string(varno));
 #endif
 }
 
-auto get_column_name_from_schema(const PlannedStmt* current_planned_stmt, const int VARNO, const AttrNumber VARATTNO)
+auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const int varno, const AttrNumber varattno)
     -> std::string {
     PGX_IO(AST_TRANSLATE);
-    if (!current_planned_stmt || !current_planned_stmt->rtable || VARNO <= INVALID_VARNO || VARATTNO <= INVALID_VARATTNO) {
-        PGX_ERROR("Cannot access schema for column: varno=%d varattno=%d", VARNO, VARATTNO);
+    if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
+        PGX_ERROR("Cannot access schema for column: varno=%d varattno=%d", varno, varattno);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    if (VARNO > list_length(current_planned_stmt->rtable)) {
+    if (varno > list_length(currentPlannedStmt->rtable)) {
         PGX_ERROR("varno exceeds rtable length");
         throw std::runtime_error("Invalid - read logs");
     }
 
-    auto *const RTE = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, VARNO - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
-    if (!RTE) {
-        PGX_ERROR("Invalid RTE for column lookup: varno=%d", VARNO);
+    if (!rte) {
+        PGX_ERROR("Invalid RTE for column lookup: varno=%d", varno);
         throw std::runtime_error("Invalid - read logs");
     }
 
@@ -132,87 +132,87 @@ auto get_column_name_from_schema(const PlannedStmt* current_planned_stmt, const 
         return "val2";
     return "col_" + std::to_string(varattno);
 #else
-    if (RTE->relid == InvalidOid) {
+    if (rte->relid == InvalidOid) {
         PGX_ERROR("Invalid RTE for column lookup: varno=%d has no relid (CTE/subquery should use varno_resolution)",
-                  VARNO);
+                  varno);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    char* const attname = get_attname(RTE->relid, VARATTNO, PG_ATTNAME_NOT_MISSING_OK);
-    std::string column_name = attname ? attname : ("col_" + std::to_string(VARATTNO));
+    char* attname = get_attname(rte->relid, varattno, PG_ATTNAME_NOT_MISSING_OK);
+    std::string columnName = attname ? attname : ("col_" + std::to_string(varattno));
 
-    return column_name;
+    return columnName;
 #endif
 }
 
-auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int VARNO) -> Oid {
+auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> Oid {
     PGX_IO(AST_TRANSLATE);
     using namespace pgx_lower::frontend::sql::constants;
-    if (!current_planned_stmt || !current_planned_stmt->rtable || VARNO <= INVALID_VARNO) {
-        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, VARNO);
+    if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
+        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    if (VARNO > list_length(current_planned_stmt->rtable)) {
-        PGX_ERROR("varno %d exceeds rtable length %d", VARNO, list_length(current_planned_stmt->rtable));
+    if (varno > list_length(current_planned_stmt->rtable)) {
+        PGX_ERROR("varno %d exceeds rtable length %d", varno, list_length(current_planned_stmt->rtable));
         throw std::runtime_error("Invalid - read logs");
     }
 
-    auto *const RTE = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, VARNO - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
-    if (!RTE) {
-        PGX_ERROR("Invalid RTE for varno %d", VARNO);
+    if (!rte) {
+        PGX_ERROR("Invalid RTE for varno %d", varno);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    return RTE->relid;
+    return rte->relid;
 }
 
-auto is_column_nullable(const PlannedStmt* current_planned_stmt, const int VARNO, const AttrNumber VARATTNO) -> bool {
+auto is_column_nullable(const PlannedStmt* currentPlannedStmt, const int varno, const AttrNumber varattno) -> bool {
     PGX_IO(AST_TRANSLATE);
 
-    if (!current_planned_stmt || !current_planned_stmt->rtable || VARNO <= INVALID_VARNO || VARATTNO <= INVALID_VARATTNO) {
+    if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
         return true;
     }
 
 #ifdef BUILDING_UNIT_TESTS
     return true;
 #else
-    if (VARNO > list_length(current_planned_stmt->rtable)) {
+    if (varno > list_length(currentPlannedStmt->rtable)) {
         return true;
     }
 
-    auto *const RTE = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, VARNO - POSTGRESQL_VARNO_OFFSET));
-    if (!RTE || RTE->relid == InvalidOid) {
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    if (!rte || rte->relid == InvalidOid) {
         return true;
     }
 
-    auto *const REL = table_open(RTE->relid, AccessShareLock);
-    if (!REL) {
+    const auto rel = table_open(rte->relid, AccessShareLock);
+    if (!rel) {
         return true;
     }
 
-    auto *const TUPLE_DESC = RelationGetDescr(REL);
-    if (!TUPLE_DESC) {
-        table_close(REL, AccessShareLock);
+    const auto tupleDesc = RelationGetDescr(rel);
+    if (!tupleDesc) {
+        table_close(rel, AccessShareLock);
         return true;
     }
 
-    const int ATTR_INDEX = VARATTNO - 1;
-    if (ATTR_INDEX < 0 || ATTR_INDEX >= TUPLE_DESC->natts) {
-        table_close(REL, AccessShareLock);
+    const int attrIndex = varattno - 1;
+    if (attrIndex < 0 || attrIndex >= tupleDesc->natts) {
+        table_close(rel, AccessShareLock);
         return true;
     }
 
-    const Form_pg_attribute ATTR = TupleDescAttr(TUPLE_DESC, ATTR_INDEX);
-    const bool NULLABLE = !ATTR->attnotnull;
+    const Form_pg_attribute attr = TupleDescAttr(tupleDesc, attrIndex);
+    const bool nullable = !attr->attnotnull;
 
-    table_close(REL, AccessShareLock);
-    return NULLABLE;
+    table_close(rel, AccessShareLock);
+    return nullable;
 #endif
 }
 
-auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, const int SCANRELID)
+auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, const int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo> {
     PGX_IO(AST_TRANSLATE);
     std::vector<pgx_lower::frontend::sql::ColumnInfo> columns;
@@ -221,55 +221,55 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
     columns.emplace_back("id", INT4OID, INVALID_TYPMOD, UNIT_TEST_COLUMN_NOT_NULL);
     return columns;
 #else
-    if (!current_planned_stmt || !current_planned_stmt->rtable || SCANRELID <= 0) {
-        PGX_ERROR("Cannot access rtable for scanrelid %d", SCANRELID);
+    if (!current_planned_stmt || !current_planned_stmt->rtable || scanrelid <= 0) {
+        PGX_ERROR("Cannot access rtable for scanrelid %d", scanrelid);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    if (SCANRELID > list_length(current_planned_stmt->rtable)) {
+    if (scanrelid > list_length(current_planned_stmt->rtable)) {
         PGX_ERROR("scanrelid exceeds rtable length");
         throw std::runtime_error("Invalid - read logs");
     }
 
-    auto *const RTE = static_cast<RangeTblEntry*>(
-        list_nth(current_planned_stmt->rtable, SCANRELID - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(
+        list_nth(current_planned_stmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
 
-    if (!RTE || RTE->relid == InvalidOid) {
+    if (!rte || rte->relid == InvalidOid) {
         PGX_ERROR("Invalid RTE for table schema discovery");
         throw std::runtime_error("Invalid - read logs");
     }
 
-    const Relation REL = table_open(RTE->relid, AccessShareLock);
-    if (!REL) {
-        PGX_ERROR("Failed to open relation %d", RTE->relid);
+    const Relation rel = table_open(rte->relid, AccessShareLock);
+    if (!rel) {
+        PGX_ERROR("Failed to open relation %d", rte->relid);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    const TupleDesc TUPLE_DESC = RelationGetDescr(REL);
-    if (!TUPLE_DESC) {
+    const TupleDesc tupleDesc = RelationGetDescr(rel);
+    if (!tupleDesc) {
         PGX_ERROR("Failed to get tuple descriptor");
-        table_close(REL, AccessShareLock);
+        table_close(rel, AccessShareLock);
         throw std::runtime_error("Invalid - read logs");
     }
 
-    for (int i = 0; i < TUPLE_DESC->natts; i++) {
-        const Form_pg_attribute ATTR = TupleDescAttr(TUPLE_DESC, i);
-        if (ATTR->attisdropped) {
+    for (int i = 0; i < tupleDesc->natts; i++) {
+        const Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
+        if (attr->attisdropped) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Skipping attr");
             continue;
         }
 
-        std::string const col_name = NameStr(ATTR->attname);
-        Oid const col_type = ATTR->atttypid;
-        int32_t const typmod = ATTR->atttypmod;
-        bool const nullable = !ATTR->attnotnull;
+        std::string colName = NameStr(attr->attname);
+        Oid colType = attr->atttypid;
+        int32_t typmod = attr->atttypmod;
+        bool nullable = !attr->attnotnull;
 
-        columns.emplace_back(col_name, col_type, typmod, nullable);
+        columns.push_back({colName, colType, typmod, nullable});
     }
 
-    table_close(REL, AccessShareLock);
+    table_close(rel, AccessShareLock);
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Discovered %zu columns for scanrelid %d", columns.size(), SCANRELID);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Discovered %zu columns for scanrelid %d", columns.size(), scanrelid);
     return columns;
 #endif
 }

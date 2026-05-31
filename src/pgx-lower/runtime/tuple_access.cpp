@@ -1,7 +1,6 @@
 #include "pgx-lower/runtime/tuple_access.h"
 #include "pgx-lower/runtime/runtime_templates.h"
 #include "pgx-lower/runtime/PostgreSQLRuntime.h" // For runtime::TableBuilder
-#include <algorithm>
 #include <vector>
 #include "pgx-lower/runtime/PostgreSQLDataSource.h"
 #include "pgx-lower/utility/error_handling.h"
@@ -98,22 +97,21 @@ T extract_field(int32_t field_index, bool* is_null) {
         return T{};
     }
 
-    const int ATTR_NUM = field_index + 1;
-    if (ATTR_NUM > g_current_tuple_passthrough.tupleDesc->natts) {
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
         *is_null = true;
         return T{};
     }
 
-    bool isnull = false;
-    const auto VALUE = heap_getattr(g_current_tuple_passthrough.originalTuple, ATTR_NUM,
+    bool isnull;
+    const auto value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
                                     g_current_tuple_passthrough.tupleDesc, &isnull);
     *is_null = isnull;
-    if (isnull) {
+    if (isnull)
         return T{};
-}
 
-    const Oid TYPE_OID = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    return fromDatum<T>(VALUE, TYPE_OID);
+    const Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    return fromDatum<T>(value, typeOid);
 }
 
 template int16_t extract_field<int16_t>(int32_t, bool*);
@@ -131,10 +129,10 @@ template double extract_field<double>(int32_t, bool*);
 
 struct PostgreSQLTableHandle {
     Relation rel;
-    TableScanDesc scan_desc;
-    TupleDesc tuple_desc;
+    TableScanDesc scanDesc;
+    TupleDesc tupleDesc;
     TupleTableSlot* slot;
-    bool is_open;
+    bool isOpen;
 };
 
 namespace pgx_lower::runtime {
@@ -145,15 +143,15 @@ void table_builder_add(void* builder, bool is_valid, T value) {
 
     // LLVM JIT may pass non-standard boolean values (e.g., 255 instead of 1)
     // Pretty weird.
-    const bool NORMALIZED_IS_VALID = (is_valid != 0);
-    bool const is_null = !NORMALIZED_IS_VALID;
+    const bool normalized_is_valid = (is_valid != 0);
+    bool is_null = !normalized_is_valid;
 
     if (tb) {
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
-            const auto NEW_SIZE = tb->current_column_index + 1;
+            const auto newSize = tb->current_column_index + 1;
             PGX_LOG(RUNTIME, DEBUG, "table_builder_add: expanding computed results storage from %d to %d columns",
-                    g_computed_results.numComputedColumns, NEW_SIZE);
-            prepare_computed_results(NEW_SIZE);
+                    g_computed_results.numComputedColumns, newSize);
+            prepare_computed_results(newSize);
         }
 
         // TODO LLVM may pass different representations?
@@ -164,12 +162,12 @@ void table_builder_add(void* builder, bool is_valid, T value) {
         // Either way, this also works with the usual boolean values so... it's probably okay? I dunno.
         T normalized_value = value;
         if constexpr (std::is_same_v<T, bool>) {
-            const auto  BYTE_VALUE = static_cast<unsigned char>(value);
+            const unsigned char byte_value = static_cast<unsigned char>(value);
             // Any non-zero value except 254 (CmpIOp false) is true
             // 0 = false, 1 = true, 254 = false, 255 = true, others = true
-            normalized_value = (BYTE_VALUE != 0) && (BYTE_VALUE != 254);
-            PGX_LOG(RUNTIME, TRACE, "table_builder_add<bool>: byte value=0x%02X (%d), normalized=%d", BYTE_VALUE,
-                    BYTE_VALUE, static_cast<int>(normalized_value));
+            normalized_value = (byte_value != 0) && (byte_value != 254);
+            PGX_LOG(RUNTIME, TRACE, "table_builder_add<bool>: byte value=0x%02X (%d), normalized=%d", byte_value,
+                    byte_value, static_cast<int>(normalized_value));
         }
         if constexpr (std::is_same_v<T, int64_t>) {
             PGX_LOG(RUNTIME, DEBUG, "table_builder_add<int64_t>: column=%d value=%lld is_null=%s",
@@ -179,15 +177,17 @@ void table_builder_add(void* builder, bool is_valid, T value) {
         PGX_LOG(RUNTIME, DEBUG, "table_builder_add: storing value at column index %d with is_null=%s",
                 tb->current_column_index, is_null ? "true" : "false");
 
-        const Datum DATUM = is_null ? static_cast<Datum>(0) : toDatum<T>(normalized_value);
-        g_computed_results.setResult(tb->current_column_index, DATUM, is_null, getTypeOid<T>());
+        const Datum datum = is_null ? static_cast<Datum>(0) : toDatum<T>(normalized_value);
+        g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
-        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
+        if (tb->current_column_index > tb->total_columns) {
+            tb->total_columns = tb->current_column_index;
+        }
     } else {
         PGX_LOG(RUNTIME, DEBUG, "table_builder_add: null builder, using fallback column 0");
         // Use normalized is_null value
-        const Datum DATUM = is_null ? static_cast<Datum>(0) : toDatum<T>(value);
-        g_computed_results.setResult(0, DATUM, is_null, getTypeOid<T>());
+        const Datum datum = is_null ? static_cast<Datum>(0) : toDatum<T>(value);
+        g_computed_results.setResult(0, datum, is_null, getTypeOid<T>());
     }
 }
 
@@ -202,32 +202,34 @@ template void table_builder_add<double>(void*, bool, double);
 template<>
 void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runtime::VarLen32 value) {
     auto* tb = static_cast<::runtime::TableBuilder*>(builder);
-    const bool IS_NULL = !is_valid;
+    const bool is_null = !is_valid;
 
     if (tb) {
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
             prepare_computed_results(tb->current_column_index + 1);
         }
 
-        if (!IS_NULL && value.getLen() > 0) {
+        if (!is_null && value.getLen() > 0) {
             PGX_LOG(RUNTIME, DEBUG, "VarLen32: len=%u, ptr=%p, first chars: %.10s", value.getLen(), value.getPtr(),
                     value.getPtr());
 
-            const MemoryContext OLD_CONTEXT = CurrentMemoryContext;
+            const MemoryContext oldContext = CurrentMemoryContext;
             MemoryContextSwitchTo(CurTransactionContext);
 
-            const text* const textval = cstring_to_text_with_len(reinterpret_cast<const char*>(value.getPtr()), value.getLen());
-            const Datum DATUM = PointerGetDatum(textval);
-            g_computed_results.setResult(tb->current_column_index, DATUM, IS_NULL, TEXTOID);
+            const text* textval = cstring_to_text_with_len(reinterpret_cast<const char*>(value.getPtr()), value.getLen());
+            const Datum datum = PointerGetDatum(textval);
+            g_computed_results.setResult(tb->current_column_index, datum, is_null, TEXTOID);
 
-            MemoryContextSwitchTo(OLD_CONTEXT);
+            MemoryContextSwitchTo(oldContext);
         } else {
             g_computed_results.setResult(tb->current_column_index, 0, true, TEXTOID);
         }
 
         tb->current_column_index++;
 
-        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
+        if (tb->current_column_index > tb->total_columns) {
+            tb->total_columns = tb->current_column_index;
+        }
     }
 }
 
@@ -239,17 +241,19 @@ void table_builder_add_numeric(void* builder, bool is_null, Numeric value) {
             prepare_computed_results(tb->current_column_index + 1);
         }
 
-        const auto DATUM = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
+        const auto datum = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
 
         PGX_LOG(RUNTIME, DEBUG, "table_builder_add_numeric: storing numeric datum=%lu at column index %d with is_null=%s",
-                DATUM, tb->current_column_index, is_null ? "true" : "false");
+                datum, tb->current_column_index, is_null ? "true" : "false");
 
-        g_computed_results.setResult(tb->current_column_index, DATUM, is_null, NUMERICOID);
+        g_computed_results.setResult(tb->current_column_index, datum, is_null, NUMERICOID);
         tb->current_column_index++;
-        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
+        if (tb->current_column_index > tb->total_columns) {
+            tb->total_columns = tb->current_column_index;
+        }
     } else {
-        const auto DATUM = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
-        g_computed_results.setResult(0, DATUM, is_null, NUMERICOID);
+        const auto datum = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
+        g_computed_results.setResult(0, datum, is_null, NUMERICOID);
     }
 }
 
@@ -266,23 +270,23 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
     }
 
     if (g_jit_table_oid != InvalidOid) {
-        const Relation REL = table_open(g_jit_table_oid, AccessShareLock);
-        if (!REL) {
+        const Relation rel = table_open(g_jit_table_oid, AccessShareLock);
+        if (!rel) {
             return -1;
         }
 
-        auto *const TUPDESC = RelationGetDescr(REL);
+        const auto tupdesc = RelationGetDescr(rel);
         int32_t attnum = -1;
 
-        for (int i = 0; i < TUPDESC->natts; i++) {
-            const Form_pg_attribute ATTR = TupleDescAttr(TUPDESC, i);
-            if (!ATTR->attisdropped && strcmp(NameStr(ATTR->attname), column_name) == 0) {
+        for (int i = 0; i < tupdesc->natts; i++) {
+            const Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+            if (!attr->attisdropped && strcmp(NameStr(attr->attname), column_name) == 0) {
                 attnum = i + 1;
                 break;
             }
         }
 
-        table_close(REL, AccessShareLock);
+        table_close(rel, AccessShareLock);
         return attnum;
     }
 
@@ -304,24 +308,24 @@ extern "C" int32_t get_all_column_metadata(const char* table_name, ColumnMetadat
         return 0;
     }
 
-    const Relation REL = table_open(g_jit_table_oid, AccessShareLock);
-    if (!REL) {
+    const Relation rel = table_open(g_jit_table_oid, AccessShareLock);
+    if (!rel) {
         PGX_ERROR("get_all_column_metadata: Failed to open table with OID %u", g_jit_table_oid);
         return 0;
     }
 
-    const TupleDesc TUPDESC = RelationGetDescr(REL);
+    const TupleDesc tupdesc = RelationGetDescr(rel);
     int32_t column_count = 0;
 
-    for (int i = 0; i < TUPDESC->natts && column_count < max_columns; i++) {
-        const Form_pg_attribute ATTR = TupleDescAttr(TUPDESC, i);
-        if (!ATTR->attisdropped) {
+    for (int i = 0; i < tupdesc->natts && column_count < max_columns; i++) {
+        const Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+        if (!attr->attisdropped) {
             // Copy column name (64 is the size we defined in the struct)
-            strncpy(metadata[column_count].name, NameStr(ATTR->attname), 63);
+            strncpy(metadata[column_count].name, NameStr(attr->attname), 63);
             metadata[column_count].name[63] = '\0';
 
             // Store type OID and attribute number
-            metadata[column_count].type_oid = ATTR->atttypid;
+            metadata[column_count].type_oid = attr->atttypid;
             metadata[column_count].attnum = i + 1; // PostgreSQL uses 1-based indexing
 
             PGX_LOG(RUNTIME, DEBUG, "get_all_column_metadata: Column %d: name='%s', type_oid=%d, attnum=%d", column_count,
@@ -331,7 +335,7 @@ extern "C" int32_t get_all_column_metadata(const char* table_name, ColumnMetadat
         }
     }
 
-    table_close(REL, AccessShareLock);
+    table_close(rel, AccessShareLock);
 
     PGX_LOG(RUNTIME, DEBUG, "get_all_column_metadata: Retrieved metadata for %d columns", column_count);
     return column_count;
@@ -340,9 +344,9 @@ extern "C" int32_t get_all_column_metadata(const char* table_name, ColumnMetadat
 #endif
 }
 
-extern "C" void* open_postgres_table(const char* table_name) {
-    PGX_LOG(RUNTIME, IO, "open_postgres_table IN: tableName=%s", table_name ? table_name : "NULL");
-    PGX_LOG(RUNTIME, DEBUG, "open_postgres_table called with tableName: %s", table_name ? table_name : "NULL");
+extern "C" void* open_postgres_table(const char* tableName) {
+    PGX_LOG(RUNTIME, IO, "open_postgres_table IN: tableName=%s", tableName ? tableName : "NULL");
+    PGX_LOG(RUNTIME, DEBUG, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");
 
     if (!pgx_lower::runtime::check_memory_context_safety()) {
         PGX_ERROR("open_postgres_table: Memory context unsafe for PostgreSQL operations");
@@ -354,22 +358,22 @@ extern "C" void* open_postgres_table(const char* table_name) {
         auto* handle = new PostgreSQLTableHandle();
 
         PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: JIT-managed table access, opening table: %s",
-                table_name ? table_name : "test");
+                tableName ? tableName : "test");
 
         if (g_jit_table_oid != InvalidOid) {
-            const Oid TABLE_OID = g_jit_table_oid;
-            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Using table OID: %u", TABLE_OID);
+            const Oid tableOid = g_jit_table_oid;
+            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Using table OID: %u", tableOid);
 
-            handle->rel = table_open(TABLE_OID, AccessShareLock);
-            handle->tuple_desc = RelationGetDescr(handle->rel);
+            handle->rel = table_open(tableOid, AccessShareLock);
+            handle->tupleDesc = RelationGetDescr(handle->rel);
 
-            handle->slot = MakeSingleTupleTableSlot(handle->tuple_desc, &TTSOpsBufferHeapTuple);
-            const uint32 FLAGS = SO_TYPE_SEQSCAN | SO_ALLOW_PAGEMODE | SO_ALLOW_SYNC;
-            handle->scan_desc = heap_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr, nullptr, FLAGS);
-            handle->is_open = true;
+            handle->slot = MakeSingleTupleTableSlot(handle->tupleDesc, &TTSOpsBufferHeapTuple);
+            const uint32 flags = SO_TYPE_SEQSCAN | SO_ALLOW_PAGEMODE | SO_ALLOW_SYNC;
+            handle->scanDesc = heap_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr, nullptr, flags);
+            handle->isOpen = true;
 
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Successfully opened table with OID %u (flags=0x%x, slot=%p)",
-                    TABLE_OID, FLAGS, handle->slot);
+                    tableOid, flags, handle->slot);
         } else {
             PGX_ERROR("open_postgres_table: Cannot determine table to open");
             delete handle;
@@ -377,24 +381,24 @@ extern "C" void* open_postgres_table(const char* table_name) {
         }
 
         PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Calling heap_rescan...");
-        PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: scanDesc=%p, tupleDesc=%p", handle->scan_desc, handle->tuple_desc);
-        if (handle->tuple_desc) {
-            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: tupleDesc->natts=%d", handle->tuple_desc->natts);
+        PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: scanDesc=%p, tupleDesc=%p", handle->scanDesc, handle->tupleDesc);
+        if (handle->tupleDesc) {
+            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: tupleDesc->natts=%d", handle->tupleDesc->natts);
         }
-        if (handle->scan_desc && handle->scan_desc->rs_rd) {
+        if (handle->scanDesc && handle->scanDesc->rs_rd) {
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: scanning relation OID=%u, name=%s",
-                    RelationGetRelid(handle->scan_desc->rs_rd), RelationGetRelationName(handle->scan_desc->rs_rd));
+                    RelationGetRelid(handle->scanDesc->rs_rd), RelationGetRelationName(handle->scanDesc->rs_rd));
         }
 
         CommandCounterIncrement();
 
-        if (auto *const CURRENT_SNAPSHOT = GetActiveSnapshot()) {
+        if (const auto currentSnapshot = GetActiveSnapshot()) {
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Updating scan with fresh snapshot xmin=%u, xmax=%u",
-                    CURRENT_SNAPSHOT->xmin, CURRENT_SNAPSHOT->xmax);
-            handle->scan_desc->rs_snapshot = CURRENT_SNAPSHOT;
+                    currentSnapshot->xmin, currentSnapshot->xmax);
+            handle->scanDesc->rs_snapshot = currentSnapshot;
         }
 
-        heap_rescan(handle->scan_desc, nullptr, false, false, false, false);
+        heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
 
         PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Successfully created handle, returning %p", handle);
         PGX_LOG(RUNTIME, IO, "open_postgres_table OUT: handle=%p", handle);
@@ -406,9 +410,9 @@ extern "C" void* open_postgres_table(const char* table_name) {
     }
 }
 
-extern "C" int64_t read_next_tuple_from_table(void* table_handle) {
-    PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table IN: tableHandle=%p", table_handle);
-    if (!table_handle) {
+extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
+    PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table IN: tableHandle=%p", tableHandle);
+    if (!tableHandle) {
         PGX_LOG(RUNTIME, DEBUG, "read_next_tuple_from_table: tableHandle is null");
         PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table OUT: -1 (null handle)");
         return -1;
@@ -419,20 +423,20 @@ extern "C" int64_t read_next_tuple_from_table(void* table_handle) {
         return -1;
     }
 
-    const auto* handle = static_cast<PostgreSQLTableHandle*>(table_handle);
-    if (!handle->is_open || !handle->scan_desc) {
+    const auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    if (!handle->isOpen || !handle->scanDesc) {
         PGX_LOG(RUNTIME, DEBUG, "read_next_tuple_from_table: handle not open or scanDesc is null");
         PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table OUT: -1 (invalid handle)");
         return -1;
     }
 
-    PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call table_scan_getnextslot with scanDesc=%p", handle->scan_desc);
+    PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call table_scan_getnextslot with scanDesc=%p", handle->scanDesc);
 
     bool has_tuple = false;
     try {
         PG_TRY();
         {
-            has_tuple = table_scan_getnextslot(handle->scan_desc, ForwardScanDirection, handle->slot);
+            has_tuple = table_scan_getnextslot(handle->scanDesc, ForwardScanDirection, handle->slot);
             PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: table_scan_getnextslot returned %d", has_tuple);
         }
         PG_CATCH();
@@ -454,7 +458,7 @@ extern "C" int64_t read_next_tuple_from_table(void* table_handle) {
         return 0;
     }
 
-    HeapTuple const tuple = ExecFetchSlotHeapTuple(handle->slot, false, nullptr);
+    HeapTuple tuple = ExecFetchSlotHeapTuple(handle->slot, false, nullptr);
 
     // Store pointer to the buffered tuple (NOT a copy!)
     // This is safe because the slot holds a buffer pin until next scan call
@@ -466,21 +470,21 @@ extern "C" int64_t read_next_tuple_from_table(void* table_handle) {
     return 1;
 }
 
-extern "C" TupleDesc get_table_handle_tupledesc(void* table_handle) {
-    if (!table_handle) {
+extern "C" TupleDesc get_table_handle_tupledesc(void* tableHandle) {
+    if (!tableHandle) {
         return nullptr;
     }
-    return static_cast<PostgreSQLTableHandle*>(table_handle)->tuple_desc;
+    return static_cast<PostgreSQLTableHandle*>(tableHandle)->tupleDesc;
 }
 
-extern "C" void close_postgres_table(void* table_handle) {
-    PGX_LOG(RUNTIME, IO, "close_postgres_table IN: tableHandle=%p", table_handle);
-    PGX_LOG(RUNTIME, DEBUG, "close_postgres_table called with handle: %p", table_handle);
-    if (!table_handle) {
+extern "C" void close_postgres_table(void* tableHandle) {
+    PGX_LOG(RUNTIME, IO, "close_postgres_table IN: tableHandle=%p", tableHandle);
+    PGX_LOG(RUNTIME, DEBUG, "close_postgres_table called with handle: %p", tableHandle);
+    if (!tableHandle) {
         return;
     }
 
-    auto* handle = static_cast<PostgreSQLTableHandle*>(table_handle);
+    auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
 
     g_current_tuple_passthrough.originalTuple = nullptr;
     g_current_tuple_passthrough.tupleDesc = nullptr;
@@ -493,13 +497,13 @@ extern "C" void close_postgres_table(void* table_handle) {
 
     if (handle->rel) {
         PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Closing JIT-managed table scan");
-        if (handle->scan_desc) {
-            table_endscan(handle->scan_desc);
+        if (handle->scanDesc) {
+            table_endscan(handle->scanDesc);
         }
         table_close(handle->rel, AccessShareLock);
     }
 
-    handle->is_open = false;
+    handle->isOpen = false;
     delete handle;
 
     PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Resetting g_jit_table_oid from %u to InvalidOid", g_jit_table_oid);
@@ -511,21 +515,21 @@ extern "C" void close_postgres_table(void* table_handle) {
 // Memory and Streaming Helper Functions
 //==============================================================================
 
-static Datum copy_datum_to_postgresql_memory(Datum value, Oid type_oid, bool is_null) {
-    if (is_null) {
+static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNull) {
+    if (isNull) {
         return value;
     }
 
-    switch (type_oid) {
+    switch (typeOid) {
     case NUMERICOID: {
-        int64_t const original_int = DatumGetInt64(DirectFunctionCall1(numeric_int8, value));
-        PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: original Numeric value=%ld", original_int);
+        int64_t originalInt = DatumGetInt64(DirectFunctionCall1(numeric_int8, value));
+        PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: original Numeric value=%ld", originalInt);
 
-        Datum const result = datumCopy(value, false, -1);
+        Datum result = datumCopy(value, false, -1);
 
-        int64_t const copied_int = DatumGetInt64(DirectFunctionCall1(numeric_int8, result));
+        int64_t copiedInt = DatumGetInt64(DirectFunctionCall1(numeric_int8, result));
         PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: copied Numeric value=%ld using datumCopy, context=%p",
-                copied_int, CurrentMemoryContext);
+                copiedInt, CurrentMemoryContext);
         return result;
     }
     case TEXTOID:
@@ -547,16 +551,16 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid type_oid, bool is_
         // Since psql stores intervals in a different way to how we do, we need to
         // build their representation. At some point we're going to have to do some
         // overhaul of how we store intervals internally.
-        int64_t const total_microseconds = DatumGetInt64(value);
+        int64_t totalMicroseconds = DatumGetInt64(value);
         auto* interval = (Interval*)palloc(sizeof(Interval));
         interval->month = 0;
         interval->day = 0;
-        interval->time = total_microseconds;
+        interval->time = totalMicroseconds;
         return IntervalPGetDatum(interval);
     }
 
     default:
-        PGX_ERROR("copy_datum_to_postgresql_memory: Unhandled type OID %u", type_oid);
+        PGX_ERROR("copy_datum_to_postgresql_memory: Unhandled type OID %u", typeOid);
         throw std::runtime_error("Unhandled type");
     }
 }
@@ -572,38 +576,38 @@ static bool validate_memory_context_safety(const char* operation) {
 }
 
 static bool
-stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datum* values, const bool* nulls, const int NUM_COLUMNS) {
+stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datum* values, const bool* nulls, const int numColumns) {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: slot=%p, dest=%p, numColumns=%d", slot, dest, NUM_COLUMNS);
+    PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: slot=%p, dest=%p, numColumns=%d", slot, dest, numColumns);
     if (!slot || !dest) {
         PGX_ERROR("stream_tuple_to_destination: Invalid slot or destination");
         return false;
     }
 
-    const TupleDesc TUPDESC = slot->tts_tupleDescriptor;
+    const TupleDesc tupdesc = slot->tts_tupleDescriptor;
     PGX_LOG(RUNTIME, DEBUG,
             "stream_tuple_to_destination: slot->tts_tupleDescriptor=%p, slot->tts_nvalid=%d, tupdesc->natts=%d",
-            TUPDESC, slot->tts_nvalid, TUPDESC ? TUPDESC->natts : -1);
+            tupdesc, slot->tts_nvalid, tupdesc ? tupdesc->natts : -1);
 
-    if (TUPDESC) {
-        for (int i = 0; i < TUPDESC->natts && i < g_computed_results.numComputedColumns; i++) {
-            Form_pg_attribute const attr = TupleDescAttr(TUPDESC, i);
-            Oid const expected_type = attr->atttypid;
-            Oid const actual_type = g_computed_results.computedTypes[i];
+    if (tupdesc) {
+        for (int i = 0; i < tupdesc->natts && i < g_computed_results.numComputedColumns; i++) {
+            Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+            Oid expectedType = attr->atttypid;
+            Oid actualType = g_computed_results.computedTypes[i];
 
-            if (expected_type != actual_type) {
+            if (expectedType != actualType) {
                 PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: TYPE MISMATCH attr[%d]: expected=%u actual=%u - FIXING",
-                        i, expected_type, actual_type);
+                        i, expectedType, actualType);
 
-                int16 typ_len = 0;
-                bool typ_by_val = false;
-                char typ_align = 0;
-                get_typlenbyvalalign(actual_type, &typ_len, &typ_by_val, &typ_align);
+                int16 typLen;
+                bool typByVal;
+                char typAlign;
+                get_typlenbyvalalign(actualType, &typLen, &typByVal, &typAlign);
 
-                attr->atttypid = actual_type;
-                attr->attlen = typ_len;
-                attr->attbyval = typ_by_val;
-                attr->attalign = typ_align;
+                attr->atttypid = actualType;
+                attr->attlen = typLen;
+                attr->attbyval = typByVal;
+                attr->attalign = typAlign;
             }
             PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: tupdesc attr[%d]: type=%u typmod=%d byval=%d typlen=%d",
                     i, attr->atttypid, attr->atttypmod, attr->attbyval, attr->attlen);
@@ -613,24 +617,24 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
     ExecClearTuple(slot);
     PGX_LOG(RUNTIME, TRACE, "After ExecClearTuple: tts_nvalid=%d", slot->tts_nvalid);
 
-    for (int i = 0; i < NUM_COLUMNS; i++) {
+    for (int i = 0; i < numColumns; i++) {
         slot->tts_values[i] = values[i];
         slot->tts_isnull[i] = nulls[i];
-        Oid const actual_type = (i < g_computed_results.numComputedColumns) ? g_computed_results.computedTypes[i] : InvalidOid;
+        Oid actualType = (i < g_computed_results.numComputedColumns) ? g_computed_results.computedTypes[i] : InvalidOid;
         PGX_LOG(RUNTIME, DEBUG, "  Column %d: value=%ld, isnull=%d, actualType=%u",
-                i, static_cast<long>(values[i]), nulls[i], actual_type);
+                i, static_cast<long>(values[i]), nulls[i], actualType);
     }
 
-    slot->tts_nvalid = NUM_COLUMNS;
+    slot->tts_nvalid = numColumns;
     PGX_LOG(RUNTIME, TRACE, "After setting tts_nvalid=%d", slot->tts_nvalid);
 
     ExecStoreVirtualTuple(slot);
     PGX_LOG(RUNTIME, TRACE, "After ExecStoreVirtualTuple: tts_nvalid=%d", slot->tts_nvalid);
 
     PGX_LOG(RUNTIME, DEBUG, "About to call dest->receiveSlot with slot=%p, dest=%p", slot, dest);
-    const bool RESULT = dest->receiveSlot(slot, dest);
-    PGX_LOG(RUNTIME, DEBUG, "dest->receiveSlot returned %d", RESULT);
-    return RESULT;
+    const bool result = dest->receiveSlot(slot, dest);
+    PGX_LOG(RUNTIME, DEBUG, "dest->receiveSlot returned %d", result);
+    return result;
 }
 
 static bool validate_streaming_context() {
@@ -644,23 +648,23 @@ static bool validate_streaming_context() {
 
 static MemoryContext setup_processing_memory_context(const TupleTableSlot* slot) {
     PGX_IO(RUNTIME);
-    const MemoryContext DEST_CONTEXT = slot->tts_mcxt ? slot->tts_mcxt : CurrentMemoryContext;
+    const MemoryContext destContext = slot->tts_mcxt ? slot->tts_mcxt : CurrentMemoryContext;
 
-    if (!DEST_CONTEXT) {
+    if (!destContext) {
         PGX_ERROR("process_computed_results: Invalid destination memory context");
         return nullptr;
     }
 
-    MemoryContextSwitchTo(DEST_CONTEXT);
+    MemoryContextSwitchTo(destContext);
     return CurrentMemoryContext;
 }
 
-static bool allocate_and_process_columns(Datum** processed_values, bool** processed_nulls) {
+static bool allocate_and_process_columns(Datum** processedValues, bool** processedNulls) {
     PGX_IO(RUNTIME);
-    *processed_values = static_cast<Datum*>(palloc(g_computed_results.numComputedColumns * sizeof(Datum)));
-    *processed_nulls = static_cast<bool*>(palloc(g_computed_results.numComputedColumns * sizeof(bool)));
+    *processedValues = static_cast<Datum*>(palloc(g_computed_results.numComputedColumns * sizeof(Datum)));
+    *processedNulls = static_cast<bool*>(palloc(g_computed_results.numComputedColumns * sizeof(bool)));
 
-    if (!*processed_values || !*processed_nulls) {
+    if (!*processedValues || !*processedNulls) {
         PGX_ERROR("process_computed_results: Memory allocation failed");
         return false;
     }
@@ -670,14 +674,14 @@ static bool allocate_and_process_columns(Datum** processed_values, bool** proces
                 g_computed_results.computedTypes[i], g_computed_results.computedValues[i],
                 g_computed_results.computedNulls[i] ? "true" : "false");
 
-        (*processed_values)[i] = copy_datum_to_postgresql_memory(g_computed_results.computedValues[i],
+        (*processedValues)[i] = copy_datum_to_postgresql_memory(g_computed_results.computedValues[i],
                                                                 g_computed_results.computedTypes[i],
                                                                 g_computed_results.computedNulls[i]);
-        (*processed_nulls)[i] = g_computed_results.computedNulls[i];
+        (*processedNulls)[i] = g_computed_results.computedNulls[i];
 
         PGX_LOG(RUNTIME, TRACE, "process_computed_results: col[%d] type=%u processedValue=%lu null=%s", i,
-                g_computed_results.computedTypes[i], (*processed_values)[i],
-                (*processed_nulls)[i] ? "true" : "false");
+                g_computed_results.computedTypes[i], (*processedValues)[i],
+                (*processedNulls)[i] ? "true" : "false");
     }
 
     return true;
@@ -689,37 +693,37 @@ static bool process_computed_results_for_streaming() {
         return false;
     }
 
-    auto *const SLOT = g_tuple_streamer.slot;
-    const MemoryContext OLD_CONTEXT = CurrentMemoryContext;
+    const auto slot = g_tuple_streamer.slot;
+    const MemoryContext oldContext = CurrentMemoryContext;
 
-    const MemoryContext DEST_CONTEXT = setup_processing_memory_context(SLOT);
-    if (!DEST_CONTEXT) {
+    const MemoryContext destContext = setup_processing_memory_context(slot);
+    if (!destContext) {
         return false;
     }
 
-    Datum* processed_values = nullptr;
-    bool* processed_nulls = nullptr;
+    Datum* processedValues = nullptr;
+    bool* processedNulls = nullptr;
 
-    if (!allocate_and_process_columns(&processed_values, &processed_nulls)) {
-        MemoryContextSwitchTo(OLD_CONTEXT);
+    if (!allocate_and_process_columns(&processedValues, &processedNulls)) {
+        MemoryContextSwitchTo(oldContext);
         return false;
     }
 
-    const bool RESULT = stream_tuple_to_destination(SLOT, g_tuple_streamer.dest, processed_values, processed_nulls,
+    const bool result = stream_tuple_to_destination(slot, g_tuple_streamer.dest, processedValues, processedNulls,
                                               g_computed_results.numComputedColumns);
 
-    pfree(processed_values);
-    pfree(processed_nulls);
+    pfree(processedValues);
+    pfree(processedNulls);
 
-    MemoryContextSwitchTo(OLD_CONTEXT);
+    MemoryContextSwitchTo(oldContext);
 
-    PGX_LOG(RUNTIME, TRACE, "process_computed_results: streaming returned %s", RESULT ? "true" : "false");
-    return RESULT;
+    PGX_LOG(RUNTIME, TRACE, "process_computed_results: streaming returned %s", result ? "true" : "false");
+    return result;
 }
 
-extern "C" auto add_tuple_to_result(const int64_t VALUE) -> bool {
+extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, TRACE, "add_tuple_to_result: called with value=%ld", VALUE);
+    PGX_LOG(RUNTIME, TRACE, "add_tuple_to_result: called with value=%ld", value);
     PGX_LOG(RUNTIME, TRACE, "add_tuple_to_result: numComputedColumns=%d", g_computed_results.numComputedColumns);
 
     if (!validate_memory_context_safety("add_tuple_to_result")) {
@@ -739,7 +743,7 @@ extern "C" auto add_tuple_to_result(const int64_t VALUE) -> bool {
 // Field Access Functions
 //==============================================================================
 
-extern "C" bool get_bool_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     return pgx_lower::runtime::extract_field<bool>(field_index, is_null);
 }
 
@@ -768,7 +772,7 @@ extern "C" int32_t get_field_typmod(int32_t field_index) {
 }
 
 extern "C" const char*
-get_string_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid) {
+get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid) {
     PGX_IO(RUNTIME);
 #ifdef POSTGRESQL_EXTENSION
     if (!pgx_lower::runtime::check_memory_context_safety()) {
@@ -784,15 +788,15 @@ get_string_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null, in
         return nullptr;
     }
 
-    const int ATTR_NUM = field_index + 1;
-    if (ATTR_NUM > g_current_tuple_passthrough.tupleDesc->natts) {
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
         *is_null = true;
         *length = 0;
         return nullptr;
     }
 
-    bool isnull = false;
-    const Datum VALUE = heap_getattr(g_current_tuple_passthrough.originalTuple, ATTR_NUM,
+    bool isnull;
+    const Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
                                g_current_tuple_passthrough.tupleDesc, &isnull);
     *is_null = isnull;
     if (isnull) {
@@ -804,25 +808,25 @@ get_string_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null, in
     // This avoids redundant TupleDesc access since caller already has the type OID
     switch (type_oid) {
     case TEXTOID: {
-        auto *const PG_TEXT = DatumGetTextPP(VALUE);
-        *length = VARSIZE_ANY_EXHDR(PG_TEXT);
-        return VARDATA_ANY(PG_TEXT);
+        const auto pg_text = DatumGetTextPP(value);
+        *length = VARSIZE_ANY_EXHDR(pg_text);
+        return VARDATA_ANY(pg_text);
     }
     case VARCHAROID: {
-        auto *const PG_VARCHAR = DatumGetVarCharPP(VALUE);
-        *length = VARSIZE_ANY_EXHDR(PG_VARCHAR);
-        return VARDATA_ANY(PG_VARCHAR);
+        const auto pg_varchar = DatumGetVarCharPP(value);
+        *length = VARSIZE_ANY_EXHDR(pg_varchar);
+        return VARDATA_ANY(pg_varchar);
     }
     case BPCHAROID: {
-        auto *const PG_BPCHAR = DatumGetBpCharPP(VALUE);
-        *length = VARSIZE_ANY_EXHDR(PG_BPCHAR);
-        return VARDATA_ANY(PG_BPCHAR);
+        const auto pg_bpchar = DatumGetBpCharPP(value);
+        *length = VARSIZE_ANY_EXHDR(pg_bpchar);
+        return VARDATA_ANY(pg_bpchar);
     }
     case NAMEOID: {
         // Handle name type (fixed 64-byte)
-        const Name NAME = DatumGetName(VALUE);
-        *length = strlen(NameStr(*NAME));
-        return NameStr(*NAME);
+        const Name name = DatumGetName(value);
+        *length = strlen(NameStr(*name));
+        return NameStr(*name);
     }
     default:
         // Unknown type - try to convert to string
@@ -839,21 +843,21 @@ get_string_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null, in
 #endif
 }
 
-extern "C" int64_t get_text_field(void*  /*tuple_handle*/, const int32_t FIELD_INDEX, bool* is_null) {
+extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
         return 0;
     }
 
-    const int ATTR_NUM = FIELD_INDEX + 1;
-    if (ATTR_NUM > g_current_tuple_passthrough.tupleDesc->natts) {
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
         *is_null = true;
         return 0;
     }
 
-    bool isnull = false;
-    const auto VALUE = heap_getattr(g_current_tuple_passthrough.originalTuple, ATTR_NUM,
+    bool isnull;
+    const auto value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
                                     g_current_tuple_passthrough.tupleDesc, &isnull);
 
     *is_null = isnull;
@@ -861,11 +865,11 @@ extern "C" int64_t get_text_field(void*  /*tuple_handle*/, const int32_t FIELD_I
         return 0;
     }
 
-    switch (TupleDescAttr(g_current_tuple_passthrough.tupleDesc, FIELD_INDEX)->atttypid) {
+    switch (TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid) {
     case TEXTOID:
     case VARCHAROID:
     case CHAROID: {
-        auto* textval = DatumGetTextP(VALUE);
+        auto* textval = DatumGetTextP(value);
         return reinterpret_cast<int64_t>(VARDATA(textval));
     }
     default: *is_null = true; return 0;
@@ -876,17 +880,17 @@ extern "C" int64_t get_text_field(void*  /*tuple_handle*/, const int32_t FIELD_I
 // Result Storage Functions
 //==============================================================================
 
-extern "C" void prepare_computed_results(int32_t num_columns) {
+extern "C" void prepare_computed_results(int32_t numColumns) {
     PGX_IO(RUNTIME);
-    g_computed_results.resize(num_columns);
+    g_computed_results.resize(numColumns);
 }
 
-extern "C" void store_bigint_result(int32_t column_index, int64_t value, bool is_null) {
+extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, IO, "store_bigint_result IN: columnIndex=%d, value=%ld, isNull=%s", column_index, value,
-            is_null ? "true" : "false");
-    const Datum DATUM = Int64GetDatum(value);
-    g_computed_results.setResult(column_index, DATUM, is_null, INT8OID);
+    PGX_LOG(RUNTIME, IO, "store_bigint_result IN: columnIndex=%d, value=%ld, isNull=%s", columnIndex, value,
+            isNull ? "true" : "false");
+    const Datum datum = Int64GetDatum(value);
+    g_computed_results.setResult(columnIndex, datum, isNull, INT8OID);
     PGX_LOG(RUNTIME, IO, "store_bigint_result OUT");
 }
 
@@ -909,37 +913,37 @@ extern "C" void mark_results_ready_for_streaming() {
 // Template-Based Field Extraction Functions
 //==============================================================================
 
-extern "C" Numeric get_numeric_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" Numeric get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<Numeric>(field_index, is_null);
 }
 
-extern "C" int16_t get_int16_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int16_t>(field_index, is_null);
 }
 
-extern "C" int32_t get_int32_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
 }
 
-extern "C" int64_t get_int64_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int64_t>(field_index, is_null);
 }
 
-extern "C" float get_float32_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" float get_float32_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<float>(field_index, is_null);
 }
 
-extern "C" double get_float64_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" double get_float64_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<double>(field_index, is_null);
 }
 
-extern "C" int32_t get_int_field(void*  /*tuple_handle*/, int32_t field_index, bool* is_null) {
+extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
 }
@@ -965,27 +969,27 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
 // MLIR Wrapper Functions
 //==============================================================================
 
-extern "C" int32_t get_int32_field_mlir(int64_t  /*iteration_signal*/, int32_t field_index) {
+extern "C" int32_t get_int32_field_mlir(int64_t iteration_signal, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null = false;
+    bool is_null;
     return pgx_lower::runtime::extract_field<int32_t>(field_index, &is_null);
 }
 
-extern "C" int64_t get_int64_field_mlir(int64_t  /*iteration_signal*/, int32_t field_index) {
+extern "C" int64_t get_int64_field_mlir(int64_t iteration_signal, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null = false;
+    bool is_null;
     return pgx_lower::runtime::extract_field<int64_t>(field_index, &is_null);
 }
 
-extern "C" float get_float32_field_mlir(int64_t  /*iteration_signal*/, int32_t field_index) {
+extern "C" float get_float32_field_mlir(int64_t iteration_signal, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null = false;
+    bool is_null;
     return pgx_lower::runtime::extract_field<float>(field_index, &is_null);
 }
 
-extern "C" double get_float64_field_mlir(int64_t  /*iteration_signal*/, int32_t field_index) {
+extern "C" double get_float64_field_mlir(int64_t iteration_signal, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null = false;
+    bool is_null;
     return pgx_lower::runtime::extract_field<double>(field_index, &is_null);
 }
 
