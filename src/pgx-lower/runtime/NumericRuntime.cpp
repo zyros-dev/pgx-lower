@@ -35,4 +35,25 @@ Datum NumericRuntime::pgx_i128_to_numeric(__int128 value, int32_t scale) {
     return i128_to_numeric(value, scale);
 }
 
+__int128 NumericRuntime::pgx_numeric_to_i128(Datum numeric_datum, int32_t scale) {
+    // Bridge back to the i128 columnar storage (PR2 only; removed in PR3).
+    return numeric_to_i128(numeric_datum, scale);
+}
+
+Datum NumericRuntime::pgx_int_to_numeric(int64_t value) {
+    return DirectFunctionCall1(int8_numeric, Int64GetDatum(value));
+}
+
+Datum NumericRuntime::pgx_float_to_numeric(double value) {
+    return DirectFunctionCall1(float8_numeric, Float8GetDatum(value));
+}
+
+int64_t NumericRuntime::pgx_numeric_to_int(Datum numeric_datum) {
+    return DatumGetInt64(DirectFunctionCall1(numeric_int8, numeric_datum));
+}
+
+double NumericRuntime::pgx_numeric_to_float(Datum numeric_datum) {
+    return DatumGetFloat8(DirectFunctionCall1(numeric_float8, numeric_datum));
+}
+
 } // namespace runtime
