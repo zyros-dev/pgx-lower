@@ -259,10 +259,12 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
             break;
         }
         case PhysicalType::DECIMAL128: {
+            // PGX-LOWER: the i128 slot carries a PG Numeric datum (low 64 bits).
+            // Extract it directly — no conversion. tuplesort then orders by the
+            // real Numeric value via NUMERICOID (this is what fixes ORDER BY).
             const __int128 val = *reinterpret_cast<const __int128*>(&mlir_tuple[layout.value_offset]);
-            values[i] = i128_to_numeric(val, 0);
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: i128=%lld (unscaled)",
-                    i, static_cast<long long>(val));
+            values[i] = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(val)));
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: datum passthrough", i);
             break;
         }
         default:
@@ -351,10 +353,12 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
             break;
         }
         case PhysicalType::DECIMAL128: {
-            const __int128 val = numeric_to_i128(values[i], 0);
+            // PGX-LOWER: store the PG Numeric datum (from the sorted slot) into
+            // the i128 slot, zero-extended — no conversion. The JIT reads it back
+            // as a datum-carrying i128.
+            const __int128 val = static_cast<__int128>(static_cast<unsigned __int128>(static_cast<uint64_t>(values[i])));
             *reinterpret_cast<__int128*>(&mlir_tuple[layout.value_offset]) = val;
-            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: i128=%lld (unscaled)",
-                    i, static_cast<long long>(val));
+            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: datum passthrough", i);
             break;
         }
         default:
