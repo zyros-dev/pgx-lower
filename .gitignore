@@ -73,10 +73,7 @@ extension/results/
 
 .cursorignore
 
-build-debug
-build-release
 runtime-header-tool
-build-utest
 # CLion configuration - allow shared project files, ignore personal workspace
 .idea/*
 !.idea/cmake.xml
@@ -113,8 +110,6 @@ claude_temp_permissions
 # LingoDB test tool output
 tools/lingodb-debug/lingodb_debug.log
 
-build-ptest
-build-viz
 query_outputs
 compareresources/data/
 benchmark_results/
