@@ -75,10 +75,7 @@ runtime-header-tool
 # CLion configuration - allow shared project files, ignore personal workspace
 .idea/*
 !.idea/cmake.xml
-!.idea/misc.xml
 !.idea/modules.xml
-!.idea/vcs.xml
-!.idea/*.iml
 # Python bytecode and generated files (but allow our tools)
 __pycache__/
 *.pyc
