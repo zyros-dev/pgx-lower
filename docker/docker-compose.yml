@@ -9,8 +9,6 @@ services:
       - ..:/workspace
       - postgres-data:/var/lib/postgresql/data
       - build-cache:/workspace/build
-      - build-cache-ptest:/workspace/build-ptest
-      - build-cache-utest:/workspace/build-utest
       - ccache-cache:/root/.ccache
     ports:
       - "54320:5432"
@@ -39,7 +37,5 @@ services:
 volumes:
   postgres-data:
   build-cache:
-  build-cache-ptest:
-  build-cache-utest:
   ccache-cache:
   benchmark-data:
