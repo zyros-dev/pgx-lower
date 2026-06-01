@@ -71,55 +71,6 @@ int convertTimeUnit(support::TimeUnit unit) {
    return 0;
 }
 
-std::pair<uint64_t, uint64_t> support::getDecimalScaleMultiplier(const int32_t scale) {
-    __uint128_t result = 1;
-    result *= std::pow<__uint128_t>(static_cast<__uint128_t>(10), static_cast<__uint128_t>(scale));
-
-    uint64_t low = static_cast<uint64_t>(result);
-    uint64_t high = static_cast<uint64_t>(result >> 64);
-
-    PGX_LOG(DB_LOWER, DEBUG, "getDecimalScaleMultiplier(scale=%d): low=0x%lx, high=0x%lx", scale, low, high);
-
-    return {low, high};
-}
-
-std::pair<uint64_t, uint64_t> support::parseDecimal(std::string str, int32_t reqScale) {
-   size_t dotPos = str.find('.');
-   std::string integerPart = (dotPos != std::string::npos) ? str.substr(0, dotPos) : str;
-   std::string fractionalPart = (dotPos != std::string::npos) ? str.substr(dotPos + 1) : "";
-
-   bool negative = false;
-   if (!integerPart.empty() && integerPart[0] == '-') {
-       negative = true;
-       integerPart = integerPart.substr(1);
-   }
-
-   while (fractionalPart.length() < reqScale) {
-       fractionalPart += "0";
-   }
-   if (fractionalPart.length() > reqScale) {
-       fractionalPart = fractionalPart.substr(0, reqScale);
-   }
-
-   std::string combinedStr = integerPart + fractionalPart;
-
-   __int128 value = 0;
-   for (char c : combinedStr) {
-       if (c >= '0' && c <= '9') {
-           value = value * 10 + (c - '0');
-       }
-   }
-
-   if (negative) {
-       value = -value;
-   }
-
-   uint64_t low = static_cast<uint64_t>(value & 0xFFFFFFFFFFFFFFFF);
-   uint64_t high = static_cast<uint64_t>((value >> 64) & 0xFFFFFFFFFFFFFFFF);
-
-   return {low, high};
-}
-
 std::variant<int64_t, double, std::string> parseInt(std::variant<int64_t, double, std::string> val) {
    int64_t res;
    if (std::holds_alternative<int64_t>(val)) {

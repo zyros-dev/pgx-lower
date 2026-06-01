@@ -514,12 +514,6 @@ static mlir::Value datumToNumericCarrier(mlir::OpBuilder& builder, mlir::Locatio
     }
     return builder.create<mlir::arith::ExtUIOp>(loc, builder.getIntegerType(128), datumI64);
 }
-mlir::Value getDecimalScaleMultiplierConstant(mlir::OpBuilder& builder, int32_t s, mlir::Type stdType, mlir::Location loc) {
-   auto [low, high] = support::getDecimalScaleMultiplier(s);
-   std::vector<uint64_t> parts = {low, high};
-   auto multiplier = builder.create<arith::ConstantOp>(loc, stdType, builder.getIntegerAttr(stdType, APInt(stdType.template cast<mlir::IntegerType>().getWidth(), parts)));
-   return multiplier;
-}
 template <class DBOp, class Op>
 class DecimalOpScaledLowering : public ConversionPattern {
    public:
