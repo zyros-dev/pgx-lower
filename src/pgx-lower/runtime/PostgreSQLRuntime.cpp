@@ -1,5 +1,6 @@
 #include "pgx-lower/runtime/PostgreSQLRuntime.h"
 #include "lingodb/runtime/DataSourceIteration.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
 #include <cstring>
@@ -317,10 +318,7 @@ void TableBuilder::addDecimal(const bool is_valid, const __int128 value) {
     if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
     } else {
-        // PGX-LOWER: `value` is an i128 carrying a PG Numeric datum in its low 64
-        // bits — extract it directly. No i128->numeric conversion and no scale:
-        // the datum already encodes its own precision/scale (full PG fidelity).
-        const Datum numeric_datum = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(value)));
+        const Datum numeric_datum = static_cast<Datum>(::runtime::numeric_datum_from_carrier(value));
         const auto numeric_value = DatumGetNumeric(numeric_datum);
 
         PGX_LOG(RUNTIME, DEBUG, "addDecimal: passthrough Numeric datum at %p", numeric_value);
@@ -725,16 +723,14 @@ namespace {
                 break;
             }
             case DecodeKind::NUMERIC: {
-                // PGX-LOWER: store the PG Numeric DATUM (a pointer) in the i128
-                // slot, zero-extended — not a scaled integer. datumTransfer copies
-                // the varlena into the batch memory context so the pointer stays
-                // valid. Downstream arithmetic/compare/sort all carry this datum.
+                // PGX-LOWER: store the PG Numeric datum. datumTransfer copies the
+                // varlena into the batch memory context so the pointer stays valid.
                 if (is_null) {
                     iter->batch->decimal_values[json_col_idx][row_idx] = __int128{0};
                 } else {
                     const Datum transferred = datumTransfer(value, meta.attbyval, meta.attlen);
-                    iter->batch->decimal_values[json_col_idx][row_idx] = static_cast<__int128>(
-                        static_cast<unsigned __int128>(static_cast<uint64_t>(transferred)));
+                    iter->batch->decimal_values[json_col_idx][row_idx] =
+                        ::runtime::numeric_datum_to_carrier(static_cast<uint64_t>(transferred));
                 }
                 break;
             }
