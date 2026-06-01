@@ -4,7 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="build-docker-ptest"
+BUILD_DIR="build-artifacts/docker/ptest"
 
 if ! docker ps --format '{{.Names}}' | grep -q "^pgx-lower-dev$"; then
     echo "Error: pgx-lower-dev container not running"
@@ -24,11 +24,11 @@ docker exec pgx-lower-dev bash -c "
     cmake -G Ninja \
         -DCMAKE_BUILD_TYPE=Debug \
         -DBUILD_ONLY_EXTENSION=ON \
-        .. || true ; \
+        /workspace || true ; \
     cmake -G Ninja \
         -DCMAKE_BUILD_TYPE=Debug \
         -DBUILD_ONLY_EXTENSION=ON \
-        .. && \
+        /workspace && \
     cmake --build . && \
     cmake --install . && \
     ctest --output-on-failure

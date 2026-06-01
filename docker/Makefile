@@ -3,6 +3,11 @@
 .PHONY: build-benchmark up-benchmark down-benchmark shell-benchmark logs-benchmark
 .PHONY: build-postgres-debug profile-container clean-dockers bench-dockers bench-list
 
+DOCKER_BUILD_ROOT := /workspace/build-artifacts/docker
+DOCKER_PTEST_DIR := $(DOCKER_BUILD_ROOT)/ptest
+DOCKER_PTEST_RELEASE_DIR := $(DOCKER_BUILD_ROOT)/ptest-release
+DOCKER_PTEST_PROFILE_DIR := $(DOCKER_BUILD_ROOT)/ptest-profile
+
 # Development container targets
 up:
 	docker compose up -d dev
@@ -35,7 +40,7 @@ clean-dockers:
 	@echo "Step 2: Removing Docker images..."
 	docker rmi pgx-lower:dev pgx-lower:benchmark pgx-lower:profile 2>/dev/null || true
 	@echo "Step 3: Removing build directories..."
-	rm -rf ../build-docker-ptest ../build-docker-ptest-release ../postgres-debug
+	rm -rf ../build-artifacts/docker ../postgres-debug
 	@echo "Step 4: Listing what remains..."
 	@if docker images | grep pgx-lower; then \
 		echo "Warning: Some pgx-lower images still exist"; \
@@ -107,28 +112,28 @@ build-debug:
 	"
 	@docker exec pgx-lower-dev bash -c " \
 		cd /workspace && \
-		mkdir -p build-docker-ptest && \
-		cd build-docker-ptest && \
+		mkdir -p $(DOCKER_PTEST_DIR) && \
+		cd $(DOCKER_PTEST_DIR) && \
 		if [ ! -f CMakeCache.txt ]; then \
 			echo 'Configuring Debug build...'; \
-			cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON .. || true; \
-			cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON ..; \
+			cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON /workspace || true; \
+			cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON /workspace; \
 		fi && \
 		echo 'Building...' && \
 		cmake --build . && \
 		echo 'Installing extension into dev PostgreSQL (/usr/local/pgsql/lib)...' && \
 		cmake --install . \
 	"
-	@echo "Debug build completed: build-docker-ptest/extension/pgx_lower.so"
+	@echo "Debug build completed: $(DOCKER_PTEST_DIR)/extension/pgx_lower.so"
 	@echo "PostgreSQL running on host port 54320"
 
 ptest-debug: build-debug
 	@echo "Running PostgreSQL regression tests (Debug build in dev container on port 54320)..."
-	@docker exec pgx-lower-dev chown -R postgres:postgres /workspace/build-docker-ptest
+	@docker exec pgx-lower-dev chown -R postgres:postgres $(DOCKER_PTEST_DIR)
 	@docker exec -u postgres pgx-lower-dev bash -c " \
-		cd /workspace/build-docker-ptest && \
+		cd $(DOCKER_PTEST_DIR) && \
 		ctest --output-on-failure \
-	" || (echo "Tests failed - check build-docker-ptest/extension/regression.diffs"; exit 1)
+	" || (echo "Tests failed - check $(DOCKER_PTEST_DIR)/extension/regression.diffs"; exit 1)
 	@echo "Debug regression tests completed!"
 	@echo "Connect to test database: psql -h localhost -p 54320 -U postgres"
 
@@ -148,28 +153,28 @@ build-release:
 	"
 	@docker exec pgx-lower-dev bash -c " \
 		cd /workspace && \
-		mkdir -p build-docker-ptest-release && \
-		cd build-docker-ptest-release && \
+		mkdir -p $(DOCKER_PTEST_RELEASE_DIR) && \
+		cd $(DOCKER_PTEST_RELEASE_DIR) && \
 		if [ ! -f CMakeCache.txt ]; then \
 			echo 'Configuring Release build (using -O2 -g to avoid MLIR bug)...'; \
-			cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_EXTENSION=ON .. || true; \
-			cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_EXTENSION=ON ..; \
+			cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_EXTENSION=ON /workspace || true; \
+			cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY_EXTENSION=ON /workspace; \
 		fi && \
 		echo 'Building...' && \
 		cmake --build . && \
 		echo 'Installing extension into dev PostgreSQL...' && \
 		cmake --install . \
 	"
-	@echo "Release build completed: build-docker-ptest-release/extension/pgx_lower.so"
+	@echo "Release build completed: $(DOCKER_PTEST_RELEASE_DIR)/extension/pgx_lower.so"
 	@echo "PostgreSQL running on host port 54320"
 
 ptest-release: build-release
 	@echo "Running PostgreSQL regression tests (Release build in dev container on port 54320)..."
-	@docker exec pgx-lower-dev chown -R postgres:postgres /workspace/build-docker-ptest-release
+	@docker exec pgx-lower-dev chown -R postgres:postgres $(DOCKER_PTEST_RELEASE_DIR)
 	@docker exec -u postgres pgx-lower-dev bash -c " \
-		cd /workspace/build-docker-ptest-release && \
+		cd $(DOCKER_PTEST_RELEASE_DIR) && \
 		ctest --output-on-failure \
-	" || (echo "Tests failed - check build-docker-ptest-release/extension/regression.diffs"; exit 1)
+	" || (echo "Tests failed - check $(DOCKER_PTEST_RELEASE_DIR)/extension/regression.diffs"; exit 1)
 	@echo "Release regression tests completed!"
 	@echo "Connect to test database: psql -h localhost -p 54320 -U postgres"
 
@@ -189,28 +194,28 @@ build-profile:
 	"
 	@docker exec pgx-lower-dev bash -c " \
 		cd /workspace && \
-		mkdir -p build-docker-ptest-profile && \
-		cd build-docker-ptest-profile && \
+		mkdir -p $(DOCKER_PTEST_PROFILE_DIR) && \
+		cd $(DOCKER_PTEST_PROFILE_DIR) && \
 		if [ ! -f CMakeCache.txt ]; then \
 			echo 'Configuring Profile build (-O2 -g -pg -fno-omit-frame-pointer)...'; \
-			cmake -G Ninja -DCMAKE_BUILD_TYPE=Profile -DBUILD_ONLY_EXTENSION=ON .. || true; \
-			cmake -G Ninja -DCMAKE_BUILD_TYPE=Profile -DBUILD_ONLY_EXTENSION=ON ..; \
+			cmake -G Ninja -DCMAKE_BUILD_TYPE=Profile -DBUILD_ONLY_EXTENSION=ON /workspace || true; \
+			cmake -G Ninja -DCMAKE_BUILD_TYPE=Profile -DBUILD_ONLY_EXTENSION=ON /workspace; \
 		fi && \
 		echo 'Building...' && \
 		cmake --build . && \
 		echo 'Installing extension into dev PostgreSQL...' && \
 		cmake --install . \
 	"
-	@echo "Profile build completed: build-docker-ptest-profile/extension/pgx_lower.so"
+	@echo "Profile build completed: $(DOCKER_PTEST_PROFILE_DIR)/extension/pgx_lower.so"
 	@echo "PostgreSQL running on host port 54320"
 
 ptest-profile: build-profile
 	@echo "Running PostgreSQL regression tests (Profile build in dev container on port 54320)..."
-	@docker exec pgx-lower-dev chown -R postgres:postgres /workspace/build-docker-ptest-profile
+	@docker exec pgx-lower-dev chown -R postgres:postgres $(DOCKER_PTEST_PROFILE_DIR)
 	@docker exec -u postgres pgx-lower-dev bash -c " \
-		cd /workspace/build-docker-ptest-profile && \
+		cd $(DOCKER_PTEST_PROFILE_DIR) && \
 		ctest --output-on-failure \
-	" || (echo "Tests failed - check build-docker-ptest-profile/extension/regression.diffs"; exit 1)
+	" || (echo "Tests failed - check $(DOCKER_PTEST_PROFILE_DIR)/extension/regression.diffs"; exit 1)
 	@echo "Profile regression tests completed!"
 	@echo "Connect to test database: psql -h localhost -p 54320 -U postgres"
 
@@ -222,7 +227,7 @@ release-container: build-release
 	@echo "Installing extension into benchmark container..."
 	@docker exec pgx-lower-benchmark bash -c " \
 		mkdir -p /usr/local/pgsql/lib /usr/local/pgsql/share/extension && \
-		cp -v /workspace/build-docker-ptest-release/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
+		cp -v $(DOCKER_PTEST_RELEASE_DIR)/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
 		cp -v /workspace/extension/control/pgx_lower.control /usr/local/pgsql/share/extension/ && \
 		cp -v /workspace/extension/sql/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true && \
 		ls -lh /usr/local/pgsql/lib/pgx_lower.so /usr/local/pgsql/share/extension/pgx_lower.control \
@@ -244,7 +249,7 @@ deploy-profile-extension:
 	@echo "Deploying release extension to profile container..."
 	@docker exec pgx-lower-profile bash -c " \
 		mkdir -p /usr/local/pgsql/lib /usr/local/pgsql/share/extension && \
-		cp -v /workspace/build-docker-ptest-release/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
+		cp -v $(DOCKER_PTEST_RELEASE_DIR)/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
 		cp -v /workspace/extension/control/pgx_lower.control /usr/local/pgsql/share/extension/ && \
 		cp -v /workspace/extension/sql/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true \
 	"
@@ -324,7 +329,7 @@ install-host-profile: build-profile build-postgres-debug
 	@tar xzf ../icu74.tar.gz -C $(PGX_PROFILE_DIR)/lib/compat
 	@tar xzf ../mlir-libs.tar.gz -C $(PGX_PROFILE_DIR)/lib/compat
 	@echo "Installing pgx_lower extension (with -pg profiling)..."
-	@cp ../build-docker-ptest-profile/extension/pgx_lower.so $(PGX_PROFILE_DIR)/lib/
+	@cp ../build-artifacts/docker/ptest-profile/extension/pgx_lower.so $(PGX_PROFILE_DIR)/lib/
 	@cp ../extension/control/pgx_lower.control $(PGX_PROFILE_DIR)/share/extension/
 	@cp ../extension/sql/pgx_lower--1.0.sql $(PGX_PROFILE_DIR)/share/extension/
 	@echo ""
@@ -351,7 +356,7 @@ profile-container: build-postgres-debug build-release
 	@echo "Installing pgx_lower extension into profile container..."
 	@docker exec pgx-lower-profile bash -c " \
 		mkdir -p /usr/local/pgsql/lib /usr/local/pgsql/share/extension && \
-		cp -v /workspace/build-docker-ptest-release/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
+		cp -v $(DOCKER_PTEST_RELEASE_DIR)/extension/pgx_lower.so /usr/local/pgsql/lib/ && \
 		cp -v /workspace/extension/control/pgx_lower.control /usr/local/pgsql/share/extension/ && \
 		cp -v /workspace/extension/sql/pgx_lower--*.sql /usr/local/pgsql/share/extension/ 2>/dev/null || true && \
 		ls -lh /usr/local/pgsql/lib/pgx_lower.so /usr/local/pgsql/share/extension/pgx_lower.control \
@@ -415,7 +420,7 @@ bench-dockers:
 	@echo "Step 3: Running benchmark profile '$(BENCH_PROFILE)'..."
 	@python3 ../benchmark/run_benchmark_config.py $(BENCH_PROFILE) --config ../benchmark-config.yaml
 	@echo ""
-	@echo "Benchmarks complete! Results stored in benchmark/output/benchmark.db"
+	@echo "Benchmarks complete! Results stored in build-artifacts/bench-output/benchmark.db"
 
 bench-list:
 	@python3 ../benchmark/run_benchmark_config.py --list --config ../benchmark-config.yaml

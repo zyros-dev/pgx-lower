@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$(dirname "$SCRIPT_DIR")"
+BUILD_DIR="build-artifacts/docker/ptest-release"
 
 echo -e "Building release extension in dev container..."
 
@@ -19,10 +20,10 @@ echo -e "Building with CMAKE_BUILD_TYPE=RelWithDebInfo (Release has optimizer bu
 # Execute RelWithDebInfo build inside the container
 docker compose -f "$DOCKER_DIR/docker-compose.yml" exec dev bash -c "
     cd /workspace && \
-    rm -rf build-docker-release && \
-    mkdir -p build-docker-release && \
-    cd build-docker-release && \
-    cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_ONLY_EXTENSION=ON .. && \
+    rm -rf ${BUILD_DIR} && \
+    mkdir -p ${BUILD_DIR} && \
+    cd ${BUILD_DIR} && \
+    cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_ONLY_EXTENSION=ON /workspace && \
     ninja && \
     strip --strip-debug extension/pgx_lower.so
 "
@@ -30,7 +31,7 @@ docker compose -f "$DOCKER_DIR/docker-compose.yml" exec dev bash -c "
 exit_code=$?
 
 if [[ $exit_code -eq 0 ]]; then
-    echo -e "Release build completed: build-docker-release/extension/pgx_lower.so"
+    echo -e "Release build completed: ${BUILD_DIR}/extension/pgx_lower.so"
 else
     echo -e "Release build failed with exit code $exit_code"
 fi
