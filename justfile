@@ -17,6 +17,7 @@ _main_root := shell('dirname "$(git rev-parse --path-format=absolute --git-commo
 _rel  := replace_regex(invocation_directory(), "^" + _main_root + "/?", "")
 _wdir := if _rel == "" { "/workspace" } else { "/workspace/" + _rel }
 _bdir := _wdir + "/build-artifacts/ptest"
+_bench_output := _wdir + "/build-artifacts/bench-output"
 _thor_root := "/home/zel/repos/pgx-lower"
 _thor_wdir := if _rel == "" { _thor_root } else { _thor_root + "/" + _rel }
 
@@ -362,18 +363,18 @@ test-record-baseline: _preflight
 # iterations doesn't meaningfully reduce execution variance, it just burns
 # time.
 #
-# Recreates benchmark/output/ each run — a partial interrupted earlier run
+# Recreates build-artifacts/bench-output/ each run — a partial interrupted earlier run
 # can leave sqlite journal/lock state that makes subsequent connects open
 # readonly and bomb mid-run with "attempt to write a readonly database".
 bench: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.5 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_bench_output}} && mkdir -p {{_bench_output}} && chmod 777 {{_bench_output}} && cd {{_wdir}} && python3 benchmark/tpch/run.py 0.5 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Deeper-signal benchmark: SF=1, 1 iteration. ~10 min first time, ~6 min
 # cached. Run before merging anything that claims a performance improvement
 # where SF=0.5's numbers feel marginal. At SF=1 the per-query wall time is
 # long enough (seconds) that ±5% is real signal.
 bench-merge: _preflight
-    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_wdir}}/benchmark/output && mkdir -p {{_wdir}}/benchmark/output && chmod 777 {{_wdir}}/benchmark/output && cd {{_wdir}} && python3 benchmark/tpch/run.py 1.0 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "rm -rf {{_bench_output}} && mkdir -p {{_bench_output}} && chmod 777 {{_bench_output}} && cd {{_wdir}} && python3 benchmark/tpch/run.py 1.0 --port 5432 --container {{_ctr}} --indexes --skip q17,q20 --iterations 1") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
 # Generate the PR benchmark report. Requires an open PR (the PR number
 # becomes part of the filename). Snapshots the current benchmark.db to
@@ -397,7 +398,7 @@ bench-report:
     slug="pr-${pr}-${branch}"
     mkdir -p bench-results
     # Snapshot the run's db into the branch under the final name.
-    src="{{_wdir}}/benchmark/output/benchmark.db"
+    src="{{_bench_output}}/benchmark.db"
     ssh {{_thor}} "docker exec {{_ctr}} bash -c 'test -f ${src} && cp ${src} {{_wdir}}/bench-results/${slug}.db' || { echo 'ERROR: no benchmark.db — run just bench first'; exit 1; }"
     # Fetch the baseline from origin/main. On a fresh repo there may be none;
     # in that case we self-compare (baseline == current) so the artifacts are
@@ -498,7 +499,7 @@ cancel ID:
 
 # Terminate + recreate the main-repo mutagen session (name `pgx-lower`)
 # with the canonical ignore list. Use this when the session's ignore list
-# has drifted — e.g. a missing `/benchmark/output/` ignore lets run.py's
+# has drifted — e.g. a missing `/build-artifacts/` ignore lets run.py's
 # root-owned sqlite files sync back to mac and trip "attempt to write a
 # readonly database" on the next bench. mutagen has no in-place ignore
 # editor, so the recipe is a full terminate + recreate. Safe to run at any
@@ -514,7 +515,7 @@ sync-main-reset:
         --ignore='/.worktrees/' \
         --ignore='__pycache__/' --ignore='*.pyc' --ignore='*.tar.gz' \
         --ignore='/.venv/' --ignore='/.idea/' --ignore='/.vscode/' \
-        --ignore='/benchmark/output/' --ignore='/benchmark_results/' \
+        --ignore='/benchmark_results/' \
         "{{_main_root}}" {{_thor}}:/home/zel/repos/pgx-lower
     echo "sync-main-reset: main session recreated with canonical ignores."
 
