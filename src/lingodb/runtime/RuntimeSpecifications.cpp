@@ -47,7 +47,7 @@ PhysicalType get_physical_type(uint32_t type_oid) {
     case VARCHAROID:
     case BPCHAROID:
     case BYTEAOID: return PhysicalType::VARLEN32;
-    case NUMERICOID: return PhysicalType::DECIMAL128;
+    case NUMERICOID: return PhysicalType::NUMERIC_DATUM;
     default:
         PGX_ERROR("get_physical_size: Unsupported PostgreSQL type OID: %u", type_oid);
         throw std::runtime_error("Unsupported PostgreSQL type OID");
