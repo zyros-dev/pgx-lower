@@ -249,23 +249,25 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
             val = rewriter.create<util::LoadOp>(loc, typeConverter->convertType(baseType), ptr);
             val.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
          } else if (convertedType.isInteger(128)) {
-            auto i128PtrType = util::RefType::get(context, rewriter.getIntegerType(128));
+             // Generic 128-bit integer load path. DecimalType no longer uses this
+             // for PostgreSQL NUMERIC; NUMERIC is a Datum-width carrier.
+             auto i128PtrType = util::RefType::get(context, rewriter.getIntegerType(128));
 
-            Value decimalPtr = valueBuffer;
-            if (!isConstantIntValue(index, 0)) {
-                Value elemSize = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 16);
-                Value offset = rewriter.create<arith::MulIOp>(loc, index, elemSize);
-                Value bytePtr = rewriter.create<util::GenericMemrefCastOp>(
-                    loc, util::RefType::get(context, rewriter.getI8Type()), valueBuffer);
-                bytePtr = rewriter.create<util::ArrayElementPtrOp>(
-                    loc, util::RefType::get(context, rewriter.getI8Type()), bytePtr, offset);
-                decimalPtr = rewriter.create<util::GenericMemrefCastOp>(loc, i128PtrType, bytePtr);
-            } else {
-                decimalPtr = rewriter.create<util::GenericMemrefCastOp>(loc, i128PtrType, valueBuffer);
-            }
+             Value i128Ptr = valueBuffer;
+             if (!isConstantIntValue(index, 0)) {
+                 Value elemSize = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 16);
+                 Value offset = rewriter.create<arith::MulIOp>(loc, index, elemSize);
+                 Value bytePtr = rewriter.create<util::GenericMemrefCastOp>(
+                     loc, util::RefType::get(context, rewriter.getI8Type()), valueBuffer);
+                 bytePtr = rewriter.create<util::ArrayElementPtrOp>(
+                     loc, util::RefType::get(context, rewriter.getI8Type()), bytePtr, offset);
+                 i128Ptr = rewriter.create<util::GenericMemrefCastOp>(loc, i128PtrType, bytePtr);
+             } else {
+                 i128Ptr = rewriter.create<util::GenericMemrefCastOp>(loc, i128PtrType, valueBuffer);
+             }
 
-            val = rewriter.create<util::LoadOp>(loc, typeConverter->convertType(baseType), decimalPtr);
-            val.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+             val = rewriter.create<util::LoadOp>(loc, typeConverter->convertType(baseType), i128Ptr);
+             val.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
          } else {
             val = rewriter.create<util::LoadOp>(loc, typeConverter->convertType(baseType), valueBuffer, index);
             val.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());

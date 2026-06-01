@@ -123,7 +123,6 @@ static ::mlir::Value constLikeImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRan
 }
 static ::mlir::Value dumpValuesImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
    using namespace mlir;
-   auto i128Type = IntegerType::get(rewriter.getContext(), 128);
    auto i64Type = IntegerType::get(rewriter.getContext(), 64);
    auto nullableType = originalArgumentTypes[0].dyn_cast_or_null<mlir::db::NullableType>();
    auto baseType = getBaseType(originalArgumentTypes[0]);
@@ -153,45 +152,46 @@ static ::mlir::Value dumpValuesImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRa
          val = rewriter.create<arith::ExtUIOp>(loc, i64Type, val);
       }
       rt::DumpRuntime::dumpUInt(rewriter, loc)({isNull, val});
-   } else if (auto decType = baseType.dyn_cast_or_null<mlir::db::DecimalType>()) {
-      if (llvm::cast<mlir::IntegerType>(typeConverter->convertType(decType)).getWidth() < 128) {
-         auto converted = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
-         val = converted;
-      }
-      Value low = rewriter.create<arith::TruncIOp>(loc, i64Type, val);
-      Value shift = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(i128Type, 64));
-      Value scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32IntegerAttr(decType.getS()));
-      Value high = rewriter.create<arith::ShRUIOp>(loc, i128Type, val, shift);
-      high = rewriter.create<arith::TruncIOp>(loc, i64Type, high);
-      rt::DumpRuntime::dumpDecimal(rewriter, loc)({isNull, low, high, scale});
+   } else if (baseType.isa<mlir::db::DecimalType>()) {
+       Value datum = val;
+       if (datum.getType() != i64Type) {
+           datum = rewriter.create<arith::TruncIOp>(loc, i64Type, datum);
+       }
+       rt::DumpRuntime::dumpNumeric(rewriter, loc)({isNull, datum});
    } else if (auto dateType = baseType.dyn_cast_or_null<mlir::db::DateType>()) {
-      rt::DumpRuntime::dumpDate(rewriter, loc)({isNull, val});
+       rt::DumpRuntime::dumpDate(rewriter, loc)({isNull, val});
    } else if (auto timestampType = baseType.dyn_cast_or_null<mlir::db::TimestampType>()) {
-      switch (timestampType.getUnit()) {
-         case mlir::db::TimeUnitAttr::second: rt::DumpRuntime::dumpTimestampSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::millisecond: rt::DumpRuntime::dumpTimestampMilliSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::microsecond: rt::DumpRuntime::dumpTimestampMicroSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::nanosecond: rt::DumpRuntime::dumpTimestampNanoSecond(rewriter, loc)({isNull, val}); break;
-      }
+       switch (timestampType.getUnit()) {
+       case mlir::db::TimeUnitAttr::second: rt::DumpRuntime::dumpTimestampSecond(rewriter, loc)({isNull, val}); break;
+       case mlir::db::TimeUnitAttr::millisecond:
+           rt::DumpRuntime::dumpTimestampMilliSecond(rewriter, loc)({isNull, val});
+           break;
+       case mlir::db::TimeUnitAttr::microsecond:
+           rt::DumpRuntime::dumpTimestampMicroSecond(rewriter, loc)({isNull, val});
+           break;
+       case mlir::db::TimeUnitAttr::nanosecond:
+           rt::DumpRuntime::dumpTimestampNanoSecond(rewriter, loc)({isNull, val});
+           break;
+       }
    } else if (auto intervalType = baseType.dyn_cast_or_null<mlir::db::IntervalType>()) {
-      if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
-         rt::DumpRuntime::dumpIntervalMonths(rewriter, loc)({isNull, val});
-      } else {
-         rt::DumpRuntime::dumpIntervalDaytime(rewriter, loc)({isNull, val});
-      }
+       if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
+           rt::DumpRuntime::dumpIntervalMonths(rewriter, loc)({isNull, val});
+       } else {
+           rt::DumpRuntime::dumpIntervalDaytime(rewriter, loc)({isNull, val});
+       }
    } else if (auto floatType = baseType.dyn_cast_or_null<::mlir::FloatType>()) {
-      if (floatType.getWidth() < 64) {
-         val = rewriter.create<arith::ExtFOp>(loc, f64Type, val);
-      }
-      rt::DumpRuntime::dumpFloat(rewriter, loc)({isNull, val});
+       if (floatType.getWidth() < 64) {
+           val = rewriter.create<arith::ExtFOp>(loc, f64Type, val);
+       }
+       rt::DumpRuntime::dumpFloat(rewriter, loc)({isNull, val});
    } else if (baseType.isa<mlir::db::StringType>()) {
-      rt::DumpRuntime::dumpString(rewriter, loc)({isNull, val});
+       rt::DumpRuntime::dumpString(rewriter, loc)({isNull, val});
    } else if (auto charType = baseType.dyn_cast_or_null<mlir::db::CharType>()) {
-      Value numBytes = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64IntegerAttr(charType.getBytes()));
-      if (charType.getBytes() < 8) {
-         val = rewriter.create<arith::ExtSIOp>(loc, i64Type, val);
-      }
-      rt::DumpRuntime::dumpChar(rewriter, loc)({isNull, val, numBytes});
+       Value numBytes = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64IntegerAttr(charType.getBytes()));
+       if (charType.getBytes() < 8) {
+           val = rewriter.create<arith::ExtSIOp>(loc, i64Type, val);
+       }
+       rt::DumpRuntime::dumpChar(rewriter, loc)({isNull, val, numBytes});
    }
    return ::mlir::Value();
 }

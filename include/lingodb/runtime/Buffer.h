@@ -16,6 +16,7 @@ struct Buffer {
          size_t numElements;
          uint8_t* ptr;
       };
+      // Generic two-word buffer ABI view, not a PostgreSQL NUMERIC encoding.
       __int128 as128;
    };
    Buffer(size_t numElements, uint8_t* ptr) : numElements(numElements), ptr(ptr) {}

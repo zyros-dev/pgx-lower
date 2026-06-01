@@ -180,7 +180,7 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
 
             if (type_oid == VARCHAROID || type_oid == TEXTOID) {
                 uint8_t* col_data = kv_region + offset;
-                uint8_t* varlen32_data = col.is_nullable ? (col_data + 1) : col_data;  // Skip nullable byte if present
+                uint8_t* varlen32_data = col.is_nullable ? (col_data + 1) : col_data; // Skip nullable byte if present
 
                 const uint32_t len_with_flag = *reinterpret_cast<uint32_t*>(varlen32_data);
                 const bool is_lazy = (len_with_flag & 0x80000000u) != 0;

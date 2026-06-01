@@ -316,15 +316,18 @@ class CreateVarLenLowering : public OpConversionPattern<mlir::util::CreateVarLen
    public:
    using OpConversionPattern<mlir::util::CreateVarLen>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::util::CreateVarLen op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      ::mlir::Type i128Ty = rewriter.getIntegerType(128);
-      Value lazymask = rewriter.create<mlir::arith::ConstantOp>(op->getLoc(), rewriter.getI32Type(), rewriter.getI32IntegerAttr(0x80000000));
-      Value lazylen = rewriter.create<mlir::LLVM::OrOp>(op->getLoc(), lazymask, adaptor.getLen());
-      Value asI128 = rewriter.create<mlir::LLVM::ZExtOp>(op->getLoc(), i128Ty, lazylen);
-      Value rawPtr = rewriter.create<mlir::LLVM::PtrToIntOp>(op->getLoc(), i128Ty, adaptor.getRef());
-      auto const64 = rewriter.create<mlir::arith::ConstantOp>(op->getLoc(), i128Ty, rewriter.getIntegerAttr(i128Ty, 64));
-      auto shlPtr = rewriter.create<mlir::LLVM::ShlOp>(op->getLoc(), rawPtr, const64);
-      rewriter.replaceOpWithNewOp<mlir::LLVM::OrOp>(op, asI128, shlPtr);
-      return success();
+       // VarLen32 lowers to a 16-byte integer-shaped payload for LLVM packing.
+       // This is string storage, not NUMERIC.
+       ::mlir::Type i128Ty = rewriter.getIntegerType(128);
+       Value lazymask = rewriter.create<mlir::arith::ConstantOp>(op->getLoc(), rewriter.getI32Type(),
+                                                                 rewriter.getI32IntegerAttr(0x80000000));
+       Value lazylen = rewriter.create<mlir::LLVM::OrOp>(op->getLoc(), lazymask, adaptor.getLen());
+       Value asI128 = rewriter.create<mlir::LLVM::ZExtOp>(op->getLoc(), i128Ty, lazylen);
+       Value rawPtr = rewriter.create<mlir::LLVM::PtrToIntOp>(op->getLoc(), i128Ty, adaptor.getRef());
+       auto const64 = rewriter.create<mlir::arith::ConstantOp>(op->getLoc(), i128Ty, rewriter.getIntegerAttr(i128Ty, 64));
+       auto shlPtr = rewriter.create<mlir::LLVM::ShlOp>(op->getLoc(), rawPtr, const64);
+       rewriter.replaceOpWithNewOp<mlir::LLVM::OrOp>(op, asI128, shlPtr);
+       return success();
    }
 };
 class CreateConstVarLenLowering : public OpConversionPattern<mlir::util::CreateConstVarLen> {
@@ -334,6 +337,8 @@ class CreateConstVarLenLowering : public OpConversionPattern<mlir::util::CreateC
                                  ConversionPatternRewriter& rewriter) const override {
       size_t len = op.getStr().size();
 
+      // VarLen32 lowers to a 16-byte integer-shaped payload for LLVM packing.
+      // This is string storage, not NUMERIC.
       ::mlir::Type i128Ty = rewriter.getIntegerType(128);
       ::mlir::Value p1, p2;
 
@@ -460,6 +465,8 @@ void mlir::util::populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeCon
    });
    typeConverter.addConversion([&](mlir::util::VarLen32Type varLen32Type) {
       MLIRContext* context = &typeConverter.getContext();
+      // VarLen32 lowers to a 16-byte integer-shaped payload for LLVM packing.
+      // This is string storage, not NUMERIC.
       return IntegerType::get(context, 128);
    });
    patterns.add<CastOpLowering>(typeConverter, patterns.getContext());

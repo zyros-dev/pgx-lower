@@ -3,8 +3,15 @@
 #include <iostream>
 
 #include "runtime/DumpRuntime.h"
-#include <arrow/util/decimal.h>
 #include <arrow/vendored/datetime.h>
+
+extern "C" {
+#include "postgres.h"
+#include "fmgr.h"
+#include "utils/fmgrprotos.h"
+#include "utils/numeric.h"
+}
+
 void runtime::DumpRuntime::dumpIndex(uint64_t val) {
    std::cout << "index(" << val << ")" << std::endl;
 }
@@ -29,13 +36,14 @@ void runtime::DumpRuntime::dumpBool(bool null, bool val) {
       std::cout << "bool(" << std::boolalpha << val << ")" << std::endl;
    }
 }
-void runtime::DumpRuntime::dumpDecimal(bool null, uint64_t low, uint64_t high, int32_t scale) {
-   if (null) {
-      std::cout << "decimal(NULL)" << std::endl;
-   } else {
-      arrow::Decimal128 decimalrep(arrow::BasicDecimal128(high, low));
-      std::cout << "decimal(" << decimalrep.ToString(scale) << ")" << std::endl;
-   }
+void runtime::DumpRuntime::dumpNumeric(bool null, uint64_t datum) {
+    if (null) {
+        std::cout << "numeric(NULL)" << std::endl;
+    } else {
+        char* str = DatumGetCString(DirectFunctionCall1(numeric_out, static_cast<Datum>(datum)));
+        std::cout << "numeric(" << str << ")" << std::endl;
+        pfree(str);
+    }
 }
 arrow_vendored::date::sys_days epoch = arrow_vendored::date::sys_days{arrow_vendored::date::jan / 1 / 1970};
 void runtime::DumpRuntime::dumpDate(bool null, int64_t date) {

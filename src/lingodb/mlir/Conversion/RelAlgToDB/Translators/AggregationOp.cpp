@@ -172,13 +172,6 @@ class AggregationTranslator : public mlir::relalg::Translator {
       mlir::OpBuilder builder(context);
       mlir::Attribute maxValAttr = ::llvm::TypeSwitch<::mlir::Type, mlir::Attribute>(type)
 
-                                      .Case<::mlir::db::DecimalType>([&](::mlir::db::DecimalType t) {
-                                         if (t.getP() < 19) {
-                                            return (mlir::Attribute) builder.getI64IntegerAttr(std::numeric_limits<int64_t>::max());
-                                         }
-                                         std::vector<uint64_t> parts = {0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF};
-                                         return (mlir::Attribute) builder.getIntegerAttr(mlir::IntegerType::get(context, 128), mlir::APInt(128, parts));
-                                      })
                                       .Case<::mlir::IntegerType>([&](::mlir::IntegerType) {
                                          return builder.getI64IntegerAttr(std::numeric_limits<int64_t>::max());
                                       })
@@ -310,7 +303,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
                auto zeroAttr = mlir::Attribute();
                auto baseType = getBaseType(resultingType);
                if (baseType.isa<mlir::db::DecimalType>()) {
-                  zeroAttr = builder.getIntegerAttr(mlir::IntegerType::get(builder.getContext(), 128), mlir::APInt(128, 0));
+                   zeroAttr = builder.getI64IntegerAttr(0);
                } else if (baseType.isa<mlir::FloatType>()) {
                   auto floatType = baseType.cast<mlir::FloatType>();
                   if (floatType.getWidth() == 32) {

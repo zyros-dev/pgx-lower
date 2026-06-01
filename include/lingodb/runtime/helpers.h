@@ -109,6 +109,7 @@ class VarLen32 {
       return (len & lazyMask) != 0;
    }
 
+   // Raw view of VarLen32's 16-byte storage, not a PostgreSQL NUMERIC encoding.
    __int128 asI128() {
       return *(reinterpret_cast<__int128*>(this));
    }

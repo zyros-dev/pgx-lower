@@ -8,7 +8,7 @@ struct DumpRuntime {
    static void dumpInt(bool null, int64_t val);
    static void dumpUInt(bool null, uint64_t val);
    static void dumpBool(bool null, bool val);
-   static void dumpDecimal(bool null, uint64_t low, uint64_t high, int32_t scale);
+   static void dumpNumeric(bool null, uint64_t datum);
    static void dumpDate(bool null, int64_t date);
    static void dumpTimestampSecond(bool null, uint64_t date);
    static void dumpTimestampMilliSecond(bool null, uint64_t date);
