@@ -1105,17 +1105,19 @@ class HashLowering : public ConversionPattern {
 
       if (auto intType = v.getType().dyn_cast_or_null<mlir::IntegerType>()) {
          if (intType.getWidth() == 128) {
-            auto i64Type = IntegerType::get(builder.getContext(), 64);
-            auto i128Type = IntegerType::get(builder.getContext(), 128);
+             // Generic 128-bit integer hash path. DecimalType is handled above
+             // through PostgreSQL numeric_hash on the Datum carrier.
+             auto i64Type = IntegerType::get(builder.getContext(), 64);
+             auto i128Type = IntegerType::get(builder.getContext(), 128);
 
-            Value low = builder.create<arith::TruncIOp>(loc, i64Type, v);
-            Value shift = builder.create<arith::ConstantOp>(loc, builder.getIntegerAttr(i128Type, 64));
-            Value high = builder.create<arith::ShRUIOp>(loc, i128Type, v, shift);
-            Value first = hashInteger(builder, loc, high);
-            Value second = hashInteger(builder, loc, low);
-            Value combined1 = combineHashes(builder, loc, first, totalHash);
-            Value combined2 = combineHashes(builder, loc, second, combined1);
-            return combined2;
+             Value low = builder.create<arith::TruncIOp>(loc, i64Type, v);
+             Value shift = builder.create<arith::ConstantOp>(loc, builder.getIntegerAttr(i128Type, 64));
+             Value high = builder.create<arith::ShRUIOp>(loc, i128Type, v, shift);
+             Value first = hashInteger(builder, loc, high);
+             Value second = hashInteger(builder, loc, low);
+             Value combined1 = combineHashes(builder, loc, first, totalHash);
+             Value combined2 = combineHashes(builder, loc, second, combined1);
+             return combined2;
          } else {
             return combineHashes(builder, loc, hashInteger(builder, loc, v), totalHash);
          }

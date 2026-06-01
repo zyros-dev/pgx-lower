@@ -80,6 +80,8 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             case clang::BuiltinType::Long: return translateIntegerType(64);
             case clang::BuiltinType::Float: return "mlir::Float32Type::get(context)";
             case clang::BuiltinType::Double: return "mlir::Float64Type::get(context)";
+            // Generic runtime ABI support only. PostgreSQL NUMERIC is carried as Datum,
+            // not as i128.
             case clang::BuiltinType::Int128: return translateIntegerType(128);
             case clang::BuiltinType::UInt128: return translateIntegerType(128);
             default: break;
