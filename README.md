@@ -13,6 +13,14 @@ committed per-PR benchmark reports.
 The inherited `tools/` tree is tracked in `docs/tools-ledger.md`; do not delete
 entries without updating that ledger.
 
+Cheap PR hygiene checks:
+
+```bash
+git diff --check
+just check-diff
+just ffix-diff  # apply clang-format to changed C/C++ hunks
+```
+
 ### IDE setup (compile_commands.json)
 
 The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from
