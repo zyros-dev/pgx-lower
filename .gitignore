@@ -46,6 +46,7 @@ compile_commands.json
 
 # CMake build directories
 /build-artifacts/
+build-docker-*/
 build/
 cmake-build-*/
 _deps/
@@ -93,6 +94,7 @@ Testing
 tools/lingodb-debug/lingodb_debug.log
 
 query_outputs
+benchmark/output/
 compareresources/data/
 benchmark_results/
 .venv/
