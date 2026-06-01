@@ -1,9 +1,9 @@
 #ifndef RUNTIME_TABLEBUILDER_H
 #define RUNTIME_TABLEBUILDER_H
+#include <cassert>
+
 #include "lingodb/runtime/RuntimeSpecifications.h"
 #include "lingodb/runtime/helpers.h"
-
-#include <cassert>
 
 namespace runtime {
 class TableBuilder {

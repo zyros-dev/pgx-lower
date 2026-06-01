@@ -9,6 +9,16 @@
 
 Comments: would a human write this? If a comment restates what well-named code says, delete it. File-header banners are noise unless they encode a non-obvious WHY. In tests, the test names ARE the documentation.
 
+## PostgreSQL type truthfulness
+
+This fork is allowed to use PostgreSQL-owned runtime types where the code is
+implementing PostgreSQL semantics. Do not hide PG concepts behind generic
+integer or pointer carriers just to preserve an old LingODB isolation boundary.
+Semantic aliases are fine when they clarify the PG meaning, e.g. a
+`NumericDatumCarrier` may alias `Datum` to say "this Datum contains a NUMERIC".
+Avoid aliases that make a PG value look like an arbitrary `uint64_t`/`uintptr_t`
+unless the code is truly doing mechanical ABI packing.
+
 ## Merge discipline
 
 Never merge a PR, rebase-merge a PR, squash-merge a PR, delete a PR branch, or

@@ -17,9 +17,17 @@ function(gen_rt_def target_name header_file)
     else()
         set(header_path "${CMAKE_SOURCE_DIR}/include/lingodb/runtime/${header_file}")
     endif()
+
+    set(runtime_header_tool_includes
+            -I /usr/lib/llvm-20/include/
+            -I ${CMAKE_SOURCE_DIR}/include
+            -I ${CMAKE_SOURCE_DIR}/include/lingodb)
+    foreach(include_dir IN LISTS PostgreSQL_INCLUDE_DIRS PostgreSQL_SERVER_INCLUDE_DIRS)
+        list(APPEND runtime_header_tool_includes -I ${include_dir})
+    endforeach()
     
     add_custom_command(
-            COMMAND $<TARGET_FILE:runtime-header-tool> --oh=${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file} ${header_path} -- -x c++ -I /usr/lib/llvm-20/include/ -I ${CMAKE_SOURCE_DIR}/include -I ${CMAKE_SOURCE_DIR}/include/lingodb
+            COMMAND $<TARGET_FILE:runtime-header-tool> --oh=${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file} ${header_path} -- -x c++ -DPOSTGRESQL_EXTENSION=1 ${runtime_header_tool_includes}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}            
             OUTPUT  ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
             DEPENDS $<TARGET_FILE:runtime-header-tool> ${header_path} ${CMAKE_SOURCE_DIR}/include/lingodb/runtime/RuntimeSpecifications.h

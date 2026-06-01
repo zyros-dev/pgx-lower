@@ -1,7 +1,3 @@
-#include "pgx-lower/runtime/PostgreSQLRuntime.h"
-#include "lingodb/runtime/DataSourceIteration.h"
-#include "lingodb/runtime/RuntimeSpecifications.h"
-#include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -10,6 +6,11 @@
 #include <cmath>
 #include <string>
 #include <vector>
+
+#include "pgx-lower/runtime/PostgreSQLRuntime.h"
+#include "lingodb/runtime/DataSourceIteration.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
+#include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <json.h>
 #include "lingodb/runtime/helpers.h"
 #include "pgx-lower/runtime/tuple_access.h"
@@ -318,7 +319,7 @@ void TableBuilder::addNumericDatum(const bool is_valid, const ::runtime::Numeric
     if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
     } else {
-        const Datum numeric_datum = static_cast<Datum>(::runtime::numeric_datum_from_carrier(value));
+        const Datum numeric_datum = ::runtime::numeric_datum_from_carrier(value);
         const auto numeric_value = DatumGetNumeric(numeric_datum);
 
         PGX_LOG(RUNTIME, DEBUG, "addNumericDatum: passthrough Numeric datum at %p", numeric_value);
@@ -721,8 +722,7 @@ namespace {
                     iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::NumericDatumCarrier{0};
                 } else {
                     const Datum transferred = datumTransfer(value, meta.attbyval, meta.attlen);
-                    iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::numeric_datum_to_carrier(
-                        static_cast<uint64_t>(transferred));
+                    iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::numeric_datum_to_carrier(transferred);
                 }
                 break;
             }

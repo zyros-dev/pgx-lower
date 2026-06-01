@@ -157,13 +157,13 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 // hashtable context and rewrite the carrier before batch reuse.
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* numeric_data = col.is_nullable ? (col_data + 1) : col_data;
-                const uint64_t datum = runtime::load_numeric_datum_carrier(numeric_data);
+                const Datum datum = runtime::load_numeric_datum_carrier(numeric_data);
                 if (datum != 0) {
-                    const auto* src = reinterpret_cast<const struct varlena*>(datum);
+                    const auto* src = reinterpret_cast<const struct varlena*>(DatumGetPointer(datum));
                     const Size sz = VARSIZE_ANY(src);
                     void* copy = palloc(sz);
                     memcpy(copy, src, sz);
-                    runtime::store_numeric_datum_carrier(numeric_data, reinterpret_cast<uint64_t>(copy));
+                    runtime::store_numeric_datum_carrier(numeric_data, PointerGetDatum(copy));
                 }
             }
 
@@ -200,13 +200,13 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 // PGX-LOWER: deep-copy the Numeric datum (see key path above).
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* numeric_data = col.is_nullable ? (col_data + 1) : col_data;
-                const uint64_t datum = runtime::load_numeric_datum_carrier(numeric_data);
+                const Datum datum = runtime::load_numeric_datum_carrier(numeric_data);
                 if (datum != 0) {
-                    const auto* src = reinterpret_cast<const struct varlena*>(datum);
+                    const auto* src = reinterpret_cast<const struct varlena*>(DatumGetPointer(datum));
                     const Size sz = VARSIZE_ANY(src);
                     void* copy = palloc(sz);
                     memcpy(copy, src, sz);
-                    runtime::store_numeric_datum_carrier(numeric_data, reinterpret_cast<uint64_t>(copy));
+                    runtime::store_numeric_datum_carrier(numeric_data, PointerGetDatum(copy));
                 }
             }
 
