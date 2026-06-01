@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+compiler=""
+if [[ "${1:-}" == --compiler=* ]]; then
+    compiler="${1#--compiler=}"
+    shift
+fi
+
+if [[ "${compiler}" != "clang" && "${compiler}" != "clang++" ]]; then
+    echo "container-compiler: expected --compiler=clang or --compiler=clang++" >&2
+    exit 2
+fi
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+host_root=$(cd "${script_dir}/../.." && pwd -P)
+container_root=${PGX_LOWER_CLION_CONTAINER_ROOT:-/workspace}
+container=${PGX_LOWER_CLION_CONTAINER:-pgx-lower-dev}
+
+cwd=${PWD}
+if [[ "${cwd}" == "${host_root}"* ]]; then
+    cwd="${container_root}${cwd#"${host_root}"}"
+else
+    cwd="${container_root}"
+fi
+
+args=()
+sysroot="${host_root}/build-artifacts/clion-sysroot"
+tmp_inputs=()
+for arg in "$@"; do
+    if [[ "${arg}" == /tmp/* && -f "${arg}" ]]; then
+        container_arg="${arg}"
+        docker cp "${arg}" "${container}:${container_arg}"
+        tmp_inputs+=("${container_arg}")
+        args+=("${container_arg}")
+        continue
+    fi
+    if [[ "${arg}" == /tmp/compiler-file* || "${arg}" == /tmp/pgx-lower-clion-* ]]; then
+        container_arg="${arg}"
+        docker exec "${container}" sh -c 'mkdir -p /tmp && : > "$1"' sh "${container_arg}"
+        tmp_inputs+=("${container_arg}")
+        args+=("${container_arg}")
+        continue
+    fi
+    if [[ "${arg}" == "${sysroot}/"* ]]; then
+        arg="/${arg#"${sysroot}/"}"
+    fi
+    args+=("${arg//${host_root}/${container_root}}")
+done
+
+cleanup_tmp_inputs() {
+    if [[ "${#tmp_inputs[@]}" -gt 0 ]]; then
+        docker exec "${container}" rm -f -- "${tmp_inputs[@]}" >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_tmp_inputs EXIT
+
+rewrite_container_paths() {
+    sed \
+        -e "s# ${container_root}/build-artifacts/clion-sysroot# ${sysroot}#g" \
+        -e "s#${container_root}#${host_root}#g" \
+        -e "s# /usr/lib/gcc/x86_64-linux-gnu/14/../../../../include/c++/14# ${sysroot}/usr/include/c++/14#g" \
+        -e "s# /usr/lib/gcc/x86_64-linux-gnu/14/../../../../include/x86_64-linux-gnu/c++/14# ${sysroot}/usr/include/x86_64-linux-gnu/c++/14#g" \
+        -e "s# /usr/lib/gcc/x86_64-linux-gnu/14/../../../../include/c++/14/backward# ${sysroot}/usr/include/c++/14/backward#g" \
+        -e "s# /usr/lib/llvm-20/lib/clang/20/include# ${sysroot}/usr/lib/llvm-20/lib/clang/20/include#g" \
+        -e "s# /usr/local/include# ${sysroot}/usr/local/include#g" \
+        -e "s# /usr/include/x86_64-linux-gnu# ${sysroot}/usr/include/x86_64-linux-gnu#g" \
+        -e "s# /usr/include# ${sysroot}/usr/include#g"
+}
+
+docker exec -w "${cwd}" "${container}" "/usr/lib/llvm-20/bin/${compiler}" "${args[@]}" 2> >(rewrite_container_paths >&2)

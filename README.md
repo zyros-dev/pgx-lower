@@ -17,17 +17,23 @@ source), so the IDE can't drive CMake itself. Instead, every build exports a
 `compile_commands.json` and a remote IDE reads it.
 
 - `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` is set on the configure in `just compile`,
-  `just test`, and `just utest-pg`, so the DB is re-emitted as a side effect of
-  any normal build. There is no separate "generate the JSON" step.
-- The DB lands at `build-artifacts/ptest/compile_commands.json` on thor.
-  `build-artifacts/` is mutagen-ignored, so it does not sync to the mac — point a
-  *remote* IDE (CLion Gateway or VS Code Remote-SSH on thor) at it.
+  `just test`, and `just utest-pg`, so the raw DB is re-emitted as a side effect
+  of any normal build.
+- The raw Docker DB lands at `build-artifacts/ptest/compile_commands.json` on
+  thor and contains `/workspace/...` paths.
+- Those normal build recipes automatically rewrite the DB for the thor host
+  checkout and write `compile_commands.json` at the repo root. `just clion-db`
+  exists only as a manual repair/bootstrap command.
 
-First-time bootstrap: run `just compile` once so the DB exists, then in the IDE:
+First-time bootstrap: run any normal build command (`just compile` is enough) so
+the host-path DB exists, then in the IDE:
 
 - CLion: open the project in Compilation Database mode and select
-  `build-artifacts/ptest/compile_commands.json`.
+  `compile_commands.json`. If diagnostics look stale after a build or branch
+  switch, reload the compilation database project (`Ctrl+Shift+O` or
+  Tools | Compilation Database | Reload Compilation Database Project).
 - VS Code / clangd: point `clangd` at the same path
-  (`--compile-commands-dir=build-artifacts/ptest`).
+  (`--compile-commands-dir=.`).
 
-After that it auto-reloads when the file changes — no manual refresh.
+After that, normal builds keep the file current. CLion may still need a project
+reload depending on its per-project auto-reload setting.
