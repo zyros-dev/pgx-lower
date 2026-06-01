@@ -70,9 +70,6 @@ extension/results/
 *.cpp.inc
 *.h.inc
 
-
-.cursorignore
-
 runtime-header-tool
 # CLion configuration - allow shared project files, ignore personal workspace
 .idea/*
@@ -81,31 +78,16 @@ runtime-header-tool
 !.idea/modules.xml
 !.idea/vcs.xml
 !.idea/*.iml
-llm_documentation
-chroma_db
 # Python bytecode and generated files (but allow our tools)
 __pycache__/
 *.pyc
 *.pyo
-*.gguf
 *-log
-.mcp.json
-.cursor
-memory_bank
 __pycache__
 Testing
 .vscode
-.serena
-.gemini
 *.tmp
 *.diffs
-
-
-# Temporary entry for Claude file editing permissions  
-# This ensures agents can make necessary changes to implement fixes
-claude_temp_permissions
-
-# Dummy comment for testing - enabling workflow execution
 
 # LingoDB test tool output
 tools/lingodb-debug/lingodb_debug.log
