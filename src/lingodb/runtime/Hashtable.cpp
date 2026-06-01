@@ -252,9 +252,12 @@ void runtime::Hashtable::destroy(Hashtable* ht) {
     PGX_IO(RUNTIME);
     ht->hex_dump_all();
     const auto& meta = g_hashtable_metadata[ht];
-    if (meta.hashtable_context) {
-        MemoryContextDelete(static_cast<MemoryContext>(meta.hashtable_context));
-    }
+    // Aggregation results can be copied from the hashtable into later pipeline
+    // state (for example a vector used by scalar subqueries) before the
+    // hashtable itself is destroyed. PG-native NUMERIC values are varlena
+    // pointers, so deleting this context here can leave those later pipeline
+    // states with dangling Numeric datums. The context is parented under the
+    // active PostgreSQL query/transaction context and will be reclaimed there.
     g_hashtable_metadata.erase(ht);
     ht->~Hashtable();
     free(ht);

@@ -23,13 +23,13 @@ FROM decode_at_scan_t
 WHERE id <= 5
 ORDER BY id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- id | quantity | price | ship_date  | status |      note      
-----+----------+-------+------------+--------+----------------
-  1 |        2 |  1007 | 01-02-1997 | B      | item-note-0001
-  2 |        3 |  1014 | 01-03-1997 | C      | item-note-0002
-  3 |        4 |  1021 | 01-04-1997 | A      | item-note-0003
-  4 |        5 |  1028 | 01-05-1997 | B      | item-note-0004
-  5 |        6 |  1035 | 01-06-1997 | C      | item-note-0005
+ id | quantity |  price  | ship_date  | status |      note      
+----+----------+---------+------------+--------+----------------
+  1 |     2.00 | 1007.00 | 01-02-1997 | B      | item-note-0001
+  2 |     3.00 | 1014.00 | 01-03-1997 | C      | item-note-0002
+  3 |     4.00 | 1021.00 | 01-04-1997 | A      | item-note-0003
+  4 |     5.00 | 1028.00 | 01-05-1997 | B      | item-note-0004
+  5 |     6.00 | 1035.00 | 01-06-1997 | C      | item-note-0005
 (5 rows)
 
 -- Date-predicate filter + decimal projection across the full table.
@@ -51,11 +51,11 @@ WHERE ship_date >= DATE '1997-06-01'
 GROUP BY status
 ORDER BY status;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- status | revenue 
---------+---------
- A      |  966304
- B      | 1009154
- C      |  930192
+ status |   revenue    
+--------+--------------
+ A      |  966304.0000
+ B      | 1009154.0000
+ C      |  930192.0000
 (3 rows)
 
 -- Scan that touches a high-index column (forces walk past most attributes).

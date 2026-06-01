@@ -42,7 +42,7 @@ WHERE i_discount BETWEEN 0.05 - 0.01 AND 0.05 + 0.01
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  revenue 
 ---------
-       5
+  5.0000
 (1 row)
 
 SELECT o_year, sum(volume) as revenue
@@ -55,11 +55,11 @@ FROM (
 GROUP BY o_year
 ORDER BY o_year;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- o_year | revenue 
---------+---------
-   1994 |      95
-   1995 |     186
-   1996 |     135
+ o_year | revenue  
+--------+----------
+   1994 |  95.0000
+   1995 | 186.0000
+   1996 | 135.0000
 (3 rows)
 
 SELECT o_year, sum(profit) as total_profit
@@ -75,9 +75,9 @@ ORDER BY o_year;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_year | total_profit 
 --------+--------------
-   1994 |         -405
-   1995 |        -1314
-   1996 |         -765
+   1994 |    -405.0000
+   1995 |   -1314.0000
+   1996 |    -765.0000
 (3 rows)
 
 SELECT i_id, sum(s_cost * i_quantity) as value
@@ -91,9 +91,9 @@ HAVING sum(s_cost * i_quantity) > (
 )
 ORDER BY value DESC;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- i_id | value 
-------+-------
-    2 |  1500
+ i_id |   value   
+------+-----------
+    2 | 1500.0000
 (1 row)
 
 SELECT i_shipmode, count(*) as cnt

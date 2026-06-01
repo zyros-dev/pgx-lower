@@ -522,14 +522,9 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
 
     switch (typeOid) {
     case NUMERICOID: {
-        int64_t originalInt = DatumGetInt64(DirectFunctionCall1(numeric_int8, value));
-        PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: original Numeric value=%ld", originalInt);
-
         Datum result = datumCopy(value, false, -1);
-
-        int64_t copiedInt = DatumGetInt64(DirectFunctionCall1(numeric_int8, result));
-        PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: copied Numeric value=%ld using datumCopy, context=%p",
-                copiedInt, CurrentMemoryContext);
+        PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: copied Numeric datum=%p into context=%p",
+                DatumGetPointer(result), CurrentMemoryContext);
         return result;
     }
     case TEXTOID:

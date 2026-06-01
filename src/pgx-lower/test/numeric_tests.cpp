@@ -9,7 +9,6 @@ extern "C" {
 #include <cstring>
 #include <vector>
 
-#include "pgx-lower/runtime/NumericConversion.h"
 #include "pgx-lower/runtime/NumericRuntime.h"
 #include "pgx-lower/test/pgx_test_fn.h"
 
@@ -52,15 +51,6 @@ Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale
 }
 
 }  // namespace
-
-#define ASSERT_EQ_I128(actual, expected) \
-    do { \
-        __int128 _a = (actual); \
-        __int128 _e = (expected); \
-        if (_a != _e) \
-            elog(ERROR, "%s:%d expected %lld got %lld", \
-                 __FILE__, __LINE__, (long long) _e, (long long) _a); \
-    } while (0)
 
 #define ASSERT_NUMERIC_EQ_STR(actual_datum, expected_cstr)                                                             \
     do {                                                                                                               \
@@ -108,14 +98,18 @@ PGX_TEST_FN(numeric_mul_basic) {
 PGX_TEST_FN(numeric_cmp_lt) {
     std::vector<char> a;
     std::vector<char> b;
-    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(make_numeric(a, false, 0, 0, {100}), make_numeric(b, false, 0, 0, {200})), -1);
+    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(make_numeric(a, false, 0, 0, {100}),
+                                                             make_numeric(b, false, 0, 0, {200})),
+                    -1);
     PG_RETURN_VOID();
 }
 
 PGX_TEST_FN(numeric_cmp_eq) {
     std::vector<char> a;
     std::vector<char> b;
-    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(make_numeric(a, false, 0, 0, {4242}), make_numeric(b, false, 0, 0, {4242})), 0);
+    ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(make_numeric(a, false, 0, 0, {4242}),
+                                                             make_numeric(b, false, 0, 0, {4242})),
+                    0);
     PG_RETURN_VOID();
 }
 
@@ -134,41 +128,5 @@ PGX_TEST_FN(numeric_cmp_nan_gt_finite) {
     Datum finite = DirectFunctionCall3(numeric_in, CStringGetDatum("999999"), ObjectIdGetDatum(InvalidOid),
                                        Int32GetDatum(-1));
     ASSERT_CMP_SIGN(runtime::NumericRuntime::pgx_numeric_cmp(nan, finite), 1);
-    PG_RETURN_VOID();
-}
-
-PGX_TEST_FN(numeric_to_i128_zero) {
-    std::vector<char> buf;
-    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 0, 0, {}), 0), 0);
-    PG_RETURN_VOID();
-}
-
-PGX_TEST_FN(numeric_to_i128_positive) {
-    std::vector<char> buf;
-    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 1, 0, {1, 2345}), 0), 12345);
-    PG_RETURN_VOID();
-}
-
-PGX_TEST_FN(numeric_to_i128_negative) {
-    std::vector<char> buf;
-    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, true, 1, 0, {1, 2345}), 0), -12345);
-    PG_RETURN_VOID();
-}
-
-PGX_TEST_FN(numeric_to_i128_rescale_up) {
-    std::vector<char> buf;
-    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 0, 1, {1, 5000}), 4), 15000);
-    PG_RETURN_VOID();
-}
-
-PGX_TEST_FN(numeric_to_i128_scale_down) {
-    std::vector<char> buf;
-    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 1, 0, {1, 2345}), -2), 123);
-    PG_RETURN_VOID();
-}
-
-PGX_TEST_FN(numeric_to_i128_large) {
-    std::vector<char> buf;
-    ASSERT_EQ_I128(numeric_to_i128(make_numeric(buf, false, 1, 0, {9999, 9999}), 0), 99999999LL);
     PG_RETURN_VOID();
 }

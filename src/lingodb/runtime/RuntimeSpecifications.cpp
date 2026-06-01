@@ -60,10 +60,13 @@ size_t extract_varlen32_string(const uint8_t* i128_data, char* dest, size_t max_
     //   bytes[0-3]:   len | 0x80000000
     //   bytes[4-7]:   unused
     //   bytes[8-15]:  valid pointer to string data
-    // Case 2 (lazy flag CLEAR): MLIR inlined constant from CASE/literal
+    // Case 2 (lazy flag CLEAR, len <= 12): inline VarLen32 bytes
+    //   bytes[0-3]:   len (no flag)
+    //   bytes[4-15]:  inline string bytes
+    // Case 3 (lazy flag CLEAR, len > 12): normal VarLen32 long-string layout
     //   bytes[0-3]:   len (no flag)
     //   bytes[4-7]:   first 4 bytes of string
-    //   bytes[8-15]:  remaining bytes of string
+    //   bytes[8-15]:  pointer to string data
 
     const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(i128_data);
     const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
@@ -72,7 +75,7 @@ size_t extract_varlen32_string(const uint8_t* i128_data, char* dest, size_t max_
     // Safety check
     const size_t copy_len = (len > max_len) ? max_len : len;
 
-    if (is_lazy) {
+    if (is_lazy || len > 12) {
         const char* str_ptr = *reinterpret_cast<char* const*>(i128_data + 8);
         memcpy(dest, str_ptr, copy_len);
     } else {

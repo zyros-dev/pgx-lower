@@ -129,9 +129,9 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 -------------------
              0.022
            219.978
-             11000
+         11000.000
  2199999999999.978
-  2716049358271.59
+ 2716049358271.590
 (5 rows)
 
 SELECT price
@@ -142,7 +142,7 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 ------------------
              0.01
             99.99
-             5000
+          5000.00
   999999999999.99
  1234567890123.45
 (5 rows)
