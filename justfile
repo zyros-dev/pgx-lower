@@ -62,23 +62,25 @@ bootstrap-tsp:
 compile: _preflight
     #!/usr/bin/env bash
     set -o pipefail
+    log=/tmp/pgx-compile.out
     # Block until the mac→thor mutagen cycle completes so ninja sees the
     # file mtimes you just edited locally. Removes the "sleep 3 before
     # just compile" cargo-cult. We always work in the main checkout now,
     # so the session is always the bare "pgx-lower".
     mutagen sync flush "pgx-lower" >/dev/null 2>&1 || true
-    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' 2>&1 | tee /tmp/pgx-compile.out
-    rc=${PIPESTATUS[0]}
+    echo "compile: full log -> ${log}"
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install .") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id' >"${log}" 2>&1
+    rc=$?
     if [ "$rc" -eq 0 ]; then
-        ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' /tmp/pgx-compile.out 2>/dev/null || echo 0)
+        ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' "${log}" 2>/dev/null || true)
         echo ""
         echo "BUILD OK — ${ninja_targets} ninja step(s), pgx_lower.so installed"
         just _refresh-clion-db
     else
-        errs=$(grep -cE 'error:|FAILED:' /tmp/pgx-compile.out 2>/dev/null || echo 0)
+        errs=$(grep -cE 'error:|FAILED:' "${log}" 2>/dev/null || true)
         echo ""
-        echo "BUILD FAILED — ${errs} error line(s), exit $rc. Last 30 lines:"
-        tail -n 30 /tmp/pgx-compile.out
+        echo "BUILD FAILED — ${errs} error line(s), exit $rc. Last 80 lines from ${log}:"
+        tail -n 80 "${log}"
         exit "$rc"
     fi
 
