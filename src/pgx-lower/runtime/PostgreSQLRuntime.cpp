@@ -312,7 +312,7 @@ void TableBuilder::addFloat64(const bool is_valid, const double value) {
     pgx_lower::runtime::table_builder_add<double>(this, is_valid, value);
 }
 
-void TableBuilder::addDecimal(const bool is_valid, const __int128 value) {
+void TableBuilder::addNumericDatum(const bool is_valid, const NumericDatumCarrier value) {
     PGX_IO(RUNTIME);
 
     if (!is_valid) {
@@ -321,7 +321,7 @@ void TableBuilder::addDecimal(const bool is_valid, const __int128 value) {
         const Datum numeric_datum = static_cast<Datum>(::runtime::numeric_datum_from_carrier(value));
         const auto numeric_value = DatumGetNumeric(numeric_datum);
 
-        PGX_LOG(RUNTIME, DEBUG, "addDecimal: passthrough Numeric datum at %p", numeric_value);
+        PGX_LOG(RUNTIME, DEBUG, "addNumericDatum: passthrough Numeric datum at %p", numeric_value);
 
         pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
         this->next_decimal_scale = std::nullopt;
@@ -879,7 +879,7 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
             column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->decimal_values[col][row_idx]);
             column_info_ptr[VARLEN_BUFFER_IDX] = 0;
 
-            PGX_LOG(RUNTIME, DEBUG, "access() col=%zu DECIMAL i128 at %p, value=%lld", col,
+            PGX_LOG(RUNTIME, DEBUG, "access() col=%zu NUMERIC carrier at %p, value=%lld", col,
                     &iter->batch->decimal_values[col][row_idx],
                     static_cast<long long>(iter->batch->decimal_values[col][row_idx]));
         } else {
