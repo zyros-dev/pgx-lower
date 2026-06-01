@@ -17,6 +17,8 @@ _main_root := shell('dirname "$(git rev-parse --path-format=absolute --git-commo
 _rel  := replace_regex(invocation_directory(), "^" + _main_root + "/?", "")
 _wdir := if _rel == "" { "/workspace" } else { "/workspace/" + _rel }
 _bdir := _wdir + "/build-artifacts/ptest"
+_thor_root := "/home/zel/repos/pgx-lower"
+_thor_wdir := if _rel == "" { _thor_root } else { _thor_root + "/" + _rel }
 
 # Serialized build queue: compile/test/bench share one slot on thor so they
 # don't skew each other's timings or OOM. Check runs on a separate queue.
@@ -70,6 +72,7 @@ compile: _preflight
         ninja_targets=$(grep -cE '^\[[0-9]+/[0-9]+\]' /tmp/pgx-compile.out 2>/dev/null || echo 0)
         echo ""
         echo "BUILD OK — ${ninja_targets} ninja step(s), pgx_lower.so installed"
+        just _refresh-clion-db
     else
         errs=$(grep -cE 'error:|FAILED:' /tmp/pgx-compile.out 2>/dev/null || echo 0)
         echo ""
@@ -81,6 +84,135 @@ compile: _preflight
 # Print ccache statistics from the dev container.
 ccache-stats:
     @ssh {{_thor}} 'docker exec {{_ctr}} ccache --show-stats | head -20'
+
+# Refresh the CLion-friendly compilation database on thor.
+#
+# CMake runs inside the Docker container, so the raw DB uses /workspace paths.
+# CLion Gateway opens the repo on the thor host at /home/zel/repos/pgx-lower,
+# so it needs those paths rewritten before it can attach files to targets.
+# Refresh compile_commands.json for CLion Gateway.
+_refresh-clion-db:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh {{_thor}} 'set -euo pipefail
+        sysroot="{{_thor_wdir}}/build-artifacts/clion-sysroot"
+        if [ ! -f "${sysroot}/.llvm-20-headers-ready" ]; then
+            rm -rf "${sysroot}/usr/lib/llvm-20/include"
+            mkdir -p "${sysroot}/usr/lib/llvm-20"
+            docker exec {{_ctr}} tar -chf - -C /usr/lib/llvm-20 include | tar -xf - -C "${sysroot}/usr/lib/llvm-20"
+            touch "${sysroot}/.llvm-20-headers-ready"
+        fi
+        if [ ! -f "${sysroot}/.pgsql-headers-ready" ]; then
+            rm -rf "${sysroot}/usr/local/pgsql/include"
+            mkdir -p "${sysroot}/usr/local/pgsql"
+            docker exec {{_ctr}} tar -chf - -C /usr/local/pgsql include | tar -xf - -C "${sysroot}/usr/local/pgsql"
+            touch "${sysroot}/.pgsql-headers-ready"
+        fi
+        if [ ! -f "${sysroot}/.usr-include-ready" ]; then
+            rm -rf "${sysroot}/usr/include"
+            mkdir -p "${sysroot}/usr"
+            docker exec {{_ctr}} tar -chf - -C /usr include | tar -xf - -C "${sysroot}/usr"
+            touch "${sysroot}/.usr-include-ready"
+        fi
+        if [ ! -f "${sysroot}/.usr-local-include-ready" ]; then
+            rm -rf "${sysroot}/usr/local/include"
+            mkdir -p "${sysroot}/usr/local"
+            docker exec {{_ctr}} tar -chf - -C /usr/local include | tar -xf - -C "${sysroot}/usr/local"
+            touch "${sysroot}/.usr-local-include-ready"
+        fi
+        if [ ! -f "${sysroot}/.llvm-20-resource-headers-ready" ]; then
+            rm -rf "${sysroot}/usr/lib/llvm-20/lib/clang/20/include"
+            mkdir -p "${sysroot}/usr/lib/llvm-20/lib/clang/20"
+            docker exec {{_ctr}} tar -chf - -C /usr/lib/llvm-20/lib/clang/20 include | tar -xf - -C "${sysroot}/usr/lib/llvm-20/lib/clang/20"
+            touch "${sysroot}/.llvm-20-resource-headers-ready"
+        fi'
+    ssh {{_thor}} 'python3 - <<'"'"'PY'"'"'
+    import json
+    import shlex
+    from pathlib import Path
+    
+    container_root = "/workspace"
+    host_root = "{{_thor_wdir}}"
+    sysroot = f"{host_root}/build-artifacts/clion-sysroot"
+    src = Path("{{_thor_wdir}}/build-artifacts/ptest/compile_commands.json")
+    dst = Path("{{_thor_wdir}}/compile_commands.json")
+    wrappers = {
+        "/usr/lib/llvm-20/bin/clang": [f"{host_root}/tools/clion/container-clang"],
+        "/usr/lib/llvm-20/bin/clang++": [f"{host_root}/tools/clion/container-clang++"],
+    }
+    system_includes = [
+        f"{sysroot}/usr/include/c++/14",
+        f"{sysroot}/usr/include/x86_64-linux-gnu/c++/14",
+        f"{sysroot}/usr/include/c++/14/backward",
+        f"{sysroot}/usr/lib/llvm-20/lib/clang/20/include",
+        f"{sysroot}/usr/local/include",
+        f"{sysroot}/usr/include/x86_64-linux-gnu",
+        f"{sysroot}/usr/include",
+    ]
+    
+    with src.open() as f:
+        entries = json.load(f)
+    
+    def rewrite(value):
+        if not isinstance(value, str):
+            return value
+        value = value.replace(container_root, host_root)
+        value = value.replace("/usr/lib/llvm-20/include", f"{sysroot}/usr/lib/llvm-20/include")
+        value = value.replace("/usr/lib/llvm-20/lib/clang/20/include", f"{sysroot}/usr/lib/llvm-20/lib/clang/20/include")
+        value = value.replace("/usr/local/include", f"{sysroot}/usr/local/include")
+        value = value.replace("/usr/local/pgsql/include", f"{sysroot}/usr/local/pgsql/include")
+        value = value.replace("/usr/include", f"{sysroot}/usr/include")
+        return value
+
+    def add_system_includes(argv):
+        present = set()
+        skip_next = False
+        for i, arg in enumerate(argv):
+            if skip_next:
+                skip_next = False
+                continue
+            if arg in ("-I", "-isystem") and i + 1 < len(argv):
+                present.add(argv[i + 1])
+                skip_next = True
+            elif arg.startswith("-I") and len(arg) > 2:
+                present.add(arg[2:])
+            elif arg.startswith("-isystem") and len(arg) > len("-isystem"):
+                present.add(arg[len("-isystem"):])
+
+        additions = []
+        for path in system_includes:
+            if path not in present:
+                additions.extend(["-isystem", path])
+        if len(argv) > 1 and Path(argv[0]).name.startswith("container-clang"):
+            return [argv[0], *additions, *argv[1:]]
+        return [*additions, *argv]
+    
+    def rewrite_argv(argv):
+        rewritten = [rewrite(arg) for arg in argv]
+        if rewritten and rewritten[0] in wrappers:
+            rewritten = wrappers[rewritten[0]] + rewritten[1:]
+        return add_system_includes(rewritten)
+    
+    for entry in entries:
+        for key in ("directory", "file", "output"):
+            if key in entry:
+                entry[key] = rewrite(entry[key])
+        if "command" in entry:
+            entry["command"] = shlex.join(rewrite_argv(shlex.split(entry["command"])))
+        if "arguments" in entry:
+            entry["arguments"] = rewrite_argv(entry["arguments"])
+    
+    with dst.open("w") as f:
+        json.dump(entries, f, indent=2)
+        f.write("\n")
+    
+    print(dst)
+    PY'
+    echo "CLion DB ready on thor: {{_thor_wdir}}/compile_commands.json"
+
+# Force a build, then refresh the CLion database. Normal use should not need
+# this; `just compile`, `just test`, and `just utest-pg` refresh it automatically.
+clion-db: compile
 
 # Fast static analysis: clang-format dry-run over the whole src/ tree.
 # Parallel-safe — runs on the check queue, not the build queue.
@@ -197,6 +329,7 @@ test: _preflight
     #!/usr/bin/env bash
     set -euo pipefail
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && mkdir -p /tmp/pgx_ir && chmod 777 /tmp/pgx_ir; chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}; chown -R postgres:postgres {{_bdir}} && cd {{_bdir}} && (su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt)") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    just _refresh-clion-db
 
 # Fast PG-aware unit tests (spec 16). Runs each .sql under tests/regress-unit/sql/
 # with `psql -v ON_ERROR_STOP=on`. Each .sql is a DO block that PERFORMs the
@@ -207,6 +340,7 @@ utest-pg: _preflight
     set -euo pipefail
     python3 {{invocation_directory()}}/scripts/gen_unit_test_sql.py
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "export PATH=/usr/local/pgsql/bin:\$PATH && mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}/tests/regress-unit && su postgres -c \"/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit\" && fail=0; for sql in {{_wdir}}/tests/regress-unit/sql/*.sql; do echo \"--- \$(basename \$sql) ---\"; su postgres -c \"/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \$sql\" || { fail=1; echo FAIL: \$sql; }; done; echo; if [ \$fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    just _refresh-clion-db
 
 # Re-record the pg_regress baseline. Run only when you have consciously
 # accepted a new set of red tests on main — each entry that gets added
