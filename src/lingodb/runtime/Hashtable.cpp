@@ -152,10 +152,9 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                     PGX_LOG(RUNTIME, DEBUG, "Key string[%d] (inlined): len=%u, no deep copy needed", i, len);
                 }
             } else if (type_oid == NUMERICOID) {
-                // PGX-LOWER: the i128 slot carries a PG Numeric datum (pointer in
-                // low 64 bits) that lives in the scan batch context — it would
-                // dangle once the batch is reused. Deep-copy the varlena into the
-                // hashtable context and rewrite the pointer.
+                // PGX-LOWER: this slot carries a PG Numeric datum that lives in
+                // the scan batch context. Deep-copy the varlena into the
+                // hashtable context and rewrite the carrier before batch reuse.
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
                 const uint64_t datum = runtime::load_numeric_datum_carrier(i128_data);
