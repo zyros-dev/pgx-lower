@@ -10,6 +10,9 @@ edits sync via mutagen). All generated build and benchmark scratch output lives
 under the gitignored `build-artifacts/` directory; `bench-results/` holds the
 committed per-PR benchmark reports.
 
+The inherited `tools/` tree is tracked in `docs/tools-ledger.md`; do not delete
+entries without updating that ledger.
+
 ### IDE setup (compile_commands.json)
 
 The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from
