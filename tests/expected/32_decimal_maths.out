@@ -24,8 +24,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
               110.49
               164.95
                34.75
-                 219
-                  88
+              219.00
+               88.00
 (5 rows)
 
 SELECT price - discount AS price_minus_discount
@@ -36,8 +36,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
                 89.49
                134.95
                 24.25
-                  179
-                 62.5
+               179.00
+                62.50
 (5 rows)
 
 SELECT price * quantity AS total_value
@@ -45,23 +45,23 @@ FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_value 
 -------------
-     249.975
-    262.4125
-    157.3235
-        99.5
+   249.97500
+   262.41250
+   157.32350
+    99.50000
    235.15625
 (5 rows)
 
 SELECT price / quantity AS price_per_unit
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- price_per_unit 
-----------------
-         39.996
-         85.685
-          5.531
-            398
-          24.08
+    price_per_unit    
+----------------------
+  39.9960000000000000
+  85.6857142857142857
+   5.5315957247327958
+ 398.0000000000000000
+  24.0800000000000000
 (5 rows)
 
 -- Mixed precision operations
@@ -71,10 +71,10 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  tax_amount 
 ------------
   15.748425
-   33.73875
-    2.43375
-       59.7
-      7.525
+  33.738750
+   2.433750
+  59.700000
+   7.525000
 (5 rows)
 
 SELECT (price * quantity) AS total_before_discount
@@ -82,73 +82,73 @@ FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_before_discount 
 -----------------------
-               249.975
-              262.4125
-              157.3235
-                  99.5
+             249.97500
+             262.41250
+             157.32350
+              99.50000
              235.15625
 (5 rows)
 
 SELECT (price * quantity * (1 - discount / 100)) AS total_after_discount
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- total_after_discount 
-----------------------
-           223.727625
-           223.050625
-           149.064016
-                 79.6
-           205.173828
+     total_after_discount      
+-------------------------------
+ 223.7276250000000000000000000
+ 223.0506250000000000000000000
+ 149.0640162500000000000000000
+  79.6000000000000000000000000
+ 205.1738281250000000000000000
 (5 rows)
 
 -- Division with different scales
 SELECT discount / 100 AS discount_rate
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- discount_rate 
----------------
-         0.105
-          0.15
-        0.0525
-           0.2
-        0.1275
+     discount_rate      
+------------------------
+ 0.10500000000000000000
+ 0.15000000000000000000
+ 0.05250000000000000000
+ 0.20000000000000000000
+ 0.12750000000000000000
 (5 rows)
 
 SELECT price / 2 AS half_price
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- half_price 
-------------
-     49.995
-     74.975
-      14.75
-       99.5
-     37.625
+     half_price      
+---------------------
+ 49.9950000000000000
+ 74.9750000000000000
+ 14.7500000000000000
+ 99.5000000000000000
+ 37.6250000000000000
 (5 rows)
 
 SELECT quantity / 3 AS third_quantity
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- third_quantity 
-----------------
-       0.833333
-       0.583333
-       1.777666
-       0.166666
-       1.041666
+     third_quantity     
+------------------------
+ 0.83333333333333333333
+ 0.58333333333333333333
+     1.7776666666666667
+ 0.16666666666666666667
+ 1.04166666666666666667
 (5 rows)
 
 -- Complex expressions
 SELECT ((price + 10) * quantity) / (1 + rate) AS complex_calc
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- complex_calc 
---------------
-   237.559395
-        228.5
-   194.599076
-    80.384615
-     242.1875
+     complex_calc     
+----------------------
+ 237.5593952483801296
+ 228.5000000000000000
+ 194.5990762124711316
+  80.3846153846153846
+ 242.1875000000000000
 (5 rows)
 
 SELECT price * quantity * rate AS tax_on_total
@@ -156,11 +156,11 @@ FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  tax_on_total 
 --------------
-    39.371062
-    59.042812
-    12.979188
-        29.85
-    23.515625
+ 39.371062500
+ 59.042812500
+ 12.979188750
+ 29.850000000
+ 23.515625000
 (5 rows)
 
 -- Edge cases
@@ -189,22 +189,22 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  double_price 
 --------------
        199.98
-        299.9
-           59
-          398
-        150.5
+       299.90
+        59.00
+       398.00
+       150.50
 (5 rows)
 
 SELECT price / 10 AS tenth_price
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- tenth_price 
--------------
-       9.999
-      14.995
-        2.95
-        19.9
-       7.525
+     tenth_price     
+---------------------
+  9.9990000000000000
+ 14.9950000000000000
+  2.9500000000000000
+ 19.9000000000000000
+  7.5250000000000000
 (5 rows)
 
 SELECT quantity + 1 AS quantity_plus_one
@@ -212,10 +212,10 @@ FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  quantity_plus_one 
 -------------------
-               3.5
-              2.75
+             3.500
+             2.750
              6.333
-               1.5
+             1.500
              4.125
 (5 rows)
 

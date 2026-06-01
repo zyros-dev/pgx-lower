@@ -119,18 +119,37 @@ bool mlir::db::RuntimeCall::needsNullWrap() {
 
 bool mlir::db::CmpOp::supportsInvalidValues() {
    auto type = getBaseType(getLeft().getType());
-   if (type.isa<db::StringType>()) {
-      return false;
+   if (type.isa<db::StringType, db::DecimalType>()) {
+       return false;
    }
    return true;
 }
 bool mlir::db::CastOp::supportsInvalidValues() {
-   if (getBaseType(getResult().getType()).isa<db::StringType>() || getBaseType(getVal().getType()).isa<db::StringType>()) {
-      return false;
-   }
+    if (getBaseType(getResult().getType()).isa<db::StringType, db::DecimalType>()
+        || getBaseType(getVal().getType()).isa<db::StringType, db::DecimalType>())
+    {
+        return false;
+    }
    return true;
 }
-
+static bool binaryOpSupportsInvalidValues(mlir::Type leftType) {
+    return !getBaseType(leftType).isa<mlir::db::DecimalType>();
+}
+bool mlir::db::AddOp::supportsInvalidValues() {
+    return binaryOpSupportsInvalidValues(getLeft().getType());
+}
+bool mlir::db::SubOp::supportsInvalidValues() {
+    return binaryOpSupportsInvalidValues(getLeft().getType());
+}
+bool mlir::db::MulOp::supportsInvalidValues() {
+    return binaryOpSupportsInvalidValues(getLeft().getType());
+}
+bool mlir::db::DivOp::supportsInvalidValues() {
+    return binaryOpSupportsInvalidValues(getLeft().getType());
+}
+bool mlir::db::ModOp::supportsInvalidValues() {
+    return binaryOpSupportsInvalidValues(getLeft().getType());
+}
 
 LogicalResult mlir::db::OrOp::canonicalize(mlir::db::OrOp orOp, mlir::PatternRewriter& rewriter) {
    llvm::SmallDenseMap<mlir::Value, size_t> usage;

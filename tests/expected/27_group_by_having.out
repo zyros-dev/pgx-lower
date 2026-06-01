@@ -42,8 +42,8 @@ ORDER BY employee_name;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  employee_name | total_sales 
 ---------------+-------------
- Alice         |       15000
- Bob           |        9500
+ Alice         |    15000.00
+ Bob           |     9500.00
 (2 rows)
 
 SELECT department, AVG(sale_amount) AS avg_sale
@@ -52,9 +52,9 @@ GROUP BY department
 HAVING AVG(sale_amount) > 3000
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department | avg_sale 
-------------+----------
- Sales      |     4900
+ department |       avg_sale        
+------------+-----------------------
+ Sales      | 4900.0000000000000000
 (1 row)
 
 SELECT department,
@@ -67,10 +67,10 @@ HAVING COUNT(*) >= 2
    AND SUM(sale_amount) > 5000
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department | sale_count | total_sales |  avg_sale   
-------------+------------+-------------+-------------
- IT         |          3 |        5800 | 1933.333333
- Sales      |          5 |       24500 |        4900
+ department | sale_count | total_sales |       avg_sale        
+------------+------------+-------------+-----------------------
+ IT         |          3 |     5800.00 | 1933.3333333333333333
+ Sales      |          5 |    24500.00 | 4900.0000000000000000
 (2 rows)
 
 SELECT employee_name,
@@ -85,8 +85,8 @@ ORDER BY employee_name;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  employee_name | sale_count | min_sale | max_sale 
 ---------------+------------+----------+----------
- Alice         |          3 |     4500 |     5500
- Eve           |          1 |     2500 |     2500
+ Alice         |          3 |  4500.00 |  5500.00
+ Eve           |          1 |  2500.00 |  2500.00
 (2 rows)
 
 DROP TABLE employee_sales;

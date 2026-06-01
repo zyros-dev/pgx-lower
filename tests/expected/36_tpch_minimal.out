@@ -44,7 +44,7 @@ ORDER BY o_id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_id |   o_date   | o_amount 
 ------+------------+----------
-    1 | 01-15-1994 |      100
+    1 | 01-15-1994 |   100.00
 (1 row)
 
 SELECT o_id, o_date
@@ -67,11 +67,11 @@ ORDER BY o.o_id, i.i_id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_id | i_id | discounted 
 ------+------+------------
-    1 |    1 |       47.5
-    1 |    2 |         45
-    2 |    3 |         95
-    3 |    5 |       67.5
-    4 |    6 |      142.5
+    1 |    1 |    47.5000
+    1 |    2 |    45.0000
+    2 |    3 |    95.0000
+    3 |    5 |    67.5000
+    4 |    6 |   142.5000
 (5 rows)
 
 SELECT o_id, o_date
@@ -100,7 +100,7 @@ WHERE i.i_order_id = o.o_id
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_revenue 
 ---------------
-         287.5
+      287.5000
 (1 row)
 
 SELECT c.c_id, c.c_name, count(i.i_id) as item_count

@@ -1,5 +1,4 @@
 #include "pgx-lower/runtime/NumericRuntime.h"
-#include "pgx-lower/runtime/NumericConversion.h"
 
 extern "C" {
 #include "postgres.h"
@@ -7,6 +6,9 @@ extern "C" {
 #include "utils/numeric.h"
 #include "utils/fmgrprotos.h"
 }
+
+#include <cstring>
+#include <string>
 
 // Each method calls PG's own numeric_* via the fmgr direct-call ABI. Results are
 // palloc'd in CurrentMemoryContext (the caller's per-tuple/per-query context).
@@ -36,16 +38,18 @@ int32_t NumericRuntime::pgx_numeric_cmp(Datum left, Datum right) {
     return DatumGetInt32(DirectFunctionCall2(numeric_cmp, left, right));
 }
 
-Datum NumericRuntime::pgx_i128_to_numeric(__int128 value, int32_t scale) {
-    // Delegates to the existing scaled-i128 → Numeric builder. (That helper is
-    // removed in PR3 once nothing else depends on the i128 path; this stub
-    // remains as the scan-decode / constant materialization entry point.)
-    return i128_to_numeric(value, scale);
+uint64_t NumericRuntime::pgx_numeric_hash(Datum value) {
+    return static_cast<uint64_t>(DatumGetUInt32(DirectFunctionCall1(hash_numeric, value)));
 }
 
-__int128 NumericRuntime::pgx_numeric_to_i128(Datum numeric_datum, int32_t scale) {
-    // Bridge back to the i128 columnar storage (PR2 only; removed in PR3).
-    return numeric_to_i128(numeric_datum, scale);
+Datum NumericRuntime::pgx_numeric_from_string(VarLen32 value) {
+    std::string str(value.data(), value.getLen());
+    return DirectFunctionCall3(numeric_in, CStringGetDatum(str.c_str()), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
+}
+
+VarLen32 NumericRuntime::pgx_numeric_to_string(Datum value) {
+    char* str = DatumGetCString(DirectFunctionCall1(numeric_out, value));
+    return VarLen32(reinterpret_cast<uint8_t*>(str), std::strlen(str));
 }
 
 Datum NumericRuntime::pgx_int_to_numeric(int64_t value) {

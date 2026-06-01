@@ -1,5 +1,4 @@
 #include "pgx-lower/runtime/PostgreSQLRuntime.h"
-#include "pgx-lower/runtime/NumericConversion.h"
 #include "lingodb/runtime/DataSourceIteration.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
@@ -87,11 +86,11 @@ struct ColumnSpec {
 };
 
 // Per-column decode metadata cached at iterator-start time so the per-row hot
-// loop in process_tuple_into_batch avoids TupleDescAttr lookups, type-OID
-// re-checks, and atttypmod→scale arithmetic on every tuple. See spec 05.
+// loop in process_tuple_into_batch avoids TupleDescAttr lookups and type-OID
+// re-checks on every tuple. See spec 05.
 enum class DecodeKind : uint8_t {
     STRING, // VARDATA_ANY + length, datumTransfer
-    NUMERIC, // numeric_to_i128 with cached scale
+    NUMERIC, // Numeric datum copied into batch context
     INTERVAL, // Interval struct → microseconds
     DATUM_BYVAL, // pass-through Datum, no copy
     DATUM_BYREF, // datumTransfer to batch context
@@ -101,7 +100,6 @@ struct ColumnDecodeMeta {
     DecodeKind kind;
     bool attbyval;
     int16 attlen;
-    int32_t numeric_scale; // only meaningful when kind == NUMERIC
 };
 
 struct BatchStorage {
@@ -629,8 +627,7 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
 
     // Pre-resolve per-column decode metadata once. The per-row hot loop in
     // process_tuple_into_batch reads from this vector instead of doing a
-    // TupleDescAttr lookup + type-OID re-dispatch + atttypmod→scale on every
-    // tuple.
+    // TupleDescAttr lookup + type-OID re-dispatch on every tuple.
     {
         const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
         iter->column_decode_meta.reserve(iter->columns.size());
@@ -649,11 +646,6 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
                 meta.kind = DecodeKind::STRING;
             } else if (attr->atttypid == NUMERICOID) {
                 meta.kind = DecodeKind::NUMERIC;
-                if (attr->atttypmod >= 0) {
-                    meta.numeric_scale = (attr->atttypmod - 4) & 0xFFFF;
-                } else {
-                    meta.numeric_scale = 6;
-                }
             } else if (attr->atttypid == INTERVALOID) {
                 meta.kind = DecodeKind::INTERVAL;
             } else {
@@ -741,8 +733,8 @@ namespace {
                     iter->batch->decimal_values[json_col_idx][row_idx] = __int128{0};
                 } else {
                     const Datum transferred = datumTransfer(value, meta.attbyval, meta.attlen);
-                    iter->batch->decimal_values[json_col_idx][row_idx] =
-                        static_cast<__int128>(static_cast<unsigned __int128>(static_cast<uint64_t>(transferred)));
+                    iter->batch->decimal_values[json_col_idx][row_idx] = static_cast<__int128>(
+                        static_cast<unsigned __int128>(static_cast<uint64_t>(transferred)));
                 }
                 break;
             }

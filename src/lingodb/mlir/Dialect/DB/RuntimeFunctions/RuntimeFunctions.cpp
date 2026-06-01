@@ -222,10 +222,18 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
 
    // PG-native NUMERIC: decimal arithmetic/compare go through PostgreSQL's own
    // numeric_* functions (full precision, NaN/Inf, any scale) instead of i128.
-   builtinRegistry->add("NumericAdd").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(rt::NumericRuntime::pgx_numeric_add);
-   builtinRegistry->add("NumericSub").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(rt::NumericRuntime::pgx_numeric_sub);
-   builtinRegistry->add("NumericMul").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(rt::NumericRuntime::pgx_numeric_mul);
-   builtinRegistry->add("NumericCmp").matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, resTypeIsI32).implementedAs(rt::NumericRuntime::pgx_numeric_cmp);
+   builtinRegistry->add("NumericAdd")
+       .matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument())
+       .implementedAs(rt::NumericRuntime::pgx_numeric_add);
+   builtinRegistry->add("NumericSub")
+       .matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument())
+       .implementedAs(rt::NumericRuntime::pgx_numeric_sub);
+   builtinRegistry->add("NumericMul")
+       .matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument())
+       .implementedAs(rt::NumericRuntime::pgx_numeric_mul);
+   builtinRegistry->add("NumericCmp")
+       .matchesTypes({RuntimeFunction::decimalLike, RuntimeFunction::decimalLike}, resTypeIsI32)
+       .implementedAs(rt::NumericRuntime::pgx_numeric_cmp);
 
    // Print functions for runtime debugging
    builtinRegistry->add("Print").implementedAs(rt::PrintRuntime::print).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::noReturnType);

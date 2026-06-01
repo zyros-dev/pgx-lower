@@ -207,7 +207,7 @@ def DB_Hash : DB_Op<"hash", [Pure]> {
 
 class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_SupportsInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
+            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_MaySupportInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
     let results = (outs AnyType:$result);
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(

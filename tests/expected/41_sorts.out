@@ -228,9 +228,9 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 --------+-------
  200.75 | Beta
  150.25 | Alpha
-  100.5 | Alpha
-  100.5 | Beta
-  100.5 | Gamma
+ 100.50 | Alpha
+ 100.50 | Beta
+ 100.50 | Gamma
 (5 rows)
 
 SELECT r.region_name,
@@ -256,9 +256,9 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 --------+-------
  200.75 | Beta
  150.25 | Alpha
-  100.5 | Gamma
-  100.5 | Beta
-  100.5 | Alpha
+ 100.50 | Gamma
+ 100.50 | Beta
+ 100.50 | Alpha
 (5 rows)
 
 SELECT r.region_name,

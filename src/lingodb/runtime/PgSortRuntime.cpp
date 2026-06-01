@@ -1,7 +1,6 @@
 // ReSharper disable CppUseStructuredBinding
 #include "lingodb/runtime/PgSortRuntime.h"
 #include "lingodb/runtime/RuntimeSpecifications.h"
-#include "pgx-lower/runtime/NumericConversion.h"
 #include "pgx-lower/utility/logging.h"
 #include <cstdlib>
 #include <cstring>
@@ -244,18 +243,13 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
         case PhysicalType::VARLEN32: {
             const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(&mlir_tuple[layout.value_offset]);
             const size_t len = len_with_flag & ~0x80000000;
-            char* str_ptr = *reinterpret_cast<char* const*>(&mlir_tuple[layout.value_offset + 8]);
 
-            if (!str_ptr) {
-                PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] string: ERROR - NULL pointer", i);
-                isnull[i] = true;
-                values[i] = static_cast<Datum>(0);
-            } else {
-                const text* pg_text = cstring_to_text_with_len(str_ptr, static_cast<int>(len));
-                values[i] = PointerGetDatum(pg_text);
-                PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] string: len=%zu, value='%.*s'", i, len,
-                        static_cast<int>(len), str_ptr);
-            }
+            const auto str_data = static_cast<char*>(palloc(len + 1));
+            extract_varlen32_string(&mlir_tuple[layout.value_offset], str_data, len);
+            const text* pg_text = cstring_to_text_with_len(str_data, static_cast<int>(len));
+            values[i] = PointerGetDatum(pg_text);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] string: len=%zu, value='%.*s'", i, len, static_cast<int>(len),
+                    str_data);
             break;
         }
         case PhysicalType::DECIMAL128: {
@@ -532,10 +526,9 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
         }
         case PhysicalType::DECIMAL128: {
             const __int128 val = *reinterpret_cast<const __int128*>(&tupleData[layout.value_offset]);
-            values[i] = i128_to_numeric(val, 0);
+            values[i] = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(val)));
 
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: i128=%lld (unscaled)",
-                    i, static_cast<long long>(val));
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: datum passthrough", i);
             break;
         }
         default:

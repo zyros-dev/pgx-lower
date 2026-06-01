@@ -45,7 +45,6 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/runtime/tuple_access.cpp
         ../src/pgx-lower/runtime/PostgreSQLDataSource.cpp
         ../src/pgx-lower/runtime/PostgreSQLRuntime.cpp
-        ../src/pgx-lower/runtime/NumericConversion.cpp
         ../src/pgx-lower/runtime/NumericRuntime.cpp
         ../src/pgx-lower/runtime/DateRuntime.cpp
         SCRIPTS
@@ -94,6 +93,7 @@ if(NOT BUILDING_UNIT_TESTS)
             41_sorts
             42_test_relalg_function
             43_decode_at_scan
+            44_numeric_correctness
             init_tpch
             tpch_no_lower
             tpch
@@ -142,4 +142,3 @@ target_precompile_headers(pgx_lower PRIVATE
 )
 
 endif() # NOT BUILDING_UNIT_TESTS
-

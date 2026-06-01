@@ -1,0 +1,123 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS numeric_correctness;
+NOTICE:  table "numeric_correctness" does not exist, skipping
+DROP TABLE IF EXISTS numeric_untyped;
+NOTICE:  table "numeric_untyped" does not exist, skipping
+CREATE TABLE numeric_correctness
+(
+    label TEXT,
+    n     NUMERIC
+);
+INSERT INTO numeric_correctness(label, n)
+VALUES ('pos', 12345.6789),
+       ('neg', -12345.6789),
+       ('boundary38', 99999999999999999999999999999999999999),
+       ('wide40', 1000000000000000000000000000000000000000),
+       ('verywide100', '9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999'::NUMERIC),
+       ('scale18', 1.000000000000000001),
+       ('nan', 'NaN'::NUMERIC),
+       ('inf', 'Infinity'::NUMERIC),
+       ('ninf', '-Infinity'::NUMERIC);
+SELECT label, n
+FROM numeric_correctness
+ORDER BY n, label;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+    label    |                                                  n                                                   
+-------------+------------------------------------------------------------------------------------------------------
+ ninf        |                                                                                            -Infinity
+ neg         |                                                                                          -12345.6789
+ scale18     |                                                                                 1.000000000000000001
+ pos         |                                                                                           12345.6789
+ boundary38  |                                                               99999999999999999999999999999999999999
+ wide40      |                                                             1000000000000000000000000000000000000000
+ verywide100 | 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+ inf         |                                                                                             Infinity
+ nan         |                                                                                                  NaN
+(9 rows)
+
+SELECT label,
+       n = 'NaN'::NUMERIC AS eq_nan,
+       n > 99999999999999999999999999999999999999::NUMERIC AS gt_boundary,
+       n < 0::NUMERIC AS lt_zero
+FROM numeric_correctness
+ORDER BY label;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+    label    | eq_nan | gt_boundary | lt_zero 
+-------------+--------+-------------+---------
+ boundary38  | f      | f           | f
+ inf         | f      | t           | f
+ nan         | t      | t           | f
+ neg         | f      | f           | t
+ ninf        | f      | f           | t
+ pos         | f      | f           | f
+ scale18     | f      | f           | f
+ verywide100 | f      | t           | f
+ wide40      | f      | t           | f
+(9 rows)
+
+SELECT SUM(n) AS finite_sum,
+       MIN(n) AS finite_min,
+       MAX(n) AS finite_max
+FROM numeric_correctness
+WHERE label IN ('pos', 'neg', 'scale18', 'boundary38');
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+                         finite_sum                         | finite_min  |               finite_max               
+------------------------------------------------------------+-------------+----------------------------------------
+ 100000000000000000000000000000000000000.000000000000000001 | -12345.6789 | 99999999999999999999999999999999999999
+(1 row)
+
+SELECT 1000000000000000000000000000000000000000::NUMERIC + 1::NUMERIC AS wide_literal_plus_one;
+          wide_literal_plus_one           
+------------------------------------------
+ 1000000000000000000000000000000000000001
+(1 row)
+
+SELECT '9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999'::NUMERIC * 2::NUMERIC AS verywide_product;
+                                           verywide_product                                            
+-------------------------------------------------------------------------------------------------------
+ 19999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999998
+(1 row)
+
+SELECT 'NaN'::NUMERIC = 'NaN'::NUMERIC AS nan_eq_nan,
+       'NaN'::NUMERIC > 'Infinity'::NUMERIC AS nan_gt_inf,
+       'Infinity'::NUMERIC > 99999999999999999999999999999999999999::NUMERIC AS inf_gt_wide,
+       '-Infinity'::NUMERIC < -99999999999999999999999999999999999999::NUMERIC AS ninf_lt_wide;
+ nan_eq_nan | nan_gt_inf | inf_gt_wide | ninf_lt_wide 
+------------+------------+-------------+--------------
+ t          | t          | t           | t
+(1 row)
+
+CREATE TABLE numeric_untyped
+(
+    id INT,
+    n  NUMERIC
+);
+INSERT INTO numeric_untyped(id, n)
+VALUES (1, 1.2),
+       (2, 1.234567890123456789),
+       (3, 123456789012345678901234567890123456789.987654321),
+       (4, -0.000000000000000001);
+SELECT id,
+       n,
+       n + 0.000000000000000001 AS plus_1e_minus_18,
+       n * 3 AS triple,
+       n::TEXT AS as_text
+FROM numeric_untyped
+ORDER BY id;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id |                         n                         |                      plus_1e_minus_18                      |                      triple                       |                      as_text                      
+----+---------------------------------------------------+------------------------------------------------------------+---------------------------------------------------+---------------------------------------------------
+  1 |                                               1.2 |                                       1.200000000000000001 |                                               3.6 | 1.2
+  2 |                              1.234567890123456789 |                                       1.234567890123456790 |                              3.703703670370370367 | 1.234567890123456789
+  3 | 123456789012345678901234567890123456789.987654321 | 123456789012345678901234567890123456789.987654321000000001 | 370370367037037036703703703670370370369.962962963 | 123456789012345678901234567890123456789.987654321
+  4 |                             -0.000000000000000001 |                                       0.000000000000000000 |                             -0.000000000000000003 | -0.000000000000000001
+(4 rows)
+
+SELECT CAST('1.000000000000000001' AS NUMERIC) + CAST('2' AS NUMERIC) AS string_numeric_cast;
+ string_numeric_cast  
+----------------------
+ 3.000000000000000001
+(1 row)
+
+DROP TABLE numeric_untyped;
+DROP TABLE numeric_correctness;

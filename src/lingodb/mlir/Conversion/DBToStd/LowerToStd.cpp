@@ -215,6 +215,8 @@ class AppendTBLowering : public ConversionPattern {
       return success();
    }
 };
+static mlir::Value decimalToDatum(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value decimalI128);
+static mlir::Value datumToDecimal(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value datumI64);
 class StringCastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
    public:
    using OpConversionPattern<mlir::db::CastOp>::OpConversionPattern;
@@ -238,20 +240,16 @@ class StringCastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          } else if (auto floatType = scalarTargetType.dyn_cast_or_null<FloatType>()) {
             result = floatType.getWidth() == 32 ? rt::StringRuntime::toFloat32(rewriter, loc)({valueToCast})[0] : rt::StringRuntime::toFloat64(rewriter, loc)({valueToCast})[0];
          } else if (auto decimalType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
-            auto scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(decimalType.getS()));
-            result = rt::StringRuntime::toDecimal(rewriter, loc)({valueToCast, scale})[0];
-            if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() < 128) {
-               auto converted = rewriter.create<arith::TruncIOp>(loc, typeConverter->convertType(decimalType), result);
-               result = converted;
-            }
+             Value datum = rt::NumericRuntime::pgx_numeric_from_string(rewriter, loc)({valueToCast})[0];
+             result = datumToDecimal(rewriter, loc, datum);
          }
       } else if (auto intWidth = getIntegerWidth(scalarSourceType, false)) {
          result = rt::StringRuntime::fromInt(rewriter, loc)({valueToCast})[0];
       } else if (auto floatType = scalarSourceType.dyn_cast_or_null<FloatType>()) {
          result = floatType.getWidth() == 32 ? rt::StringRuntime::fromFloat32(rewriter, loc)({valueToCast})[0] : rt::StringRuntime::fromFloat64(rewriter, loc)({valueToCast})[0];
       } else if (auto decimalSourceType = scalarSourceType.dyn_cast_or_null<db::DecimalType>()) {
-         auto scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(decimalSourceType.getS()));
-         result = rt::StringRuntime::fromDecimal(rewriter, loc)({valueToCast, scale})[0];
+          Value datum = decimalToDatum(rewriter, loc, valueToCast);
+          result = rt::NumericRuntime::pgx_numeric_to_string(rewriter, loc)({datum})[0];
       } else if (auto charType = scalarSourceType.dyn_cast_or_null<db::CharType>()) {
          auto bytes = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(charType.getBytes()));
          result = rt::StringRuntime::fromChar(rewriter, loc)({valueToCast, bytes})[0];
@@ -470,10 +468,10 @@ class BinOpLowering : public ConversionPattern {
 // PGX-LOWER: a decimal value is an i128 carrying a PG Numeric datum in its low
 // 64 bits. These bridge to/from the i64 the numeric_* runtime stubs use.
 static mlir::Value decimalToDatum(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value decimalI128) {
-   return builder.create<mlir::arith::TruncIOp>(loc, builder.getI64Type(), decimalI128);
+    return builder.create<mlir::arith::TruncIOp>(loc, builder.getI64Type(), decimalI128);
 }
 static mlir::Value datumToDecimal(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value datumI64) {
-   return builder.create<mlir::arith::ExtUIOp>(loc, builder.getIntegerType(128), datumI64);
+    return builder.create<mlir::arith::ExtUIOp>(loc, builder.getIntegerType(128), datumI64);
 }
 mlir::Value getDecimalScaleMultiplierConstant(mlir::OpBuilder& builder, int32_t s, mlir::Type stdType, mlir::Location loc) {
    auto [low, high] = support::getDecimalScaleMultiplier(s);
@@ -492,21 +490,21 @@ class DecimalOpScaledLowering : public ConversionPattern {
       typename DBOp::Adaptor adaptor(operands);
       auto type = getBaseType(decimalOp.getType());
       if (type.template dyn_cast_or_null<mlir::db::DecimalType>()) {
-         // PGX-LOWER: decimal div/mod via PG-native numeric_div/numeric_mod.
-         // Operands are i128 carrying Numeric datums; extract, call, rewrap.
-         auto loc = decimalOp->getLoc();
-         mlir::Value left = decimalToDatum(rewriter, loc, adaptor.getLeft());
-         mlir::Value right = decimalToDatum(rewriter, loc, adaptor.getRight());
-         mlir::Value result;
-         if (mlir::isa<mlir::db::DivOp>(op)) {
-            result = rt::NumericRuntime::pgx_numeric_div(rewriter, loc)({left, right})[0];
-         } else if (mlir::isa<mlir::db::ModOp>(op)) {
-            result = rt::NumericRuntime::pgx_numeric_mod(rewriter, loc)({left, right})[0];
-         } else {
-            return failure();
-         }
-         rewriter.replaceOp(decimalOp, datumToDecimal(rewriter, loc, result));
-         return success();
+          // PGX-LOWER: decimal div/mod via PG-native numeric_div/numeric_mod.
+          // Operands are i128 carrying Numeric datums; extract, call, rewrap.
+          auto loc = decimalOp->getLoc();
+          mlir::Value left = decimalToDatum(rewriter, loc, adaptor.getLeft());
+          mlir::Value right = decimalToDatum(rewriter, loc, adaptor.getRight());
+          mlir::Value result;
+          if (mlir::isa<mlir::db::DivOp>(op)) {
+              result = rt::NumericRuntime::pgx_numeric_div(rewriter, loc)({left, right})[0];
+          } else if (mlir::isa<mlir::db::ModOp>(op)) {
+              result = rt::NumericRuntime::pgx_numeric_mod(rewriter, loc)({left, right})[0];
+          } else {
+              return failure();
+          }
+          rewriter.replaceOp(decimalOp, datumToDecimal(rewriter, loc, result));
+          return success();
       }
       return failure();
    }
@@ -521,24 +519,24 @@ class DecimalBinOpLowering : public ConversionPattern {
       auto binOp = mlir::cast<DBOp>(op);
       typename DBOp::Adaptor adaptor(operands);
       if (binOp.getType().template dyn_cast_or_null<mlir::db::DecimalType>()) {
-         // PGX-LOWER: operands are i128 carrying Numeric datums. Extract the
-         // datums, call the PG-native numeric_* runtime fn, rewrap the result.
-         // PG handles scale, so the i128 scale-multiply/divide adjustment is gone.
-         auto loc = binOp->getLoc();
-         mlir::Value left = decimalToDatum(rewriter, loc, adaptor.getLeft());
-         mlir::Value right = decimalToDatum(rewriter, loc, adaptor.getRight());
-         mlir::Value result;
-         if (mlir::isa<mlir::db::AddOp>(op)) {
-            result = rt::NumericRuntime::pgx_numeric_add(rewriter, loc)({left, right})[0];
-         } else if (mlir::isa<mlir::db::SubOp>(op)) {
-            result = rt::NumericRuntime::pgx_numeric_sub(rewriter, loc)({left, right})[0];
-         } else if (mlir::isa<mlir::db::MulOp>(op)) {
-            result = rt::NumericRuntime::pgx_numeric_mul(rewriter, loc)({left, right})[0];
-         } else {
-            return failure();
-         }
-         rewriter.replaceOp(binOp, datumToDecimal(rewriter, loc, result));
-         return success();
+          // PGX-LOWER: operands are i128 carrying Numeric datums. Extract the
+          // datums, call the PG-native numeric_* runtime fn, rewrap the result.
+          // PG handles scale, so the i128 scale-multiply/divide adjustment is gone.
+          auto loc = binOp->getLoc();
+          mlir::Value left = decimalToDatum(rewriter, loc, adaptor.getLeft());
+          mlir::Value right = decimalToDatum(rewriter, loc, adaptor.getRight());
+          mlir::Value result;
+          if (mlir::isa<mlir::db::AddOp>(op)) {
+              result = rt::NumericRuntime::pgx_numeric_add(rewriter, loc)({left, right})[0];
+          } else if (mlir::isa<mlir::db::SubOp>(op)) {
+              result = rt::NumericRuntime::pgx_numeric_sub(rewriter, loc)({left, right})[0];
+          } else if (mlir::isa<mlir::db::MulOp>(op)) {
+              result = rt::NumericRuntime::pgx_numeric_mul(rewriter, loc)({left, right})[0];
+          } else {
+              return failure();
+          }
+          rewriter.replaceOp(binOp, datumToDecimal(rewriter, loc, result));
+          return success();
       }
       return failure();
    }
@@ -716,51 +714,52 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       }
       auto parseResult = support::parse(parseArg, arrowType, param1, param2);  // arrowType is already an int (OID)
       if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
-         // PGX-LOWER: a decimal literal is now a PG Numeric datum, which is a
-         // runtime heap value — it cannot be a compile-time constant. Parse the
-         // literal to a scaled i128 at compile time (reusing the existing
-         // parseDecimal), emit it as an i128 constant, then materialize the
-         // Numeric at runtime via pgx_i128_to_numeric(i128, scale).
-         auto loc = constantOp->getLoc();
-         auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
-         std::vector<uint64_t> parts = {low, high};
-         auto i128Ty = rewriter.getIntegerType(128);
-         mlir::Value i128Const = rewriter.create<arith::ConstantOp>(loc, i128Ty, rewriter.getIntegerAttr(i128Ty, APInt(128, parts)));
-         mlir::Value scaleConst = rewriter.create<arith::ConstantIntOp>(loc, decimalType.getS(), 32);
-         mlir::Value numericDatum = rt::NumericRuntime::pgx_i128_to_numeric(rewriter, loc)({i128Const, scaleConst})[0];
-         rewriter.replaceOp(constantOp, datumToDecimal(rewriter, loc, numericDatum));
-         return success();
+          // PGX-LOWER: a decimal literal is a PG Numeric datum. Parse the exact
+          // literal text at runtime via numeric_in so wide values, arbitrary
+          // scale, NaN, and +/-Infinity follow stock PostgreSQL semantics.
+          auto loc = constantOp->getLoc();
+          mlir::Value literal = rewriter.create<mlir::util::CreateConstVarLen>(
+              loc, mlir::util::VarLen32Type::get(rewriter.getContext()), std::get<std::string>(parseResult));
+          mlir::Value numericDatum = rt::NumericRuntime::pgx_numeric_from_string(rewriter, loc)({literal})[0];
+          rewriter.replaceOp(constantOp, datumToDecimal(rewriter, loc, numericDatum));
+          return success();
       }
       if (auto intType = stdType.dyn_cast_or_null<IntegerType>()) {
-         if (type.isa<mlir::db::TimestampType>() || type.isa<mlir::db::DateType>()) {
-            int64_t parsedValue = std::get<int64_t>(parseResult);
-            int64_t originalValue = parsedValue;
+          if (type.isa<mlir::db::TimestampType>() || type.isa<mlir::db::DateType>()) {
+              int64_t parsedValue = std::get<int64_t>(parseResult);
+              int64_t originalValue = parsedValue;
 
-            // Convert date/timestamp to nanoseconds (matching AtLowering behavior)
-            if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
-               if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
-                  parsedValue *= 86400000000000LL;  // Convert days to nanoseconds
-                  PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Date constant: days=%lld → nanoseconds=%lld", originalValue, parsedValue);
-               }
-            } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
-               // PostgreSQL timestamps are in microseconds, convert to nanoseconds
-               parsedValue *= 1000LL;  // Convert microseconds to nanoseconds
-               PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Timestamp constant: microseconds=%lld → nanoseconds=%lld", originalValue, parsedValue);
-            }
+              // Convert date/timestamp to nanoseconds (matching AtLowering behavior)
+              if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
+                  if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
+                      parsedValue *= 86400000000000LL; // Convert days to nanoseconds
+                      PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Date constant: days=%lld → nanoseconds=%lld",
+                              originalValue, parsedValue);
+                  }
+              } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
+                  // PostgreSQL timestamps are in microseconds, convert to nanoseconds
+                  parsedValue *= 1000LL; // Convert microseconds to nanoseconds
+                  PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Timestamp constant: microseconds=%lld → nanoseconds=%lld",
+                          originalValue, parsedValue);
+              }
 
-            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, parsedValue));
-            return success();
-         } else if (type.isa<mlir::db::IntervalType>()) {
-            // Intervals come in as microseconds, convert to nanoseconds to match date representation
-            int64_t microseconds = std::get<int64_t>(parseResult);
-            int64_t nanoseconds = microseconds * 1000LL;  // Convert microseconds to nanoseconds
-            PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Interval constant: microseconds=%lld → nanoseconds=%lld", microseconds, nanoseconds);
-            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, nanoseconds));
-            return success();
-         } else {
-            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
-            return success();
-         }
+              rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType,
+                                                             rewriter.getIntegerAttr(stdType, parsedValue));
+              return success();
+          } else if (type.isa<mlir::db::IntervalType>()) {
+              // Intervals come in as microseconds, convert to nanoseconds to match date representation
+              int64_t microseconds = std::get<int64_t>(parseResult);
+              int64_t nanoseconds = microseconds * 1000LL; // Convert microseconds to nanoseconds
+              PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Interval constant: microseconds=%lld → nanoseconds=%lld",
+                      microseconds, nanoseconds);
+              rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType,
+                                                             rewriter.getIntegerAttr(stdType, nanoseconds));
+              return success();
+          } else {
+              rewriter.replaceOpWithNewOp<arith::ConstantOp>(
+                  constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
+              return success();
+          }
       } else if (auto floatType = stdType.dyn_cast_or_null<FloatType>()) {
          rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getFloatAttr(stdType, std::get<double>(parseResult)));
          return success();
@@ -815,21 +814,22 @@ class CmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
       return arith::CmpFPredicate::OEQ;
    }
    LogicalResult matchAndRewrite(mlir::db::CmpOp cmpOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      // PGX-LOWER: decimal operands are PG Numeric datums (i64), so they must be
-      // compared via numeric_cmp, NOT a raw integer compare (which would compare
-      // pointers). Detect via the ORIGINAL db operand type, before the generic
-      // int/float path — post-conversion a decimal-as-i64 is indistinguishable
-      // from a real i64.
-      if (getBaseType(cmpOp.getLeft().getType()).isa<mlir::db::DecimalType>()) {
-         // Operands are i128 carrying Numeric datums; extract and numeric_cmp.
-         auto loc = cmpOp->getLoc();
-         mlir::Value l = decimalToDatum(rewriter, loc, adaptor.getLeft());
-         mlir::Value r = decimalToDatum(rewriter, loc, adaptor.getRight());
-         mlir::Value cmp = rt::NumericRuntime::pgx_numeric_cmp(rewriter, loc)({l, r})[0];
-         mlir::Value zero = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
-         rewriter.replaceOpWithNewOp<arith::CmpIOp>(cmpOp, translateIPredicate(cmpOp.getPredicate()), cmp, zero);
-         return success();
-      }
+       // PGX-LOWER: decimal operands are PG Numeric datums (i64), so they must be
+       // compared via numeric_cmp, NOT a raw integer compare (which would compare
+       // pointers). Detect via the ORIGINAL db operand type, before the generic
+       // int/float path — post-conversion a decimal-as-i64 is indistinguishable
+       // from a real i64.
+       if (getBaseType(cmpOp.getLeft().getType()).isa<mlir::db::DecimalType>()) {
+           // Operands are i128 carrying Numeric datums; extract and numeric_cmp.
+           auto loc = cmpOp->getLoc();
+           mlir::Value l = decimalToDatum(rewriter, loc, adaptor.getLeft());
+           mlir::Value r = decimalToDatum(rewriter, loc, adaptor.getRight());
+           mlir::Value cmp = rt::NumericRuntime::pgx_numeric_cmp(rewriter, loc)({l, r})[0];
+           mlir::Value zero = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(),
+                                                                 rewriter.getI32IntegerAttr(0));
+           rewriter.replaceOpWithNewOp<arith::CmpIOp>(cmpOp, translateIPredicate(cmpOp.getPredicate()), cmp, zero);
+           return success();
+       }
       if (!adaptor.getLeft().getType().isIntOrIndexOrFloat()) {
          return failure();
       }
@@ -912,37 +912,37 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             value = rewriter.create<arith::SIToFPOp>(loc, convertedTargetType, value);
             return finishCast(value);
          } else if (scalarTargetType.isa<db::DecimalType>()) {
-            // PGX-LOWER: int -> NUMERIC via PG int8_numeric. Widen source to i64
-            // for the stub; result is a datum, rewrap to i128 carrier.
-            if (value.getType() != rewriter.getI64Type()) {
-               value = rewriter.create<arith::ExtSIOp>(loc, rewriter.getI64Type(), value);
-            }
-            Value datum = rt::NumericRuntime::pgx_int_to_numeric(rewriter, loc)({value})[0];
-            return finishCast(datumToDecimal(rewriter, loc, datum));
+             // PGX-LOWER: int -> NUMERIC via PG int8_numeric. Widen source to i64
+             // for the stub; result is a datum, rewrap to i128 carrier.
+             if (value.getType() != rewriter.getI64Type()) {
+                 value = rewriter.create<arith::ExtSIOp>(loc, rewriter.getI64Type(), value);
+             }
+             Value datum = rt::NumericRuntime::pgx_int_to_numeric(rewriter, loc)({value})[0];
+             return finishCast(datumToDecimal(rewriter, loc, datum));
          } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
-            Value result;
-            if (targetIntWidth < sourceIntWidth) {
-               result = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, value);
-            } else if (targetIntWidth > sourceIntWidth) {
-               result = rewriter.create<arith::ExtSIOp>(loc, convertedTargetType, value);
-            } else {
-               // Same width - no conversion needed
-               result = value;
-            }
-            return finishCast(result);
+             Value result;
+             if (targetIntWidth < sourceIntWidth) {
+                 result = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, value);
+             } else if (targetIntWidth > sourceIntWidth) {
+                 result = rewriter.create<arith::ExtSIOp>(loc, convertedTargetType, value);
+             } else {
+                 // Same width - no conversion needed
+                 result = value;
+             }
+             return finishCast(result);
          }
       } else if (auto floatType = scalarSourceType.dyn_cast_or_null<FloatType>()) {
          if (getIntegerWidth(scalarTargetType, false)) {
             value = rewriter.create<arith::FPToSIOp>(loc, convertedTargetType, value);
             return finishCast(value);
          } else if (scalarTargetType.isa<db::DecimalType>()) {
-            // PGX-LOWER: float -> NUMERIC via PG float8_numeric. Widen to f64 for
-            // the stub; result is a datum, rewrap to i128 carrier.
-            if (value.getType() != rewriter.getF64Type()) {
-               value = rewriter.create<arith::ExtFOp>(loc, rewriter.getF64Type(), value);
-            }
-            Value datum = rt::NumericRuntime::pgx_float_to_numeric(rewriter, loc)({value})[0];
-            return finishCast(datumToDecimal(rewriter, loc, datum));
+             // PGX-LOWER: float -> NUMERIC via PG float8_numeric. Widen to f64 for
+             // the stub; result is a datum, rewrap to i128 carrier.
+             if (value.getType() != rewriter.getF64Type()) {
+                 value = rewriter.create<arith::ExtFOp>(loc, rewriter.getF64Type(), value);
+             }
+             Value datum = rt::NumericRuntime::pgx_float_to_numeric(rewriter, loc)({value})[0];
+             return finishCast(datumToDecimal(rewriter, loc, datum));
          } else if (auto targetFloatType = scalarTargetType.dyn_cast_or_null<FloatType>()) {
              // PGX-LOWER edit: Lingodb didn't have type cast for float -> float implemented
             const auto sourceWidth = floatType.getWidth();
@@ -958,31 +958,31 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             return finishCast(result);
          }
       } else if (auto decimalSourceType = scalarSourceType.dyn_cast_or_null<db::DecimalType>()) {
-         if (scalarTargetType.isa<db::DecimalType>()) {
-            // PGX-LOWER: NUMERIC -> NUMERIC. A PG Numeric datum carries its own
-            // scale, so a scale change is not a representation change — pass the
-            // datum through. (PG re-derives scale on output; downstream ops use
-            // numeric_* which are scale-aware.)
-            return finishCast(value);
-         } else if (scalarTargetType.isa<FloatType>()) {
-            // PGX-LOWER: NUMERIC -> float via PG numeric_float8 (returns f64),
-            // then narrow if the target is f32. Source is i128 carrier -> datum.
-            Value datum = decimalToDatum(rewriter, loc, value);
-            Value result = rt::NumericRuntime::pgx_numeric_to_float(rewriter, loc)({datum})[0];
-            if (convertedTargetType != rewriter.getF64Type()) {
-               result = rewriter.create<arith::TruncFOp>(loc, convertedTargetType, result);
-            }
-            return finishCast(result);
-         } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
-            // PGX-LOWER: NUMERIC -> int via PG numeric_int8 (returns i64), then
-            // narrow to the target integer width. Source is i128 carrier -> datum.
-            Value datum = decimalToDatum(rewriter, loc, value);
-            Value result = rt::NumericRuntime::pgx_numeric_to_int(rewriter, loc)({datum})[0];
-            if (targetIntWidth < 64) {
-               result = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, result);
-            }
-            return finishCast(result);
-         }
+          if (scalarTargetType.isa<db::DecimalType>()) {
+              // PGX-LOWER: NUMERIC -> NUMERIC. A PG Numeric datum carries its own
+              // scale, so a scale change is not a representation change — pass the
+              // datum through. (PG re-derives scale on output; downstream ops use
+              // numeric_* which are scale-aware.)
+              return finishCast(value);
+          } else if (scalarTargetType.isa<FloatType>()) {
+              // PGX-LOWER: NUMERIC -> float via PG numeric_float8 (returns f64),
+              // then narrow if the target is f32. Source is i128 carrier -> datum.
+              Value datum = decimalToDatum(rewriter, loc, value);
+              Value result = rt::NumericRuntime::pgx_numeric_to_float(rewriter, loc)({datum})[0];
+              if (convertedTargetType != rewriter.getF64Type()) {
+                  result = rewriter.create<arith::TruncFOp>(loc, convertedTargetType, result);
+              }
+              return finishCast(result);
+          } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
+              // PGX-LOWER: NUMERIC -> int via PG numeric_int8 (returns i64), then
+              // narrow to the target integer width. Source is i128 carrier -> datum.
+              Value datum = decimalToDatum(rewriter, loc, value);
+              Value result = rt::NumericRuntime::pgx_numeric_to_int(rewriter, loc)({datum})[0];
+              if (targetIntWidth < 64) {
+                  result = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, result);
+              }
+              return finishCast(result);
+          }
       } else if (auto timestampSourceType = scalarSourceType.dyn_cast_or_null<db::TimestampType>()) {
          if (auto dateTargetType = scalarTargetType.dyn_cast_or_null<db::DateType>()) {
             // Both timestamp and date are in nanoseconds, just divide by nanoseconds per day
@@ -1061,6 +1061,14 @@ class HashLowering : public ConversionPattern {
       return builder.create<mlir::util::Hash64>(loc, builder.getIndexType(), asIndex);
    }
    Value hashImpl(OpBuilder& builder, Location loc, Value v, Value totalHash, Type originalType) const {
+       if (v.getType().isa<mlir::IntegerType>() && getBaseType(originalType).isa<mlir::db::DecimalType>()) {
+           auto i64Type = IntegerType::get(builder.getContext(), 64);
+           Value datum = builder.create<arith::TruncIOp>(loc, i64Type, v);
+           Value hash = rt::NumericRuntime::pgx_numeric_hash(builder, loc)({datum})[0];
+           Value asIndex = builder.create<arith::IndexCastOp>(loc, builder.getIndexType(), hash);
+           return combineHashes(builder, loc, asIndex, totalHash);
+       }
+
       if (auto intType = v.getType().dyn_cast_or_null<mlir::IntegerType>()) {
          if (intType.getWidth() == 128) {
             auto i64Type = IntegerType::get(builder.getContext(), 64);

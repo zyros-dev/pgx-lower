@@ -230,67 +230,6 @@ double runtime::StringRuntime::toFloat64(runtime::VarLen32 str) {
    return val;
 }
 
-// String to decimal conversion
-__int128 runtime::StringRuntime::toDecimal(runtime::VarLen32 string, int32_t reqScale) {
-   std::string str = string.str();
-
-   PGX_LOG(RUNTIME, DEBUG, "StringRuntime::toDecimal: Converting string '%s' to decimal with reqScale=%d",
-           str.c_str(), reqScale);
-
-   // Find the decimal point
-   size_t decimal_pos = str.find('.');
-   
-   // Remove the decimal point and count digits after it
-   int32_t scale = 0;
-   std::string digits_str;
-   
-   if (decimal_pos != std::string::npos) {
-      // Count digits after decimal point
-      scale = str.length() - decimal_pos - 1;
-      // Build string without decimal point
-      digits_str = str.substr(0, decimal_pos) + str.substr(decimal_pos + 1);
-   } else {
-      digits_str = str;
-   }
-   
-   // Parse as integer
-   __int128 value = 0;
-   bool negative = false;
-   size_t start = 0;
-   
-   if (!digits_str.empty() && digits_str[0] == '-') {
-      negative = true;
-      start = 1;
-   } else if (!digits_str.empty() && digits_str[0] == '+') {
-      start = 1;
-   }
-   
-   for (size_t i = start; i < digits_str.length(); i++) {
-      if (digits_str[i] < '0' || digits_str[i] > '9') {
-         PGX_ERROR("StringRuntime::toDecimal: Invalid character '%c' at position %zu in string '%s'",
-                   digits_str[i], i, str.c_str());
-         throw std::runtime_error("could not cast decimal");
-      }
-      value = value * 10 + (digits_str[i] - '0');
-   }
-   
-   if (negative) {
-      value = -value;
-   }
-   
-   // Rescale to required scale
-   while (scale < reqScale) {
-      value *= 10;
-      scale++;
-   }
-   while (scale > reqScale) {
-      value /= 10;
-      scale--;
-   }
-   
-   return value;
-}
-
 // int64_t to string conversion
 runtime::VarLen32 runtime::StringRuntime::fromInt(int64_t value) {
    // Use a buffer large enough for any int64_t
@@ -333,52 +272,6 @@ runtime::VarLen32 runtime::StringRuntime::fromFloat64(double value) {
    
    uint8_t* data = pgx_alloc(len);
    memcpy(data, buffer, len);
-   return runtime::VarLen32(data, len);
-}
-
-// decimal to string conversion
-runtime::VarLen32 runtime::StringRuntime::fromDecimal(__int128 val, int32_t scale) {
-   // Handle negative values
-   bool negative = val < 0;
-   if (negative) {
-      val = -val;
-   }
-   
-   // Convert to string
-   std::string result;
-   if (val == 0) {
-      // For zero, we just return "0" regardless of scale
-      result = "0";
-      size_t len = result.length();
-      uint8_t* data = pgx_alloc(len);
-      memcpy(data, result.data(), len);
-      return runtime::VarLen32(data, len);
-   } else {
-      while (val > 0) {
-         result = char('0' + (val % 10)) + result;
-         val /= 10;
-      }
-   }
-   
-   // Add decimal point if needed (but not for zero which was handled above)
-   if (scale > 0) {
-      // Pad with zeros if necessary
-      while (static_cast<int32_t>(result.length()) <= scale) {
-         result = "0" + result;
-      }
-      // Insert decimal point
-      result.insert(result.length() - scale, ".");
-   }
-   
-   // Add negative sign if needed
-   if (negative) {
-      result = "-" + result;
-   }
-   
-   size_t len = result.length();
-   uint8_t* data = pgx_alloc(len);
-   memcpy(data, result.data(), len);
-   
    return runtime::VarLen32(data, len);
 }
 
@@ -611,4 +504,3 @@ bool runtime::StringRuntime::ilike(runtime::VarLen32 str, runtime::VarLen32 patt
    bool result = like(lowerStr, lowerPattern);
    return result;
 }
-
