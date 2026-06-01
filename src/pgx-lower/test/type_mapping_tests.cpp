@@ -54,8 +54,8 @@ PGX_TEST_FN(type_mapping_int64) {
     PG_RETURN_VOID();
 }
 
-PGX_TEST_FN(type_mapping_int128) {
-    EXPECT_OID_EQ(lingodb::utility::mlir_type_to_pg_oid(mlir::IntegerType::get(&ctx(), 128)), NUMERICOID);
+PGX_TEST_FN(type_mapping_int128_is_not_numeric) {
+    EXPECT_OID_EQ(lingodb::utility::mlir_type_to_pg_oid(mlir::IntegerType::get(&ctx(), 128)), InvalidOid);
     PG_RETURN_VOID();
 }
 

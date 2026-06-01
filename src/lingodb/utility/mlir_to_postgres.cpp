@@ -32,8 +32,6 @@ uint32_t mlir_type_to_pg_oid(mlir::Type type) {
         return INT4OID;
     if (baseType.isInteger(64))
         return INT8OID;
-    if (baseType.isInteger(128))
-        return NUMERICOID;
     if (baseType.isF32())
         return FLOAT4OID;
     if (baseType.isF64())
