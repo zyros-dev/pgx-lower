@@ -73,7 +73,7 @@ enum class ColumnType {
     STRING, // TEXTOID, VARCHAROID, BPCHAROID, CHAROID
     TEXT, // Legacy - maps to STRING
     VARCHAR, // Legacy - maps to STRING
-    DECIMAL, // NUMERICOID
+    NUMERIC, // NUMERICOID
     FLOAT, // FLOAT4OID
     DOUBLE, // FLOAT8OID
     DATE, // DATEOID
@@ -118,7 +118,7 @@ struct BatchStorage {
     int32_t** string_lengths;
     uint8_t*** string_data_ptrs;
 
-    __int128** decimal_values;
+    ::runtime::NumericDatumCarrier** numeric_values;
 };
 
 struct DataSourceIterator {
@@ -312,7 +312,7 @@ void TableBuilder::addFloat64(const bool is_valid, const double value) {
     pgx_lower::runtime::table_builder_add<double>(this, is_valid, value);
 }
 
-void TableBuilder::addNumericDatum(const bool is_valid, const NumericDatumCarrier value) {
+void TableBuilder::addNumericDatum(const bool is_valid, const ::runtime::NumericDatumCarrier value) {
     PGX_IO(RUNTIME);
 
     if (!is_valid) {
@@ -441,7 +441,7 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
                         case VARCHAROID:
                         case BPCHAROID:
                         case CHAROID: col_spec.type = ::ColumnType::STRING; break;
-                        case NUMERICOID: col_spec.type = ::ColumnType::DECIMAL; break;
+                        case NUMERICOID: col_spec.type = ::ColumnType::NUMERIC; break;
                         case DATEOID: col_spec.type = ::ColumnType::DATE; break;
                         case TIMESTAMPOID:
                         case TIMESTAMPTZOID: col_spec.type = ::ColumnType::TIMESTAMP; break;
@@ -533,7 +533,8 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
     batch->column_nulls = static_cast<bool**>(palloc(num_cols * sizeof(bool*)));
     batch->string_lengths = static_cast<int32_t**>(palloc(num_cols * sizeof(int32_t*)));
     batch->string_data_ptrs = static_cast<uint8_t***>(palloc(num_cols * sizeof(uint8_t**)));
-    batch->decimal_values = static_cast<__int128**>(palloc(num_cols * sizeof(__int128*)));
+    batch->numeric_values = static_cast<::runtime::NumericDatumCarrier**>(
+        palloc(num_cols * sizeof(::runtime::NumericDatumCarrier*)));
 
     for (size_t col = 0; col < num_cols; col++) {
         batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
@@ -545,18 +546,9 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
         memset(batch->string_lengths[col], 0, capacity * sizeof(int32_t));
         memset(batch->string_data_ptrs[col], 0, capacity * sizeof(uint8_t*));
 
-        // __int128 requires 16-byte alignment. palloc() only guarantees 8-byte (MAXALIGN).
-        const size_t alloc_size = capacity * sizeof(__int128) + 16;
-        void* raw_ptr = palloc(alloc_size);
-        const uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw_ptr);
-        const uintptr_t aligned_addr = (raw_addr + 15) & ~static_cast<uintptr_t>(15);
-        batch->decimal_values[col] = reinterpret_cast<__int128*>(aligned_addr);
-        memset(batch->decimal_values[col], 0, capacity * sizeof(__int128));
-
-        if ((reinterpret_cast<uintptr_t>(batch->decimal_values[col]) & 15) != 0) {
-            ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-                            errmsg("decimal_values[%zu] alignment failed: %p", col, batch->decimal_values[col])));
-        }
+        batch->numeric_values[col] = static_cast<::runtime::NumericDatumCarrier*>(
+            palloc(capacity * sizeof(::runtime::NumericDatumCarrier)));
+        memset(batch->numeric_values[col], 0, capacity * sizeof(::runtime::NumericDatumCarrier));
     }
 
     MemoryContextSwitchTo(oldContext);
@@ -726,11 +718,11 @@ namespace {
                 // PGX-LOWER: store the PG Numeric datum. datumTransfer copies the
                 // varlena into the batch memory context so the pointer stays valid.
                 if (is_null) {
-                    iter->batch->decimal_values[json_col_idx][row_idx] = __int128{0};
+                    iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::NumericDatumCarrier{0};
                 } else {
                     const Datum transferred = datumTransfer(value, meta.attbyval, meta.attlen);
-                    iter->batch->decimal_values[json_col_idx][row_idx] =
-                        ::runtime::numeric_datum_to_carrier(static_cast<uint64_t>(transferred));
+                    iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::numeric_datum_to_carrier(
+                        static_cast<uint64_t>(transferred));
                 }
                 break;
             }
@@ -875,13 +867,13 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
             PGX_LOG(RUNTIME, TRACE, "  DATA_BUFFER_IDX → %p", reinterpret_cast<void*>(column_info_ptr[DATA_BUFFER_IDX]));
             PGX_LOG(RUNTIME, TRACE, "  VARLEN_BUFFER_IDX → %p",
                     reinterpret_cast<void*>(column_info_ptr[VARLEN_BUFFER_IDX]));
-        } else if (iter->columns[col].type == ::ColumnType::DECIMAL) {
-            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->decimal_values[col][row_idx]);
+        } else if (iter->columns[col].type == ::ColumnType::NUMERIC) {
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->numeric_values[col][row_idx]);
             column_info_ptr[VARLEN_BUFFER_IDX] = 0;
 
             PGX_LOG(RUNTIME, DEBUG, "access() col=%zu NUMERIC carrier at %p, value=%lld", col,
-                    &iter->batch->decimal_values[col][row_idx],
-                    static_cast<long long>(iter->batch->decimal_values[col][row_idx]));
+                    &iter->batch->numeric_values[col][row_idx],
+                    static_cast<long long>(iter->batch->numeric_values[col][row_idx]));
         } else {
             // Pass address of Datum itself (contains value)
             column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);

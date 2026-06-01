@@ -25,7 +25,7 @@ size_t get_physical_size(uint32_t type_oid) {
     case VARCHAROID:
     case BPCHAROID:
     case BYTEAOID: return 16;
-    case NUMERICOID: return 16;
+    case NUMERICOID: return sizeof(NumericDatumCarrier);
     default:
         PGX_ERROR("get_physical_size: Unsupported PostgreSQL type OID: %u", type_oid);
         throw std::runtime_error("Unsupported PostgreSQL type OID");

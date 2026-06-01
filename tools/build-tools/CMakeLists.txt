@@ -22,8 +22,7 @@ function(gen_rt_def target_name header_file)
             COMMAND $<TARGET_FILE:runtime-header-tool> --oh=${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file} ${header_path} -- -x c++ -I /usr/lib/llvm-20/include/ -I ${CMAKE_SOURCE_DIR}/include -I ${CMAKE_SOURCE_DIR}/include/lingodb
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}            
             OUTPUT  ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
-            DEPENDS $<TARGET_FILE:runtime-header-tool>
-            DEPENDS ${header_path}
+            DEPENDS $<TARGET_FILE:runtime-header-tool> ${header_path} ${CMAKE_SOURCE_DIR}/include/lingodb/runtime/RuntimeSpecifications.h
             COMMENT "Generate runtime definitions... ${header_file} (from ${source_type})"
     )
     add_custom_target(${target_name}
@@ -34,4 +33,3 @@ function(gen_rt_def target_name header_file)
 
     add_dependencies(${target_name} runtime-header-tool)
 endfunction()
-

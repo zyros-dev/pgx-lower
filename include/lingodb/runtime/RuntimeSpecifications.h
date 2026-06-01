@@ -31,7 +31,7 @@ struct ColumnLayout {
 size_t get_physical_size(uint32_t type_oid);
 PhysicalType get_physical_type(uint32_t type_oid);
 
-using NumericDatumCarrier = unsigned __int128;
+using NumericDatumCarrier = uint64_t;
 
 NumericDatumCarrier numeric_datum_to_carrier(uint64_t datum);
 uint64_t numeric_datum_from_carrier(NumericDatumCarrier carrier);
