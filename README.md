@@ -6,9 +6,9 @@ engine with a compiler. Read more at https://pgx.zyros.dev/
 ## Development
 
 Builds run in the dev container on thor, driven by `just` (the mac is an edit host;
-edits sync via mutagen). All generated build trees live under the gitignored
-`build-artifacts/` directory; `bench-results/` holds the committed per-PR benchmark
-baseline history.
+edits sync via mutagen). All generated build and benchmark scratch output lives
+under the gitignored `build-artifacts/` directory; `bench-results/` holds the
+committed per-PR benchmark reports.
 
 ### IDE setup (compile_commands.json)
 

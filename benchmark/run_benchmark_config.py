@@ -128,8 +128,8 @@ def main():
         shutil.copy2(db_path, archive_path)
         print(f"Archived: {archive_path}")
 
-    print(f"Current results: benchmark/output/benchmark.db")
-    print(f"All archives: benchmark/output/archive/\n")
+    print("Current results: build-artifacts/bench-output/benchmark.db")
+    print("All archives: build-artifacts/bench-output/archive/\n")
 
     if passed < len(results):
         sys.exit(1)
