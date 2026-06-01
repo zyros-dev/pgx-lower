@@ -8,11 +8,11 @@ export CC = clang
 export CXX = clang++
 
 # Build directories for different test types
-BUILD_DIR = build
-BUILD_DIR_PTEST = build-ptest
-BUILD_DIR_PTEST_RELEASE = build-ptest-release
-BUILD_DIR_PTEST_RELDEBUG = build-ptest-reldebug
-BUILD_DIR_UTEST = build-utest
+BUILD_DIR = build-artifacts/make/default
+BUILD_DIR_PTEST = build-artifacts/make/ptest
+BUILD_DIR_PTEST_RELEASE = build-artifacts/make/ptest-release
+BUILD_DIR_PTEST_RELDEBUG = build-artifacts/make/ptest-reldebug
+BUILD_DIR_UTEST = build-artifacts/make/utest
 CMAKE_GENERATOR = Ninja
 CMAKE_BUILD_TYPE_DEBUG = Debug
 CMAKE_BUILD_TYPE_RELEASE = Release
@@ -196,20 +196,20 @@ ffix:
 
 gviz:
 	@echo "Generating CMake dependency visualization..."
-	@echo "Creating build-viz directory and generating graphviz files..."
-	@mkdir -p build-viz
-	@cd build-viz && cmake --graphviz=pgx_lower_deps.dot .. >/dev/null 2>&1
+	@echo "Creating build-artifacts/make/viz directory and generating graphviz files..."
+	@mkdir -p build-artifacts/make/viz
+	@cd build-artifacts/make/viz && cmake --graphviz=pgx_lower_deps.dot $(CURDIR) >/dev/null 2>&1
 	@echo "Converting to SVG format..."
-	@cd build-viz && dot -Tsvg pgx_lower_deps.dot -o pgx_lower_deps.svg
+	@cd build-artifacts/make/viz && dot -Tsvg pgx_lower_deps.dot -o pgx_lower_deps.svg
 	@echo "Creating clean version (filtering out Google Test dependencies)..."
-	@cd build-viz && grep -v "googletest\|gmock\|gtest" pgx_lower_deps.dot > clean_deps.dot
-	@cd build-viz && dot -Tsvg clean_deps.dot -o clean_pgx_lower_deps.svg
+	@cd build-artifacts/make/viz && grep -v "googletest\|gmock\|gtest" pgx_lower_deps.dot > clean_deps.dot
+	@cd build-artifacts/make/viz && dot -Tsvg clean_deps.dot -o clean_pgx_lower_deps.svg
 	@echo "Generated visualizations:"
-	@echo "  - build-viz/pgx_lower_deps.svg (complete dependency graph)"
-	@echo "  - build-viz/clean_pgx_lower_deps.svg (project dependencies only)"
+	@echo "  - build-artifacts/make/viz/pgx_lower_deps.svg (complete dependency graph)"
+	@echo "  - build-artifacts/make/viz/clean_pgx_lower_deps.svg (project dependencies only)"
 	@echo "Opening visualization..."
 	@if which firefox >/dev/null 2>&1; then \
-		firefox build-viz/clean_pgx_lower_deps.svg >/dev/null 2>&1 & \
+		firefox build-artifacts/make/viz/clean_pgx_lower_deps.svg >/dev/null 2>&1 & \
 	else \
 		echo "Install firefox to auto-open SVG files"; \
 	fi
@@ -299,8 +299,8 @@ bench-list:
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the main project"
-	@echo "  build-ptest  - Build for PostgreSQL tests"
-	@echo "  build-utest  - Build for unit tests"
+	@echo "  build-ptest  - Build PostgreSQL tests under build-artifacts/make/ptest"
+	@echo "  build-utest  - Build unit tests under build-artifacts/make/utest"
 	@echo "  clean        - Clean all build directories and root"
 	@echo "  clean-root   - Clean CMake files from root directory"
 	@echo "  ptest        - Run PostgreSQL regression tests"
