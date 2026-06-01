@@ -9,6 +9,13 @@
 
 Comments: would a human write this? If a comment restates what well-named code says, delete it. File-header banners are noise unless they encode a non-obvious WHY. In tests, the test names ARE the documentation.
 
+## Merge discipline
+
+Never merge a PR, rebase-merge a PR, squash-merge a PR, delete a PR branch, or
+push directly to `main` unless the user explicitly asks for that exact action in
+the current turn. Opening or updating a PR is fine when requested by a plan; the
+human owns final review and merge.
+
 ## Where things run
 
 **Everything runs on thor.** The mac is an edit host only. Don't build, run Postgres, execute the extension, or run benchmarks locally — the toolchain (LLVM 20, MLIR 20, Postgres 17.6 from source) lives in a Docker image on thor.
