@@ -1,12 +1,12 @@
 // ReSharper disable CppUseStructuredBinding
-#include "lingodb/runtime/PgSortRuntime.h"
-#include "lingodb/runtime/RuntimeSpecifications.h"
-#include "pgx-lower/utility/logging.h"
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
 
+#include "lingodb/runtime/PgSortRuntime.h"
+#include "lingodb/runtime/RuntimeSpecifications.h"
+#include "pgx-lower/utility/logging.h"
 
 extern "C" {
 #include "postgres.h"
@@ -253,7 +253,7 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
             break;
         }
         case PhysicalType::NUMERIC_DATUM: {
-            values[i] = static_cast<Datum>(load_numeric_datum_carrier(&mlir_tuple[layout.value_offset]));
+            values[i] = load_numeric_datum_carrier(&mlir_tuple[layout.value_offset]);
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
@@ -343,7 +343,7 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
             break;
         }
         case PhysicalType::NUMERIC_DATUM: {
-            store_numeric_datum_carrier(&mlir_tuple[layout.value_offset], static_cast<uint64_t>(values[i]));
+            store_numeric_datum_carrier(&mlir_tuple[layout.value_offset], values[i]);
             PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
@@ -517,7 +517,7 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
             break;
         }
         case PhysicalType::NUMERIC_DATUM: {
-            values[i] = static_cast<Datum>(load_numeric_datum_carrier(&tupleData[layout.value_offset]));
+            values[i] = load_numeric_datum_carrier(&tupleData[layout.value_offset]);
 
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;

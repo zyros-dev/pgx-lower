@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <stdexcept>
 
+extern "C" {
+#include "postgres.h"
+}
+
 namespace runtime {
 
 enum class PhysicalType {
@@ -31,12 +35,12 @@ struct ColumnLayout {
 size_t get_physical_size(uint32_t type_oid);
 PhysicalType get_physical_type(uint32_t type_oid);
 
-using NumericDatumCarrier = uint64_t;
+using NumericDatumCarrier = Datum;
 
-NumericDatumCarrier numeric_datum_to_carrier(uint64_t datum);
-uint64_t numeric_datum_from_carrier(NumericDatumCarrier carrier);
-void store_numeric_datum_carrier(uint8_t* dest, uint64_t datum);
-uint64_t load_numeric_datum_carrier(const uint8_t* src);
+NumericDatumCarrier numeric_datum_to_carrier(Datum datum);
+Datum numeric_datum_from_carrier(NumericDatumCarrier carrier);
+void store_numeric_datum_carrier(uint8_t* dest, Datum datum);
+NumericDatumCarrier load_numeric_datum_carrier(const uint8_t* src);
 
 size_t extract_varlen32_string(const uint8_t* i128_data, char* dest, size_t max_len);
 

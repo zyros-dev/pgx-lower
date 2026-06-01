@@ -1,10 +1,11 @@
 #ifndef RUNTIME_PGSORTRUNTIME_H
 #define RUNTIME_PGSORTRUNTIME_H
 
-#include "RuntimeSpecifications.h"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "RuntimeSpecifications.h"
 
 namespace runtime {
 

@@ -1,10 +1,11 @@
 #ifndef RUNTIME_HASHTABLE_H
 #define RUNTIME_HASHTABLE_H
+#include <map>
+#include <vector>
+
+#include "lingodb/runtime/RuntimeSpecifications.h"
 #include "lingodb/runtime/Vector.h"
 #include "lingodb/runtime/helpers.h"
-#include "lingodb/runtime/RuntimeSpecifications.h"
-#include <vector>
-#include <map>
 
 namespace runtime {
 

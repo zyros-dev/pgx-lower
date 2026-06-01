@@ -1,9 +1,10 @@
 #ifndef RUNTIME_POSTGRESQLRUNTIME_H
 #define RUNTIME_POSTGRESQLRUNTIME_H
-#include "lingodb/runtime/RuntimeSpecifications.h"
-#include "lingodb/runtime/helpers.h"
 #include <cstdint>
 #include <optional>
+
+#include "lingodb/runtime/RuntimeSpecifications.h"
+#include "lingodb/runtime/helpers.h"
 
 namespace runtime {
 
