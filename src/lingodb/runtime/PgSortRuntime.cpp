@@ -62,7 +62,7 @@ void PgSortState::log_specification(const char* context) const {
             case PhysicalType::FLOAT32: phys_type_name = "FLOAT32"; break;
             case PhysicalType::FLOAT64: phys_type_name = "FLOAT64"; break;
             case PhysicalType::VARLEN32: phys_type_name = "VARLEN32"; break;
-            case PhysicalType::DECIMAL128: phys_type_name = "DECIMAL128"; break;
+            case PhysicalType::NUMERIC_DATUM: phys_type_name = "NUMERIC_DATUM"; break;
             }
             PGX_LOG(RUNTIME, DEBUG,
                     "    Layout[%zu]: tuple_offset=%zu, null_flag_offset=%zu, value_offset=%zu, "
@@ -252,13 +252,13 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
                     str_data);
             break;
         }
-        case PhysicalType::DECIMAL128: {
+        case PhysicalType::NUMERIC_DATUM: {
             // PGX-LOWER: the i128 slot carries a PG Numeric datum (low 64 bits).
             // Extract it directly — no conversion. tuplesort then orders by the
             // real Numeric value via NUMERICOID (this is what fixes ORDER BY).
             const __int128 val = *reinterpret_cast<const __int128*>(&mlir_tuple[layout.value_offset]);
             values[i] = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(val)));
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: datum passthrough", i);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
         default:
@@ -346,13 +346,13 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
                     new_str);
             break;
         }
-        case PhysicalType::DECIMAL128: {
+        case PhysicalType::NUMERIC_DATUM: {
             // PGX-LOWER: store the PG Numeric datum (from the sorted slot) into
             // the i128 slot, zero-extended — no conversion. The JIT reads it back
             // as a datum-carrying i128.
             const __int128 val = static_cast<__int128>(static_cast<unsigned __int128>(static_cast<uint64_t>(values[i])));
             *reinterpret_cast<__int128*>(&mlir_tuple[layout.value_offset]) = val;
-            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] decimal128: datum passthrough", i);
+            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
         default:
@@ -524,11 +524,11 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
             }
             break;
         }
-        case PhysicalType::DECIMAL128: {
+        case PhysicalType::NUMERIC_DATUM: {
             const __int128 val = *reinterpret_cast<const __int128*>(&tupleData[layout.value_offset]);
             values[i] = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(val)));
 
-            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] decimal128: datum passthrough", i);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
         default:
