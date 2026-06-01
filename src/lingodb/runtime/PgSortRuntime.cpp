@@ -430,16 +430,16 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
                 is_null = (null_flag != 0);
             }
             if (!is_null) {
-                const uint8_t* i128_data = &tupleData[layout.value_offset];
+                const uint8_t* varlen32_data = &tupleData[layout.value_offset];
 
-                const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(i128_data);
+                const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(varlen32_data);
                 const size_t len = len_with_flag & ~0x80000000u;
 
                 saved_strings[i].len = len;
                 saved_strings[i].data = static_cast<char*>(palloc(len + 1));
 
                 if (saved_strings[i].data) {
-                    extract_varlen32_string(i128_data, saved_strings[i].data, len);
+                    extract_varlen32_string(varlen32_data, saved_strings[i].data, len);
                     PGX_LOG(RUNTIME, DEBUG, "appendTuple: Column[%zu] string extracted: len=%zu, value='%.*s'",
                             i, len, static_cast<int>(len), saved_strings[i].data);
                 }

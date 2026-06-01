@@ -135,18 +135,18 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
 
             if (type_oid == VARCHAROID || type_oid == TEXTOID) {
                 uint8_t* col_data = kv_region + offset;
-                uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
+                uint8_t* varlen32_data = col.is_nullable ? (col_data + 1) : col_data;
 
-                const uint32_t len_with_flag = *reinterpret_cast<uint32_t*>(i128_data);
+                const uint32_t len_with_flag = *reinterpret_cast<uint32_t*>(varlen32_data);
                 const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
                 const uint32_t len = len_with_flag & ~0x80000000u;
 
                 if (is_lazy) {
                     PGX_LOG(RUNTIME, DEBUG, "Deep copying key string[%d] (lazy): len=%u", i, len);
                     char* new_str = static_cast<char*>(palloc(len + 1));
-                    extract_varlen32_string(i128_data, new_str, len);
+                    extract_varlen32_string(varlen32_data, new_str, len);
 
-                    *reinterpret_cast<uint64_t*>(i128_data + 8) = reinterpret_cast<uint64_t>(new_str);
+                    *reinterpret_cast<uint64_t*>(varlen32_data + 8) = reinterpret_cast<uint64_t>(new_str);
                     PGX_LOG(RUNTIME, DEBUG, "  Copied to %p: '%s'", static_cast<void*>(new_str), new_str);
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "Key string[%d] (inlined): len=%u, no deep copy needed", i, len);
@@ -180,9 +180,9 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
 
             if (type_oid == VARCHAROID || type_oid == TEXTOID) {
                 uint8_t* col_data = kv_region + offset;
-                uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;  // Skip nullable byte if present
+                uint8_t* varlen32_data = col.is_nullable ? (col_data + 1) : col_data;  // Skip nullable byte if present
 
-                const uint32_t len_with_flag = *reinterpret_cast<uint32_t*>(i128_data);
+                const uint32_t len_with_flag = *reinterpret_cast<uint32_t*>(varlen32_data);
                 const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
                 const uint32_t len = len_with_flag & ~0x80000000u;
 
@@ -190,8 +190,8 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                     PGX_LOG(RUNTIME, DEBUG, "Deep copying value string[%d] (lazy): len=%u", i, len);
 
                     char* new_str = static_cast<char*>(palloc(len + 1));
-                    extract_varlen32_string(i128_data, new_str, len);
-                    *reinterpret_cast<uint64_t*>(i128_data + 8) = reinterpret_cast<uint64_t>(new_str);
+                    extract_varlen32_string(varlen32_data, new_str, len);
+                    *reinterpret_cast<uint64_t*>(varlen32_data + 8) = reinterpret_cast<uint64_t>(new_str);
                     PGX_LOG(RUNTIME, DEBUG, "  Copied to %p: '%s'", static_cast<void*>(new_str), new_str);
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "Value string[%d] (inlined): len=%u, no deep copy needed", i, len);
