@@ -158,14 +158,13 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 // hashtable context and rewrite the pointer.
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
-                const uint64_t datum = *reinterpret_cast<uint64_t*>(i128_data);
+                const uint64_t datum = runtime::load_numeric_datum_carrier(i128_data);
                 if (datum != 0) {
                     const auto* src = reinterpret_cast<const struct varlena*>(datum);
                     const Size sz = VARSIZE_ANY(src);
                     void* copy = palloc(sz);
                     memcpy(copy, src, sz);
-                    *reinterpret_cast<uint64_t*>(i128_data) = reinterpret_cast<uint64_t>(copy);
-                    *reinterpret_cast<uint64_t*>(i128_data + 8) = 0;
+                    runtime::store_numeric_datum_carrier(i128_data, reinterpret_cast<uint64_t>(copy));
                 }
             }
 
@@ -202,14 +201,13 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                 // PGX-LOWER: deep-copy the Numeric datum (see key path above).
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* i128_data = col.is_nullable ? (col_data + 1) : col_data;
-                const uint64_t datum = *reinterpret_cast<uint64_t*>(i128_data);
+                const uint64_t datum = runtime::load_numeric_datum_carrier(i128_data);
                 if (datum != 0) {
                     const auto* src = reinterpret_cast<const struct varlena*>(datum);
                     const Size sz = VARSIZE_ANY(src);
                     void* copy = palloc(sz);
                     memcpy(copy, src, sz);
-                    *reinterpret_cast<uint64_t*>(i128_data) = reinterpret_cast<uint64_t>(copy);
-                    *reinterpret_cast<uint64_t*>(i128_data + 8) = 0;
+                    runtime::store_numeric_datum_carrier(i128_data, reinterpret_cast<uint64_t>(copy));
                 }
             }
 

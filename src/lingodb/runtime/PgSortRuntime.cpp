@@ -253,11 +253,7 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
             break;
         }
         case PhysicalType::NUMERIC_DATUM: {
-            // PGX-LOWER: the i128 slot carries a PG Numeric datum (low 64 bits).
-            // Extract it directly — no conversion. tuplesort then orders by the
-            // real Numeric value via NUMERICOID (this is what fixes ORDER BY).
-            const __int128 val = *reinterpret_cast<const __int128*>(&mlir_tuple[layout.value_offset]);
-            values[i] = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(val)));
+            values[i] = static_cast<Datum>(load_numeric_datum_carrier(&mlir_tuple[layout.value_offset]));
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
@@ -347,11 +343,7 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
             break;
         }
         case PhysicalType::NUMERIC_DATUM: {
-            // PGX-LOWER: store the PG Numeric datum (from the sorted slot) into
-            // the i128 slot, zero-extended — no conversion. The JIT reads it back
-            // as a datum-carrying i128.
-            const __int128 val = static_cast<__int128>(static_cast<unsigned __int128>(static_cast<uint64_t>(values[i])));
-            *reinterpret_cast<__int128*>(&mlir_tuple[layout.value_offset]) = val;
+            store_numeric_datum_carrier(&mlir_tuple[layout.value_offset], static_cast<uint64_t>(values[i]));
             PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
@@ -525,8 +517,7 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
             break;
         }
         case PhysicalType::NUMERIC_DATUM: {
-            const __int128 val = *reinterpret_cast<const __int128*>(&tupleData[layout.value_offset]);
-            values[i] = static_cast<Datum>(static_cast<uint64_t>(static_cast<unsigned __int128>(val)));
+            values[i] = static_cast<Datum>(load_numeric_datum_carrier(&tupleData[layout.value_offset]));
 
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
