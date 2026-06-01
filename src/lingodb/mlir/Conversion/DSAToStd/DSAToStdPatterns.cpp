@@ -120,7 +120,8 @@ static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type 
     return spec;
 }
 
-static runtime::SortSpecification* createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr) {
+static runtime::SortSpecification*
+createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, mlir::ArrayAttr originalTypeOidsAttr) {
     auto tuple = tupleType.dyn_cast<mlir::TupleType>();
     if (!tuple || !sortKeysAttr) {
         return nullptr;
@@ -155,6 +156,12 @@ static runtime::SortSpecification* createSortSpecFromType(mlir::Type tupleType, 
         }
 
         uint32_t pg_type_oid = lingodb::utility::mlir_type_to_pg_oid(fieldType);
+        if (originalTypeOidsAttr && i < static_cast<int32_t>(originalTypeOidsAttr.size())) {
+            const uint32_t original_oid = originalTypeOidsAttr[i].cast<mlir::IntegerAttr>().getInt();
+            if (OidIsValid(original_oid)) {
+                pg_type_oid = original_oid;
+            }
+        }
         int32_t typmod = -1;
         if (!OidIsValid(pg_type_oid)) {
             PGX_ERROR("Column %d type mapping failed: unsupported MLIR type", i);
@@ -237,7 +244,8 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
             mlir::Value specPtrValue;
             if (createOp.getInitAttr()) {
                 if (auto sortKeysAttr = createOp.getInitAttr()->dyn_cast<mlir::ArrayAttr>()) {
-                    auto* spec = createSortSpecFromType(genericType.getElementType(), sortKeysAttr);
+                    auto originalTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_type_oids");
+                    auto* spec = createSortSpecFromType(genericType.getElementType(), sortKeysAttr, originalTypeOidsAttr);
                     if (spec) {
                         PGX_LOG(RUNTIME, DEBUG, "Created SortSpecification: %d columns, %d sort keys",
                                 spec->num_columns, spec->num_sort_keys);
@@ -754,30 +762,30 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
          isValid = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 1);
       }
       mlir::Type type = getBaseType(val.getType());
-      if (isIntegerType(type, 1)) {
-         rt::TableBuilder::addBool(rewriter, loc)({builderVal, isValid, val});
+      mlir::Type originalType = getBaseType(appendOp.getVal().getType());
+      if (originalType.isa<mlir::db::DecimalType>() || appendOp->hasAttr("pgx_numeric_datum")) {
+          rt::TableBuilder::addNumericDatum(rewriter, loc)({builderVal, isValid, val});
+      } else if (isIntegerType(type, 1)) {
+          rt::TableBuilder::addBool(rewriter, loc)({builderVal, isValid, val});
       } else if (auto intWidth = getIntegerWidth(type, false)) {
-         switch (intWidth) {
-            case 8: rt::TableBuilder::addInt8(rewriter, loc)({builderVal, isValid, val}); break;
-            case 16: rt::TableBuilder::addInt16(rewriter, loc)({builderVal, isValid, val}); break;
-            case 32: rt::TableBuilder::addInt32(rewriter, loc)({builderVal, isValid, val}); break;
-            case 64: rt::TableBuilder::addInt64(rewriter, loc)({builderVal, isValid, val}); break;
-            case 128:
-             rt::TableBuilder::addNumericDatum(rewriter, loc)({builderVal, isValid, val}); break;
-            default: {
-               val=rewriter.create<arith::ExtUIOp>(loc,rewriter.getI64Type(),val);
-               rt::TableBuilder::addFixedSized(rewriter, loc)({builderVal, isValid, val});
-               break;
-            }
-
-         }
+          switch (intWidth) {
+          case 8: rt::TableBuilder::addInt8(rewriter, loc)({builderVal, isValid, val}); break;
+          case 16: rt::TableBuilder::addInt16(rewriter, loc)({builderVal, isValid, val}); break;
+          case 32: rt::TableBuilder::addInt32(rewriter, loc)({builderVal, isValid, val}); break;
+          case 64: rt::TableBuilder::addInt64(rewriter, loc)({builderVal, isValid, val}); break;
+          default: {
+              val = rewriter.create<arith::ExtUIOp>(loc, rewriter.getI64Type(), val);
+              rt::TableBuilder::addFixedSized(rewriter, loc)({builderVal, isValid, val});
+              break;
+          }
+          }
       } else if (auto floatType = type.dyn_cast_or_null<mlir::FloatType>()) {
-         switch (floatType.getWidth()) {
-            case 32: rt::TableBuilder::addFloat32(rewriter, loc)({builderVal, isValid, val}); break;
-            case 64: rt::TableBuilder::addFloat64(rewriter, loc)({builderVal, isValid, val}); break;
-         }
+          switch (floatType.getWidth()) {
+          case 32: rt::TableBuilder::addFloat32(rewriter, loc)({builderVal, isValid, val}); break;
+          case 64: rt::TableBuilder::addFloat64(rewriter, loc)({builderVal, isValid, val}); break;
+          }
       } else if (auto stringType = type.dyn_cast_or_null<mlir::util::VarLen32Type>()) {
-         rt::TableBuilder::addBinary(rewriter, loc)({builderVal, isValid, val});
+          rt::TableBuilder::addBinary(rewriter, loc)({builderVal, isValid, val});
       }
       rewriter.eraseOp(appendOp);
       return success();

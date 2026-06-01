@@ -32,6 +32,8 @@
 
 #include <catalog/pg_type_d.h>
 #include <lingodb/mlir/Dialect/util/FunctionHelper.h>
+#include <lingodb/utility/mlir_to_postgres.h>
+#include <type_traits>
 
 using namespace mlir;
 
@@ -93,6 +95,39 @@ class SimpleTypeConversionPattern : public ConversionPattern {
       llvm::SmallVector<mlir::Type> convertedTypes;
       assert(typeConverter->convertTypes(op->getResultTypes(), convertedTypes).succeeded());
       auto newOp = rewriter.create<Op>(op->getLoc(), convertedTypes, ValueRange(operands), op->getAttrs());
+      if constexpr (std::is_same_v<Op, mlir::dsa::CreateDS>) {
+          auto createOp = mlir::cast<mlir::dsa::CreateDS>(op);
+          if (auto genericType = createOp.getDs().getType().dyn_cast<mlir::dsa::GenericIterableType>()) {
+              if (genericType.getIteratorName() == "pgsort_iterator") {
+                  if (auto tupleType = genericType.getElementType().dyn_cast<mlir::TupleType>()) {
+                      llvm::SmallVector<mlir::Attribute> oidAttrs;
+                      oidAttrs.reserve(tupleType.size());
+                      for (mlir::Type fieldType : tupleType.getTypes()) {
+                          mlir::Type baseType = fieldType;
+                          if (auto nullableType = fieldType.dyn_cast<mlir::db::NullableType>()) {
+                              baseType = nullableType.getType();
+                          } else if (auto tupleTy = fieldType.dyn_cast<mlir::TupleType>()) {
+                              if (tupleTy.getTypes().size() == 2 && tupleTy.getTypes()[0].isInteger(1)) {
+                                  baseType = tupleTy.getTypes()[1];
+                              }
+                          }
+                          uint32_t oid = InvalidOid;
+                          if (baseType.isIntOrIndexOrFloat() || mlir::isa<mlir::util::VarLen32Type>(baseType)) {
+                              oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
+                          } else if (baseType.isa<mlir::db::DecimalType>()) {
+                              oid = NUMERICOID;
+                          } else if (baseType.isa<mlir::db::StringType>()) {
+                              oid = TEXTOID;
+                          } else if (baseType.isa<mlir::db::CharType>()) {
+                              oid = BPCHAROID;
+                          }
+                          oidAttrs.push_back(rewriter.getI32IntegerAttr(oid));
+                      }
+                      newOp->setAttr("pgx_original_type_oids", rewriter.getArrayAttr(oidAttrs));
+                  }
+              }
+          }
+      }
       for (size_t i = 0; i < op->getNumRegions(); i++) {
          if (safelyMoveRegion(rewriter, const_cast<TypeConverter&>(*typeConverter), op->getRegion(i), newOp->getRegion(i)).failed()) {
             return failure();
@@ -116,10 +151,9 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
       }
       auto* context = getContext();
       mlir::Type arrowPhysicalType = typeConverter->convertType(t);
-      if (t.isa<mlir::db::DecimalType>()) {
-         arrowPhysicalType = mlir::IntegerType::get(context, 128);
-      } else if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
-         arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(context, 32) : mlir::IntegerType::get(context, 64);
+      if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
+          arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(context, 32)
+                                                                                : mlir::IntegerType::get(context, 64);
       }
       llvm::SmallVector<mlir::Type> types;
       types.push_back(arrowPhysicalType);
@@ -180,10 +214,9 @@ class AppendTBLowering : public ConversionPattern {
       }
       auto* context = getContext();
       mlir::Type arrowPhysicalType = typeConverter->convertType(t);
-      if (t.isa<mlir::db::DecimalType>()) {
-         arrowPhysicalType = mlir::IntegerType::get(context, 128);
-      } else if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
-         arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(context, 32) : mlir::IntegerType::get(context, 64);
+      if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
+          arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(context, 32)
+                                                                                : mlir::IntegerType::get(context, 64);
       }
 
       mlir::Value val = adaptor.getVal();
@@ -208,7 +241,10 @@ class AppendTBLowering : public ConversionPattern {
       // PGX-LOWER: decimal needs no conversion at the materialize boundary — the
       // compute value already holds the Numeric datum carrier, matching
       // columnar storage.
-      rewriter.create<mlir::dsa::Append>(loc, adaptor.getDs(), val, adaptor.getValid());
+      auto newAppend = rewriter.create<mlir::dsa::Append>(loc, adaptor.getDs(), val, adaptor.getValid());
+      if (t.isa<mlir::db::DecimalType>()) {
+          newAppend->setAttr("pgx_numeric_datum", rewriter.getUnitAttr());
+      }
 
       rewriter.eraseOp(op);
       return success();
@@ -464,12 +500,18 @@ class BinOpLowering : public ConversionPattern {
       return failure();
    }
 };
-// PGX-LOWER: until Milestone 2, DecimalType lowers to a temporary i128-width
-// Numeric datum carrier. These bridge to/from the i64 Datum runtime stubs use.
+// PGX-LOWER: DecimalType lowers to a Datum-width Numeric datum carrier. These
+// helpers keep the call sites explicit while Milestone 1/2 code paths converge.
 static mlir::Value numericCarrierToDatum(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value numericCarrier) {
+    if (numericCarrier.getType() == builder.getI64Type()) {
+        return numericCarrier;
+    }
     return builder.create<mlir::arith::TruncIOp>(loc, builder.getI64Type(), numericCarrier);
 }
 static mlir::Value datumToNumericCarrier(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value datumI64) {
+    if (datumI64.getType() == builder.getI64Type()) {
+        return datumI64;
+    }
     return builder.create<mlir::arith::ExtUIOp>(loc, builder.getIntegerType(128), datumI64);
 }
 mlir::Value getDecimalScaleMultiplierConstant(mlir::OpBuilder& builder, int32_t s, mlir::Type stdType, mlir::Location loc) {
@@ -520,7 +562,7 @@ class DecimalBinOpLowering : public ConversionPattern {
       if (binOp.getType().template dyn_cast_or_null<mlir::db::DecimalType>()) {
           // PGX-LOWER: operands are Numeric datum carriers. Extract the
           // datums, call the PG-native numeric_* runtime fn, rewrap the result.
-          // PG handles scale, so the i128 scale-multiply/divide adjustment is gone.
+          // PG handles scale, so the old scale-multiply/divide adjustment is gone.
           auto loc = binOp->getLoc();
           mlir::Value left = numericCarrierToDatum(rewriter, loc, adaptor.getLeft());
           mlir::Value right = numericCarrierToDatum(rewriter, loc, adaptor.getRight());
@@ -819,7 +861,7 @@ class CmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
        // int/float path — post-conversion a decimal-as-i64 is indistinguishable
        // from a real i64.
        if (getBaseType(cmpOp.getLeft().getType()).isa<mlir::db::DecimalType>()) {
-           // Operands are i128 carrying Numeric datums; extract and numeric_cmp.
+           // Operands are Numeric datum carriers; extract and numeric_cmp.
            auto loc = cmpOp->getLoc();
            mlir::Value l = numericCarrierToDatum(rewriter, loc, adaptor.getLeft());
            mlir::Value r = numericCarrierToDatum(rewriter, loc, adaptor.getRight());
@@ -912,7 +954,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             return finishCast(value);
          } else if (scalarTargetType.isa<db::DecimalType>()) {
              // PGX-LOWER: int -> NUMERIC via PG int8_numeric. Widen source to i64
-             // for the stub; result is a datum, rewrap to i128 carrier.
+             // for the stub; result is a datum carrier.
              if (value.getType() != rewriter.getI64Type()) {
                  value = rewriter.create<arith::ExtSIOp>(loc, rewriter.getI64Type(), value);
              }
@@ -936,7 +978,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             return finishCast(value);
          } else if (scalarTargetType.isa<db::DecimalType>()) {
              // PGX-LOWER: float -> NUMERIC via PG float8_numeric. Widen to f64 for
-             // the stub; result is a datum, rewrap to i128 carrier.
+             // the stub; result is a datum carrier.
              if (value.getType() != rewriter.getF64Type()) {
                  value = rewriter.create<arith::ExtFOp>(loc, rewriter.getF64Type(), value);
              }
@@ -965,7 +1007,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
               return finishCast(value);
           } else if (scalarTargetType.isa<FloatType>()) {
               // PGX-LOWER: NUMERIC -> float via PG numeric_float8 (returns f64),
-              // then narrow if the target is f32. Source is i128 carrier -> datum.
+              // then narrow if the target is f32. Source is Numeric carrier -> datum.
               Value datum = numericCarrierToDatum(rewriter, loc, value);
               Value result = rt::NumericRuntime::pgx_numeric_to_float(rewriter, loc)({datum})[0];
               if (convertedTargetType != rewriter.getF64Type()) {
@@ -974,7 +1016,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
               return finishCast(result);
           } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
               // PGX-LOWER: NUMERIC -> int via PG numeric_int8 (returns i64), then
-              // narrow to the target integer width. Source is i128 carrier -> datum.
+              // narrow to the target integer width. Source is Numeric carrier -> datum.
               Value datum = numericCarrierToDatum(rewriter, loc, value);
               Value result = rt::NumericRuntime::pgx_numeric_to_int(rewriter, loc)({datum})[0];
               if (targetIntWidth < 64) {
@@ -1061,8 +1103,7 @@ class HashLowering : public ConversionPattern {
    }
    Value hashImpl(OpBuilder& builder, Location loc, Value v, Value totalHash, Type originalType) const {
        if (v.getType().isa<mlir::IntegerType>() && getBaseType(originalType).isa<mlir::db::DecimalType>()) {
-           auto i64Type = IntegerType::get(builder.getContext(), 64);
-           Value datum = builder.create<arith::TruncIOp>(loc, i64Type, v);
+           Value datum = numericCarrierToDatum(builder, loc, v);
            Value hash = rt::NumericRuntime::pgx_numeric_hash(builder, loc)({datum})[0];
            Value asIndex = builder.create<arith::IndexCastOp>(loc, builder.getIndexType(), hash);
            return combineHashes(builder, loc, asIndex, totalHash);
@@ -1145,16 +1186,10 @@ void DBToStdLoweringPass::runOnOperation() {
       return mlir::IntegerType::get(ctxt, 64);
    });
    typeConverter.addConversion([&](::mlir::db::DecimalType t) {
-       // PGX-LOWER: NUMERIC temporarily stays an i128-width value so existing
-       // width-128 plumbing (columnar storage, sort, hashtable, table-builder
-       // dispatch) keeps working unchanged. It carries a PostgreSQL Numeric
-       // datum rather than a scaled integer. Decimal arithmetic/compare/casts/
-       // constants extract that datum (trunc i128->i64), call PG-native
-       // numeric_* runtime functions, and zero-extend the i64 result back to
-       // i128. Nothing converts datum<->scaled-integer, so there is no lossy
-       // round-trip: results are byte-identical to stock PG at any precision/
-       // scale, including NaN and Inf.
-       return mlir::IntegerType::get(ctxt, 128);
+       // PGX-LOWER: NUMERIC is represented as a Datum-width PostgreSQL Numeric
+       // carrier. Arithmetic/compare/casts/constants call PG-native numeric_*
+       // runtime functions; nothing converts datum<->scaled-integer.
+       return mlir::IntegerType::get(ctxt, 64);
    });
    typeConverter.addConversion([&](::mlir::db::CharType t) {
       if (t.getBytes() > 8) return mlir::Type();
@@ -1222,9 +1257,6 @@ void DBToStdLoweringPass::runOnOperation() {
       std::vector<mlir::Type> types;
       for (auto t : tuple.getTypes()) {
          mlir::Type arrowPhysicalType = typeConverter.convertType(t);
-         if (t.isa<mlir::db::DecimalType>()) {
-            arrowPhysicalType = mlir::IntegerType::get(t.getContext(), 128);
-         }
          types.push_back(arrowPhysicalType);
       }
       return mlir::TupleType::get(tuple.getContext(), types);
