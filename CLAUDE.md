@@ -41,6 +41,7 @@ Commit a wiki spec/plan from `~/repos/sandbox/`: `git add wiki/specs/ && git com
 Default bar for every plan, before its PR opens:
 
 - **red/green TDD** — write the failing test first, run `just test`, confirm it fails, then implement the minimum to turn it green. No exceptions; we don't merge untested code.
+- `git diff --check` clean.
 - `just check-diff` clean on touched files.
 - `just compile` + `just utest` + `just test` green (this includes the fast TPC-H-as-correctness regression checks — run a query, diff output vs stock PG).
 
