@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -255,6 +255,35 @@ describe("psql regression burndown command", () => {
     expect(exitCode).toBe(0);
     expect(readFileSync(fixture.routeSummary, "utf8")).toContain("- Not asserted: 1");
     expect(io.stdout).toContain("OK: PostgreSQL regression delta matches baseline");
+  });
+
+  test("route observation ignores upstream SQL files with no pg_regress output", async () => {
+    const fixture = makeCommandFixture(["boolean", "unused"]);
+    unlinkSync(join(fixture.outputDir, "unused.out"));
+    writeFileSync(fixture.baseline, "");
+    const runner = new FakeRunner();
+    const io = { stdout: "", stderr: "" };
+
+    const exitCode = await runPsqlRegressionBurndownCommand(fixture.args, runner, io);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(fixture.routeSummary, "utf8")).toContain("- Not asserted: 1");
+    expect(io.stderr).not.toContain("INFO: route observation failed");
+  });
+
+  test("route observation reads pg_regress nested results directory", async () => {
+    const fixture = makeCommandFixture(["boolean"]);
+    unlinkSync(join(fixture.outputDir, "boolean.out"));
+    mkdirSync(join(fixture.outputDir, "results"), { recursive: true });
+    writeFileSync(join(fixture.outputDir, "results", "boolean.out"), "SELECT 1;\n");
+    writeFileSync(fixture.baseline, "");
+    const runner = new FakeRunner();
+    const io = { stdout: "", stderr: "" };
+
+    const exitCode = await runPsqlRegressionBurndownCommand(fixture.args, runner, io);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(fixture.routeSummary, "utf8")).toContain("- Not asserted: 1");
   });
 
   test("writes pg_regress route check and summary artifacts", async () => {

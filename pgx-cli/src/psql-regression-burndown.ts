@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import type { CommandRunner } from "./commands.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 
@@ -253,6 +253,8 @@ export async function runPsqlRegressionBurndownCommand(
   }
 
   const routeCheckLog = join(options.outputDir, "route-check.log");
+  const routeCheckOutputDir = pgRegressResultsDir(options);
+  const routeCheckSqlDir = prepareRouteCheckSqlDir(options, routeCheckOutputDir);
   const routeCheckIo = { stdout: "", stderr: "" };
   let routeCheckExitCode = 0;
   try {
@@ -265,9 +267,9 @@ export async function runPsqlRegressionBurndownCommand(
         "--execution-mode",
         "extension-auto",
         "--sql-dir",
-        join(options.source, "sql"),
+        routeCheckSqlDir,
         "--output-dir",
-        options.outputDir,
+        routeCheckOutputDir,
         "--summary",
         options.routeSummary,
         "--default-auto-should-route-to",
@@ -326,6 +328,28 @@ function difference(left: ReadonlySet<string>, right: ReadonlySet<string>): Set<
 
 function intersection(left: ReadonlySet<string>, right: ReadonlySet<string>): Set<string> {
   return new Set([...left].filter((value) => right.has(value)));
+}
+
+function pgRegressResultsDir(options: PsqlRegressionBurndownOptions): string {
+  const nestedResultsDir = join(options.outputDir, "results");
+  return existsSync(nestedResultsDir) ? nestedResultsDir : options.outputDir;
+}
+
+function prepareRouteCheckSqlDir(options: PsqlRegressionBurndownOptions, outputDir: string): string {
+  const sourceSqlDir = join(options.source, "sql");
+  const routeCheckSqlDir = join(options.outputDir, "route-check-sql");
+  rmSync(routeCheckSqlDir, { recursive: true, force: true });
+  mkdirSync(routeCheckSqlDir, { recursive: true });
+
+  for (const file of readdirSync(sourceSqlDir).filter((item) => item.endsWith(".sql")).sort()) {
+    const stem = basename(file, extname(file));
+    if (!existsSync(join(outputDir, `${stem}.out`))) {
+      continue;
+    }
+    copyFileSync(join(sourceSqlDir, file), join(routeCheckSqlDir, file));
+  }
+
+  return routeCheckSqlDir;
 }
 
 function psqlRegressionBurndownUsage(): string {
