@@ -276,6 +276,41 @@ ffix-diff: _preflight
     ssh {{_thor}} "docker exec -i {{_ctr}} bash -c 'cd {{_wdir}} && clang-format-diff-20 -p1 -i -style=file'" <<<"$diff"
     echo "ffix-diff: formatted hunks in place. Review with 'git diff' and re-stage."
 
+# Lint gate: clang-tidy-20 over src/pgx-lower/ only. src/lingodb/ is carved out
+# by its own .clang-tidy. Queued on the build queue because the lint build dir
+# shares generated artifacts and CPU with normal builds.
+lint: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} check") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Capture a grouped clang-tidy inventory without failing on findings. This is
+# the checkpoint command before choosing rule deletion vs auto-fix cleanup.
+lint-inventory: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} inventory") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Apply clang-tidy's automatic fixes over src/pgx-lower/. Always run the
+# standing correctness gate before committing any fix batch.
+lint-fix: _preflight
+    @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} fix") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+
+# Lint only src/pgx-lower hunks changed vs origin/main, for pre-push feedback.
+lint-diff: _preflight
+    #!/usr/bin/env bash
+    set -eo pipefail
+    git fetch origin main --quiet
+    base=$(git merge-base origin/main HEAD)
+    diff=$(git diff -U0 "$base" -- 'src/pgx-lower/*.cpp' 'src/pgx-lower/*.h' 2>/dev/null || true)
+    if [ -z "$diff" ]; then
+        echo "No src/pgx-lower hunks changed vs origin/main."
+        exit 0
+    fi
+    ssh {{_thor}} "docker exec -i {{_ctr}} bash -c 'cd {{_wdir}} && clang-tidy-diff-20 -p1 -path build-docker-lint -clang-tidy-binary clang-tidy-20 -warnings-as-errors=\"*\"'" <<<"$diff" > /tmp/lint-diff.out 2>&1 || true
+    if grep -qE 'warning:|error:' /tmp/lint-diff.out; then
+        cat /tmp/lint-diff.out
+        echo "lint-diff: your hunks have clang-tidy violations (above). Fix or run 'just lint-fix'."
+        exit 1
+    fi
+    echo "lint-diff: clean (your src/pgx-lower hunks pass clang-tidy)."
+
 # Copy the authoritative pg_regress output for a test into tests/expected/,
 # overwriting any hand-written version. This is the right way to build the
 # .out file for a new regression test — don't write it by hand, because
