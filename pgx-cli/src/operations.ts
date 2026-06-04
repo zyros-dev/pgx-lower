@@ -9,6 +9,7 @@ export type OperationConfig = {
   mutagenSession: string;
   sshHost: string;
   remoteProjectPath: string;
+  runningOnRemote?: boolean;
 };
 
 export type SetupConfig = OperationConfig & {
@@ -59,7 +60,7 @@ export async function runThorCommand(
       return 1;
     }
 
-    const flush = await flushMutagen(runner, output, config.mutagenSession);
+    const flush = await flushMutagen(runner, output, config);
     if (flush !== 0) {
       return flush;
     }
@@ -207,13 +208,13 @@ function isNumericId(value: string | undefined): value is string {
   return value !== undefined && /^[0-9]+$/.test(value);
 }
 
-async function flushMutagen(
-  runner: CommandRunner,
-  output: OperationOutput,
-  mutagenSession: string
-): Promise<number> {
-  output.stdout += `Flushing Mutagen session: ${mutagenSession}\n`;
-  const result = await runner.run("mutagen", ["sync", "flush", mutagenSession]);
+async function flushMutagen(runner: CommandRunner, output: OperationOutput, config: OperationConfig): Promise<number> {
+  if (config.runningOnRemote) {
+    output.stdout += "mutagen: skipped (already on thor)\n";
+    return 0;
+  }
+  output.stdout += `Flushing Mutagen session: ${config.mutagenSession}\n`;
+  const result = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
@@ -226,7 +227,7 @@ async function runRemoteWithFlush(
   shellCommand: string,
   displayCommand: string
 ): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) {
     return flush;
   }
@@ -246,7 +247,9 @@ async function runRemote(
   const remoteShell = `export PATH=$HOME/.local/bin:$PATH && ${remoteCommand}`;
   output.stdout += `thor: ${config.sshHost}:${config.remoteProjectPath}\n`;
   output.stdout += `$ ${command.join(" ")}\n`;
-  const result = await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
+  const result = config.runningOnRemote
+    ? await runner.run("bash", ["-lc", remoteShell])
+    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
@@ -262,7 +265,9 @@ async function runRemoteShell(
   const remoteShell = `export PATH=$HOME/.local/bin:$PATH && cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`;
   output.stdout += `thor: ${config.sshHost}:${config.remoteProjectPath}\n`;
   output.stdout += `$ ${displayCommand}\n`;
-  const result = await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
+  const result = config.runningOnRemote
+    ? await runner.run("bash", ["-lc", remoteShell])
+    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { loadProjectConfig } from "./project-config.js";
 import type { ProjectConfig } from "./project-config.js";
 
@@ -27,6 +27,7 @@ export type Config = {
   dockerContainer: string;
   buildQueue: string;
   checkQueue: string;
+  runningOnRemote?: boolean;
 };
 
 type LoadConfigInput = {
@@ -34,6 +35,7 @@ type LoadConfigInput = {
   argvUrl?: string;
   readConfigFile?: () => Partial<Config> | undefined;
   readProjectConfig?: () => ProjectConfig | undefined;
+  cwd?: string;
 };
 
 export function readDefaultConfigFile(): Partial<Config> | undefined {
@@ -49,6 +51,9 @@ export function loadConfig(input: LoadConfigInput): Config {
   const projectConfig = input.readProjectConfig?.() ?? loadProjectConfig();
   const projectRemote = projectConfig?.remote;
   const projectQueues = projectConfig?.queues;
+  const remoteProjectPath =
+    fileConfig?.remoteProjectPath ?? input.env.PGX_REMOTE_PROJECT_PATH ?? projectRemote?.path ?? DEFAULT_REMOTE_PROJECT_PATH;
+  const runningOnRemote = isPathWithin(remoteProjectPath, input.cwd ?? process.cwd());
 
   return {
     url: input.argvUrl ?? fileConfig?.url ?? input.env.CLION_MCP_URL ?? DEFAULT_URL,
@@ -56,19 +61,26 @@ export function loadConfig(input: LoadConfigInput): Config {
     sshHost: fileConfig?.sshHost ?? input.env.CLION_MCP_SSH_HOST ?? projectRemote?.host ?? DEFAULT_SSH_HOST,
     remoteUrl: fileConfig?.remoteUrl ?? input.env.CLION_MCP_REMOTE_URL ?? DEFAULT_REMOTE_URL,
     localProjectPath:
-      fileConfig?.localProjectPath ?? input.env.PGX_LOCAL_PROJECT_PATH ?? DEFAULT_LOCAL_PROJECT_PATH,
-    remoteProjectPath:
-      fileConfig?.remoteProjectPath ?? input.env.PGX_REMOTE_PROJECT_PATH ?? projectRemote?.path ?? DEFAULT_REMOTE_PROJECT_PATH,
+      fileConfig?.localProjectPath ??
+      input.env.PGX_LOCAL_PROJECT_PATH ??
+      (runningOnRemote ? remoteProjectPath : DEFAULT_LOCAL_PROJECT_PATH),
+    remoteProjectPath,
     mutagenSession:
       fileConfig?.mutagenSession ?? input.env.PGX_MUTAGEN_SESSION ?? projectRemote?.mutagen_session ?? DEFAULT_MUTAGEN_SESSION,
     dockerContainer:
       fileConfig?.dockerContainer ?? input.env.PGX_DOCKER_CONTAINER ?? projectRemote?.docker_container ?? DEFAULT_DOCKER_CONTAINER,
     buildQueue: fileConfig?.buildQueue ?? input.env.PGX_BUILD_QUEUE ?? projectQueues?.build ?? DEFAULT_BUILD_QUEUE,
-    checkQueue: fileConfig?.checkQueue ?? input.env.PGX_CHECK_QUEUE ?? projectQueues?.check ?? DEFAULT_CHECK_QUEUE
+    checkQueue: fileConfig?.checkQueue ?? input.env.PGX_CHECK_QUEUE ?? projectQueues?.check ?? DEFAULT_CHECK_QUEUE,
+    runningOnRemote
   };
 }
 
 export function writeConfig(path: string, config: Config): void {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+function isPathWithin(parent: string, child: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
 }

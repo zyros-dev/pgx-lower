@@ -159,3 +159,18 @@ PGX_TEST_FN(query_analyzer_rejects_missing_target_expr_metadata) {
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
     PG_RETURN_VOID();
 }
+
+PGX_TEST_FN(query_analyzer_rejects_missing_root_targetlist_metadata) {
+    auto plan = Plan{};
+    plan.type = T_SeqScan;
+    plan.targetlist = nullptr;
+
+    auto stmt = PlannedStmt{};
+    stmt.commandType = CMD_SELECT;
+    stmt.planTree = &plan;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzePlan(&stmt);
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
+    PG_RETURN_VOID();
+}

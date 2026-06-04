@@ -57,7 +57,8 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
-      dockerContainer: config.dockerContainer
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -77,7 +78,8 @@ try {
     process.exitCode = await runThorCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
-      remoteProjectPath: config.remoteProjectPath
+      remoteProjectPath: config.remoteProjectPath,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -88,7 +90,8 @@ try {
     process.exitCode = await runQueueCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
-      remoteProjectPath: config.remoteProjectPath
+      remoteProjectPath: config.remoteProjectPath,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -100,7 +103,8 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
-      dockerContainer: config.dockerContainer
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -141,7 +145,8 @@ try {
       remoteProjectPath: config.remoteProjectPath,
       profileName,
       profile,
-      dockerContainer: config.dockerContainer
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -156,7 +161,8 @@ try {
       localProjectPath: config.localProjectPath,
       dockerContainer: config.dockerContainer,
       buildQueue: config.buildQueue,
-      checkQueue: config.checkQueue
+      checkQueue: config.checkQueue,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);

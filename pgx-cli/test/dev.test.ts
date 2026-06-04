@@ -105,7 +105,7 @@ describe("dev commands", () => {
   });
 
   test.each([
-    [["lint", "diff"], "sh", "clang-tidy-diff-20"],
+    [["lint", "diff"], "bash", "clang-tidy-diff-20"],
     [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "clang-tidy-20"],
     [["lint", "files", "a.cpp", "b.cpp"], "ssh", "clang-tidy-20"],
     [["test", "unit", "type_mapping"], "ssh", "type_mapping.sql"],
@@ -123,6 +123,36 @@ describe("dev commands", () => {
     expect(commands).not.toContain(oldLintScript);
     expect(commands).not.toContain(oldBaselineScript);
     expect(commands).not.toContain("just");
+  });
+
+
+  test("dev lint diff runs directly on thor when invoked from the remote checkout", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = { ...makeDevConfig(), localProjectPath: "/home/zel/repos/pgx-lower", runningOnRemote: true };
+    const exitCode = await runDevCommand(["lint", "diff"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("docker exec -i pgx-lower-dev");
+    expect(commands).not.toContain("mutagen sync flush");
+    expect(runner.calls.some((call) => call.command === "ssh")).toBe(false);
+  });
+
+
+  test("dev gate batch runs directly on thor when invoked from the remote checkout", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = { ...makeDevConfig(), runningOnRemote: true };
+    const exitCode = await runDevCommand(["gate", "batch"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("clang-format-diff-20");
+    expect(commands).toContain("clang-tidy-diff-20");
+    expect(commands).toContain("docker exec -i pgx-lower-dev");
+    expect(commands).not.toContain("mutagen sync flush");
+    expect(runner.calls.some((call) => call.command === "ssh")).toBe(false);
   });
 
 

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -30,5 +30,22 @@ describe("unit SQL generation", () => {
 
     expect(written).toEqual(["tests/unit-tests/sql/numeric.sql (1 tests)"]);
     expect(readFileSync(join(outDir, "numeric.sql"), "utf8")).toContain("numeric_add_basic");
+  });
+
+  test("replaces existing generated sql files that are not writable", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-unit-sql-"));
+    const srcDir = join(root, "src/pgx-lower/test");
+    const outDir = join(root, "tests/unit-tests/sql");
+    const out = join(outDir, "numeric.sql");
+    mkdirSync(srcDir, { recursive: true });
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(srcDir, "numeric_tests.cpp"), "PGX_TEST_FN(numeric_add_basic)\n", { flag: "w" });
+    writeFileSync(out, "stale\n", { mode: 0o444 });
+    chmodSync(out, 0o444);
+
+    const written = writeUnitSqlFiles(root);
+
+    expect(written).toEqual(["tests/unit-tests/sql/numeric.sql (1 tests)"]);
+    expect(readFileSync(out, "utf8")).toContain("numeric_add_basic");
   });
 });

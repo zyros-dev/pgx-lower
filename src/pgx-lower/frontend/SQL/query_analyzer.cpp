@@ -599,6 +599,10 @@ auto QueryAnalyzer::analyzePlanTargetTypes(const Plan* plan, std::string locatio
     if (!plan) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "plan is null", std::move(location));
     }
+    if (!plan->targetlist) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "plan targetlist is null",
+                                           std::move(location));
+    }
     return analyzeTargetList(plan->targetlist, location);
 }
 

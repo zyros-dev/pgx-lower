@@ -67,12 +67,10 @@ async function runRemoteShell(
   config: OperationConfig,
   shellCommand: string
 ): Promise<number> {
-  const result = await runner.run("ssh", [
-    config.sshHost,
-    "bash",
-    "-lc",
-    quoteShell(`cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`)
-  ]);
+  const remoteShell = `cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`;
+  const result = config.runningOnRemote
+    ? await runner.run("bash", ["-lc", remoteShell])
+    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;

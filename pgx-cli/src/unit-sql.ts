@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 const pgFnRe = /PGX_TEST_FN\(\s*(\w+)\s*\)/g;
@@ -38,6 +38,7 @@ export function writeUnitSqlFiles(root: string): string[] {
     if (names.length === 0) continue;
     const group = basename(file, "_tests.cpp");
     const out = join(outDir, `${group}.sql`);
+    rmSync(out, { force: true });
     writeFileSync(out, generateUnitSql(file, names));
     written.push(`${relative(root, out)} (${names.length} tests)`);
   }
