@@ -1,0 +1,251 @@
+#!/usr/bin/env node
+import { loadConfig } from "./config.js";
+import { DEFAULT_CONFIG_PATH, writeConfig } from "./config.js";
+import { helpText, runCli } from "./cli.js";
+import { NodeCommandRunner } from "./commands.js";
+import { connectMcp } from "./mcp.js";
+import {
+  runBuildCommand,
+  runCheckCommand,
+  runQueueCommand,
+  runSyncCommand,
+  runThorCommand
+} from "./operations.js";
+import { DEFAULT_REQUEST_DIR, writeRequest } from "./requests.js";
+import { DEFAULT_USAGE_PATH, incrementUsage } from "./usage.js";
+import { spawnSync } from "node:child_process";
+
+const { url, argv } = parseGlobalArgs(process.argv.slice(2));
+const config = loadConfig({ env: process.env, argvUrl: url });
+incrementUsage(DEFAULT_USAGE_PATH, argv);
+
+const io = { stdout: "", stderr: "" };
+
+try {
+  if (!argv[0] || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+    process.stdout.write(helpText());
+    process.exitCode = 0;
+    process.exit();
+  }
+
+  const configExitCode = handleConfigCommand(argv, config.url);
+  if (configExitCode !== undefined) {
+    process.exitCode = configExitCode;
+    process.exit();
+  }
+
+  const tunnelExitCode = await handleTunnelCommand(argv, config);
+  if (tunnelExitCode !== undefined) {
+    process.exitCode = tunnelExitCode;
+    process.exit();
+  }
+
+  const runner = new NodeCommandRunner();
+  if (argv[0] === "sync") {
+    process.exitCode = await runSyncCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "thor") {
+    process.exitCode = await runThorCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "build") {
+    process.exitCode = await runBuildCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "check") {
+    process.exitCode = await runCheckCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "queue") {
+    process.exitCode = await runQueueCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "request") {
+    const kind = argv[1];
+    if (kind !== "feature" && kind !== "complaint") {
+      process.stderr.write("Usage: pgx-cli request <feature|complaint> <message...>\n");
+      process.exit(1);
+    }
+
+    const path = writeRequest(DEFAULT_REQUEST_DIR, kind, argv.slice(2));
+    process.stdout.write(`Wrote ${path}\n`);
+    process.exit(0);
+  }
+
+  const client = await connect(config.url);
+  const exitCode = await runCli(argv, client, io, {
+    url: config.url,
+    remoteUrl: config.remoteUrl,
+    sshHost: config.sshHost,
+    projectPath: config.projectPath
+  });
+  process.stdout.write(io.stdout);
+  process.stderr.write(io.stderr);
+  process.exitCode = exitCode;
+} catch (error) {
+  process.stdout.write(io.stdout);
+  process.stderr.write(io.stderr);
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+}
+
+function parseGlobalArgs(args: string[]): { url?: string; argv: string[] } {
+  const argv = [...args];
+  const urlIndex = argv.findIndex((arg) => arg === "--url");
+  if (urlIndex === -1) {
+    return { argv };
+  }
+
+  const url = argv[urlIndex + 1];
+  if (!url) {
+    throw new Error("Usage: pgx-cli --url <mcp-url> <command>");
+  }
+
+  argv.splice(urlIndex, 2);
+  return { url, argv };
+}
+
+async function connect(url: string) {
+  try {
+    return await connectMcp(url);
+  } catch (error) {
+    throw new Error(
+      `Could not connect to CLion MCP at ${url}. Is CLion running with the MCP server enabled?\n${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+function handleConfigCommand(argv: string[], currentUrl: string): number | undefined {
+  if (argv[0] !== "config") {
+    return undefined;
+  }
+
+  if (argv[1] === "path") {
+    process.stdout.write(`${DEFAULT_CONFIG_PATH}\n`);
+    return 0;
+  }
+
+  if (argv[1] === "show") {
+    process.stdout.write(`${JSON.stringify({ ...config, url: currentUrl }, null, 2)}\n`);
+    return 0;
+  }
+
+  if (argv[1] === "set-url") {
+    const nextUrl = argv[2];
+    if (!nextUrl) {
+      process.stderr.write("Usage: pgx-cli config set-url <mcp-url>\n");
+      return 1;
+    }
+
+    writeConfig(DEFAULT_CONFIG_PATH, { ...config, url: nextUrl });
+    process.stdout.write(`Wrote ${DEFAULT_CONFIG_PATH}\n`);
+    return 0;
+  }
+
+  if (argv[1] === "set-project") {
+    const projectPath = argv[2];
+    if (!projectPath) {
+      process.stderr.write("Usage: pgx-cli config set-project <project-path>\n");
+      return 1;
+    }
+
+    writeConfig(DEFAULT_CONFIG_PATH, { ...config, projectPath });
+    process.stdout.write(`Wrote ${DEFAULT_CONFIG_PATH}\n`);
+    return 0;
+  }
+
+  if (argv[1] === "set-ssh-host") {
+    const sshHost = argv[2];
+    if (!sshHost) {
+      process.stderr.write("Usage: pgx-cli config set-ssh-host <ssh-host>\n");
+      return 1;
+    }
+
+    writeConfig(DEFAULT_CONFIG_PATH, { ...config, sshHost });
+    process.stdout.write(`Wrote ${DEFAULT_CONFIG_PATH}\n`);
+    return 0;
+  }
+
+  process.stderr.write("Usage: pgx-cli config <path|show|set-url|set-project|set-ssh-host>\n");
+  return 1;
+}
+
+async function handleTunnelCommand(
+  argv: string[],
+  currentConfig: typeof config
+): Promise<number | undefined> {
+  if (argv[0] !== "tunnel") {
+    return undefined;
+  }
+
+  if (await isReachable(currentConfig.url)) {
+    process.stdout.write(`MCP URL is already reachable: ${currentConfig.url}\n`);
+    return 0;
+  }
+
+  const local = new URL(currentConfig.url);
+  const remote = new URL(currentConfig.remoteUrl);
+  const localPort = local.port || (local.protocol === "https:" ? "443" : "80");
+  const remotePort = remote.port || (remote.protocol === "https:" ? "443" : "80");
+  const args = [
+    "-f",
+    "-N",
+    "-L",
+    `${local.hostname}:${localPort}:${remote.hostname}:${remotePort}`,
+    currentConfig.sshHost
+  ];
+
+  const result = spawnSync("ssh", args, { encoding: "utf8" });
+  if (result.status !== 0) {
+    process.stderr.write(result.stderr || result.stdout || "ssh tunnel failed\n");
+    return result.status ?? 1;
+  }
+
+  process.stdout.write(
+    `Forwarding ${currentConfig.url} -> ${currentConfig.sshHost}:${currentConfig.remoteUrl}\n`
+  );
+  return 0;
+}
+
+async function isReachable(url: string): Promise<boolean> {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(2000) });
+    return true;
+  } catch {
+    return false;
+  }
+}

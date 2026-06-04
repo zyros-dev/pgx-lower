@@ -116,3 +116,8 @@ bench_runner.py
 bench_runner_v2.py
 overnight_bench.sh
 overnight_bench_v2.sh
+
+# pgx-cli local state and generated artifacts
+pgx-cli.local.yaml
+pgx-cli/node_modules/
+pgx-cli/dist/
