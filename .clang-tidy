@@ -43,7 +43,6 @@ Checks: >
 
   llvm-namespace-comment,
 
-  misc-const-correctness,
   misc-definitions-in-headers,
   misc-misplaced-const,
   misc-new-delete-overloads,
@@ -115,7 +114,6 @@ Checks: >
   readability-delete-null-pointer,
   readability-duplicate-include,
   readability-else-after-return,
-  readability-identifier-naming,
   readability-implicit-bool-conversion,
   readability-inconsistent-declaration-parameter-name,
   readability-isolate-declaration,
@@ -152,10 +150,15 @@ WarningsAsErrors: >
   google-build-using-namespace,
   google-explicit-constructor,
   modernize-use-nullptr,
-  readability-identifier-naming,
   performance-avoid-endl
 
 HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external).)*$'
+
+# Deliberately disabled after the 2026-06-04 lint inventory:
+# - readability-identifier-naming renames const value parameters like `val` to
+#   `VAL`, producing unreviewable churn rather than useful cleanup.
+# - misc-const-correctness inserts east-const (`std::string const`), which does
+#   not match the surrounding pgx-lower style.
 
 CheckOptions:
   - key: readability-identifier-naming.ClassCase
