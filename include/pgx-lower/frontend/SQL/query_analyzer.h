@@ -12,7 +12,6 @@ extern "C" {
 }
 #endif
 
-
 namespace pgx_lower {
 
 enum class UnsupportedReasonKind {
@@ -39,9 +38,7 @@ class AnalyzerResult {
     AnalyzerResult();
 
     static auto supported() -> AnalyzerResult;
-    static auto unsupported(UnsupportedReasonKind kind,
-                            std::string message,
-                            std::string location = {}) -> AnalyzerResult;
+    static auto unsupported(UnsupportedReasonKind kind, std::string message, std::string location = {}) -> AnalyzerResult;
 
     [[nodiscard]] auto isSupported() const -> bool;
     [[nodiscard]] auto reasons() const -> const std::vector<UnsupportedReason>&;
@@ -49,9 +46,7 @@ class AnalyzerResult {
     [[nodiscard]] auto primaryReasonKindName() const -> std::string;
     [[nodiscard]] auto humanSummary() const -> std::string;
 
-    auto addUnsupportedReason(UnsupportedReasonKind kind,
-                              std::string message,
-                              std::string location = {}) -> void;
+    auto addUnsupportedReason(UnsupportedReasonKind kind, std::string message, std::string location = {}) -> void;
 
    private:
     bool supported_ = false;
@@ -80,10 +75,10 @@ class QueryAnalyzer {
 #ifdef POSTGRESQL_EXTENSION
     static AnalyzerResult analyzePlan(const PlannedStmt* stmt);
     static AnalyzerResult analyzeNode(const Plan* plan, std::string location = "Plan");
-    static AnalyzerResult analyzeExpr(const Node* expr, std::string location);
+    static AnalyzerResult analyzeExpr(const Node* expr, const std::string& location);
     static AnalyzerResult analyzeNodeForTesting(const Plan* plan);
     static AnalyzerResult analyzeExprForTesting(const Node* expr);
-    
+
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
 #endif
@@ -92,8 +87,8 @@ class QueryAnalyzer {
 
    private:
 #ifdef POSTGRESQL_EXTENSION
-    static AnalyzerResult analyzeTargetList(const List* targetList, std::string location);
-    static AnalyzerResult analyzeExprList(const List* expressions, std::string location);
+    static AnalyzerResult analyzeTargetList(const List* targetList, const std::string& location);
+    static AnalyzerResult analyzeExprList(const List* expressions, const std::string& location);
     static AnalyzerResult analyzePlanTargetTypes(const Plan* plan, std::string location);
     static AnalyzerResult analyzeExprType(const Node* expr, std::string location);
     static bool checkCommandType(const PlannedStmt* stmt);

@@ -307,7 +307,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     return supportedOrUnsupported(result);
 }
 
-auto QueryAnalyzer::analyzeTargetList(const List* targetList, std::string location) -> AnalyzerResult {
+auto QueryAnalyzer::analyzeTargetList(const List* targetList, const std::string& location) -> AnalyzerResult {
     auto result = AnalyzerResult::supported();
     if (!targetList) {
         return result;
@@ -329,7 +329,7 @@ auto QueryAnalyzer::analyzeTargetList(const List* targetList, std::string locati
     return supportedOrUnsupported(result);
 }
 
-auto QueryAnalyzer::analyzeExprList(const List* expressions, std::string location) -> AnalyzerResult {
+auto QueryAnalyzer::analyzeExprList(const List* expressions, const std::string& location) -> AnalyzerResult {
     auto result = AnalyzerResult::supported();
     if (!expressions) {
         return result;
@@ -349,7 +349,7 @@ auto QueryAnalyzer::analyzePlanTargetTypes(const Plan* plan, std::string locatio
     if (!plan) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "plan is null", std::move(location));
     }
-    return analyzeTargetList(plan->targetlist, std::move(location));
+    return analyzeTargetList(plan->targetlist, location);
 }
 
 auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> AnalyzerResult {
@@ -371,7 +371,7 @@ auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> A
     return AnalyzerResult::supported();
 }
 
-auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> AnalyzerResult {
+auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -> AnalyzerResult {
     if (!expr) {
         return AnalyzerResult::supported();
     }
@@ -468,7 +468,7 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> Analy
 }
 
 auto QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) -> bool {
-    return stmt && stmt->commandType == CMD_SELECT;
+    return stmt != nullptr && stmt->commandType == CMD_SELECT;
 }
 
 auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {

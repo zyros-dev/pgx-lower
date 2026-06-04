@@ -112,8 +112,9 @@ const char* level_name(Level level) {
 
 bool should_log(const Category cat, const Level level) {
     initialize_if_needed();
-    if (cat == Category::PROBLEM)
+    if (cat == Category::PROBLEM) {
         return true;
+    }
 
     if (!log_enable) {
         return false;
@@ -186,17 +187,17 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 }
 
 void route_fallback_notice(const char* reason_kind, const char* message, const char* location) {
-    const auto* safe_kind = reason_kind && reason_kind[0] ? reason_kind : "invalid";
-    const auto* safe_message = message && message[0] ? message : "fallback route selected";
+    const auto* safe_kind = reason_kind != nullptr && reason_kind[0] != '\0' ? reason_kind : "invalid";
+    const auto* safe_message = message != nullptr && message[0] != '\0' ? message : "fallback route selected";
 
 #ifdef POSTGRESQL_EXTENSION
-    if (location && location[0]) {
+    if (location != nullptr && location[0] != '\0') {
         elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s", safe_kind, safe_message, location);
     } else {
         elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s", safe_kind, safe_message);
     }
 #else
-    if (location && location[0]) {
+    if (location != nullptr && location[0] != '\0') {
         fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s\n", safe_kind, safe_message, location);
     } else {
         fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s\n", safe_kind, safe_message);
