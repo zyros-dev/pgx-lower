@@ -49,10 +49,10 @@ Flush Mutagen, then run the PostgreSQL unit-test gate on thor.
 Flush Mutagen, then run the TPC-H pg_regress correctness subset on thor.
 .TP
 .B dev gate batch
-Run the fast batch-boundary workflow gate.
+Run the fast batch-boundary workflow gate used by normal pre-push checks.
 .TP
 .B dev gate review
-Run the full review-boundary workflow gate.
+Run the full review-boundary workflow gate explicitly before PR review.
 .TP
 .B dev build explain --profile \fINAME\fR
 Print resolved CMake/runtime profile settings without running CMake.

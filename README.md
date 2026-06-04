@@ -49,6 +49,9 @@ pgx-cli dev lint diff
 pgx-cli dev gate batch
 ```
 
+The pre-push hook runs `pgx-cli dev gate batch` so normal pushes stay quick.
+Run `pgx-cli dev gate review` explicitly before handing a PR to a human.
+
 ### IDE setup (compile_commands.json)
 
 The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from

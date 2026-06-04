@@ -144,8 +144,9 @@ pgx-cli docker build release
 pgx-cli repo audit-tools
 ```
 
-`dev gate batch` is the fast handoff gate. `dev gate review` is the final PR
-gate and runs the full lint/compile/unit/regression sequence.
+`dev gate batch` is the fast handoff and pre-push gate. `dev gate review` is
+the explicit final PR review gate and runs the full lint/compile/unit/regression
+sequence.
 
 ## CMake profiles
 

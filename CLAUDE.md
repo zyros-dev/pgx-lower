@@ -89,7 +89,7 @@ Default bar for every plan, before its PR opens:
   turn it green. No exceptions; we don't merge untested code.
 - `git diff --check` clean.
 - `pgx-cli dev lint diff` clean on touched files.
-- `pgx-cli dev gate batch` green for batch handoff.
+- `pgx-cli dev gate batch` green for batch handoff and normal push.
 - `pgx-cli dev gate review` green before PR review (this includes compile,
   PostgreSQL unit tests, and pg_regress correctness checks).
 
