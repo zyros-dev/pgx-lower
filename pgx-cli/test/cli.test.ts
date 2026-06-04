@@ -192,6 +192,8 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(io.stdout).toContain("Usage: pgx-cli");
     expect(io.stdout).toContain("config set-project <project-path>");
+    expect(io.stdout).toContain("setup install");
+    expect(io.stdout).toContain("setup doctor");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");
