@@ -212,6 +212,7 @@ describe("runCli", () => {
     expect(io.stdout).toContain("sync flush");
     expect(io.stdout).toContain("queue status");
     expect(io.stdout).toContain("thor shell --dangerous -- <cmd...>");
+    expect(io.stdout).toContain("pgx-cli repo audit-tools");
     expect(io.stdout).toContain("request feature <message...>");
     expect(io.stdout).toContain("request complaint <message...>");
     expect(io.stdout).not.toContain("pgx-cli migrate");
