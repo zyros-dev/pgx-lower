@@ -275,12 +275,8 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_Sort:
     case T_Limit:
     case T_Agg:
-    case T_Result:
     case T_Material:
     case T_Hash:
-    case T_Unique:
-    case T_SetOp:
-    case T_Group:
         break;
     case T_ProjectSet:
         mergeAnalyzerResult(result, analyzeExprList(plan->qual, location + ".qual"));

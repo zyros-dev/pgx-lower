@@ -72,3 +72,23 @@ PGX_TEST_FN(query_analyzer_rejects_unknown_expr_node) {
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
     PG_RETURN_VOID();
 }
+
+PGX_TEST_FN(query_analyzer_rejects_translator_unsupported_result_plan) {
+    auto plan = Plan{};
+    plan.type = T_Result;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(&plan);
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_translator_unsupported_set_operation_plan) {
+    auto plan = Plan{};
+    plan.type = T_SetOp;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(&plan);
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
