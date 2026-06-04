@@ -32,8 +32,9 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
     PGX_IO(AST_TRANSLATE);
 
     auto wrap_nullable = [&](auto val) -> mlir::Type {
-        if (nullable)
+        if (nullable) {
             return mlir::db::NullableType::get(&context_, val);
+        }
         return val;
     };
 
@@ -286,7 +287,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         // For string constants, constvalue is a pointer to the text data
         // In psql, text values are stored as varlena structures
 #ifdef POSTGRESQL_EXTENSION
-        if (constNode->constvalue) {
+        if (constNode->constvalue != 0u) {
             auto* textval = DatumGetTextP(constNode->constvalue);
             const char* str = VARDATA(textval);
             const int len = VARSIZE(textval) - VARHDRSZ;
@@ -298,9 +299,9 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
                                                         builder.getStringAttr(string_value));
-        } else {
-            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
         }
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
+
 #else
         const char* str = reinterpret_cast<const char*>(constNode->constvalue);
         if (str) {
@@ -312,7 +313,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case BYTEAOID: {
 #ifdef POSTGRESQL_EXTENSION
-        if (constNode->constvalue) {
+        if (constNode->constvalue != 0u) {
             auto* bytea_val = DatumGetByteaP(constNode->constvalue);
             const char* data = VARDATA(bytea_val);
             const int len = VARSIZE(bytea_val) - VARHDRSZ;

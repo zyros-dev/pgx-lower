@@ -8,10 +8,10 @@
 namespace pgx_lower::compiler::runtime {
 
 PostgreSQLDataSource::PostgreSQLDataSource(const std::string& description) : scanContext(nullptr) {
-    size_t tablePos = description.find("\"table\": \"");
+    size_t tablePos = description.find(R"("table": ")");
     if (tablePos != std::string::npos) {
         tablePos += 10; // Skip past "table": "
-        size_t endPos = description.find("\"", tablePos);
+        size_t endPos = description.find('\"', tablePos);
         if (endPos != std::string::npos) {
             std::string fullTableSpec = description.substr(tablePos, endPos - tablePos);
             

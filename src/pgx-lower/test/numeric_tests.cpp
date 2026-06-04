@@ -19,7 +19,7 @@ namespace {
 #define NUMERIC_NEG 0x4000
 #define NUMERIC_DSCALE_MASK 0x3FFF
 
-typedef int16 NumericDigit;
+using NumericDigit = int16;
 
 struct NumericLong {
     uint16 n_sign_dscale;

@@ -52,12 +52,8 @@ extern "C" {
 
 namespace mlir_runner {
 
-bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
-bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
-bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest);
-
 #ifdef POSTGRESQL_EXTENSION
-auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest)
+auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* /*econtext*/, DestReceiver* dest)
     -> bool {
     if (!plannedStmt || !estate || !dest) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null parameters provided to MLIR runner with "
@@ -126,11 +122,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
 
         // Phase 4: JIT execution
-        if (!executeJITWithDestReceiver(*module, estate, dest)) {
-            return false;
-        }
-
-        return true;
+        return executeJITWithDestReceiver(*module, estate, dest);
 
     } catch (const std::exception& e) {
         PGX_ERROR("MLIR runner exception: %s", e.what());

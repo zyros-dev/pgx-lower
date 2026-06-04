@@ -76,7 +76,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     auto& columnManager = dialect->getColumnManager();
 
     if (nodeTag(expr) == T_Var) {
-        const auto var = reinterpret_cast<Var*>(expr);
+        auto* const var = reinterpret_cast<Var*>(expr);
 
         std::string tableName;
         std::string columnName;
@@ -187,9 +187,9 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             throw std::runtime_error("FuncExpr args list has length but no elements array");
         }
 
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, func_expr->args) {
-            if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+            if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
                 if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                     args.push_back(argValue);
                 }
@@ -219,7 +219,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         print_type(args[0].getType());
 
         auto baseType = getBaseType(args[0].getType());
-        auto absFunctionName = "AbsInt";
+        const auto* absFunctionName = "AbsInt";
         if (mlir::isa<mlir::db::DecimalType>(baseType)) {
             absFunctionName = "AbsDecimal";
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using AbsDecimal for decimal type");
@@ -227,7 +227,8 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         auto runtimeCall = ctx.builder.create<mlir::db::RuntimeCall>(loc, args[0].getType(), absFunctionName, args[0]);
         return runtimeCall.getRes();
-    } else if (func == "upper") {
+    }
+    if (func == "upper") {
         if (args.size() != 1) {
             PGX_ERROR("UPPER requires exactly 1 argument");
             throw std::runtime_error("Check logs");
@@ -433,7 +434,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             throw std::runtime_error("Invalid SubPlan plan_id");
         }
 
-        auto subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
+        auto* subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
 
         struct CorrelationInfo {
             std::string table_scope;
@@ -447,13 +448,13 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             int num_params = list_length(subplan->parParam);
             for (int i = 0; i < num_params; i++) {
                 int param_id = lfirst_int(list_nth_cell(subplan->parParam, i));
-                auto arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
+                auto* arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
 
                 if (arg_expr && nodeTag(arg_expr) == T_Var) {
-                    auto var = reinterpret_cast<Var*>(arg_expr);
+                    auto* var = reinterpret_cast<Var*>(arg_expr);
                     std::string table_scope;
                     std::string column_name;
-                    bool nullable;
+                    bool nullable = false;
                     Oid type_oid = var->vartype;
                     int32 typmod = var->vartypmod;
 
@@ -470,8 +471,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                     "Resolved synthetic varno=%d via varno_resolution -> %s.%s (nullable=%d)",
                                     var->varno, table_scope.c_str(), column_name.c_str(), nullable);
                         } else if (var->varno == OUTER_VAR) {
-                            auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
-                                                                   : throw std::runtime_error("OUTER_VAR without outer_result");
+                            const auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+                                                                         : throw std::runtime_error("OUTER_VAR without "
+                                                                                                    "outer_result");
 
                             if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
                                 PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns)", var->varattno,
@@ -501,7 +503,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s (nullable=%d)", param_id,
                             table_scope.c_str(), column_name.c_str(), nullable);
                 } else if (arg_expr && nodeTag(arg_expr) == T_Param) {
-                    auto param = reinterpret_cast<Param*>(arg_expr);
+                    auto* param = reinterpret_cast<Param*>(arg_expr);
                     const auto param_it = ctx.params.find(param->paramid);
 
                     if (param_it != ctx.params.end()) {
@@ -684,7 +686,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan,
-                                                            const PlannedStmt* parent_stmt)
+                                                            const PlannedStmt* /*parent_stmt*/)
     -> std::pair<mlir::Value, TranslationResult> {
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_subquery_plan: Starting subquery translation");
     auto subquery_ctx = QueryCtxT::createChildContext(parent_ctx, parent_ctx.builder, mlir::Value());

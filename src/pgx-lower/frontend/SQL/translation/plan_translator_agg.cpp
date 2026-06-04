@@ -53,8 +53,9 @@ using namespace pgx_lower::frontend::sql;
 using namespace postgresql_ast;
 
 auto find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) -> void {
-    if (!expr)
+    if (!expr) {
         return;
+    }
     if (IsA(expr, Aggref)) {
         result.push_back(reinterpret_cast<Aggref*>(expr));
         return;
@@ -62,7 +63,7 @@ auto find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) -> void {
 
     if (IsA(expr, OpExpr)) {
         const auto* op_expr = reinterpret_cast<OpExpr*>(expr);
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, op_expr->args) {
             auto* arg = static_cast<Expr*>(lfirst(lc));
             find_all_aggrefs(arg, result);
@@ -71,7 +72,7 @@ auto find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) -> void {
 
     if (IsA(expr, FuncExpr)) {
         const auto* func_expr = reinterpret_cast<FuncExpr*>(expr);
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, func_expr->args) {
             auto* arg = static_cast<Expr*>(lfirst(lc));
             find_all_aggrefs(arg, result);
@@ -80,7 +81,7 @@ auto find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) -> void {
 
     if (IsA(expr, BoolExpr)) {
         const auto* bool_expr = reinterpret_cast<BoolExpr*>(expr);
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, bool_expr->args) {
             auto* arg = static_cast<Expr*>(lfirst(lc));
             find_all_aggrefs(arg, result);
@@ -97,8 +98,9 @@ auto getAggregateFunction(const std::string& funcName) -> mlir::relalg::AggrFunc
 }
 
 auto getFirstAggregateArgument(const Aggref* aggref) -> TargetEntry* {
-    if (!aggref->args || list_length(aggref->args) == 0)
+    if (!aggref->args || list_length(aggref->args) == 0) {
         return nullptr;
+    }
     auto* argTE = static_cast<TargetEntry*>(linitial(aggref->args));
     return (argTE && argTE->expr) ? argTE : nullptr;
 }
@@ -134,8 +136,7 @@ auto processCountStarAggregate(mlir::OpBuilder& aggr_builder, const mlir::Locati
 
 auto createAggregateOperation(mlir::OpBuilder& aggr_builder, const mlir::Location loc, mlir::Type resultType,
                               mlir::relalg::AggrFunc aggrFuncEnum, mlir::Value relation,
-                              mlir::relalg::ColumnRefAttr columnRef, const bool isDistinct,
-                              const TranslationResult* childResult = nullptr) -> mlir::Value {
+                              mlir::relalg::ColumnRefAttr columnRef, const bool isDistinct) -> mlir::Value {
     if (isDistinct) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "DSA will create DISTINCT hashtable spec from types");
 
@@ -146,9 +147,8 @@ auto createAggregateOperation(mlir::OpBuilder& aggr_builder, const mlir::Locatio
 
         return aggr_builder.create<mlir::relalg::AggrFuncOp>(loc, resultType, aggrFuncEnum, distinctStream.getResult(),
                                                              columnRef);
-    } else {
-        return aggr_builder.create<mlir::relalg::AggrFuncOp>(loc, resultType, aggrFuncEnum, relation, columnRef);
     }
+    return aggr_builder.create<mlir::relalg::AggrFuncOp>(loc, resultType, aggrFuncEnum, relation, columnRef);
 }
 
 } // namespace
@@ -159,12 +159,14 @@ using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
-    if (!agg || !agg->plan.lefttree)
+    if (!agg || !agg->plan.lefttree) {
         throw std::runtime_error("invalid input");
+    }
 
     auto childResult = translate_plan_node(ctx, agg->plan.lefttree);
-    if (!childResult.op || !childResult.op->getNumResults())
+    if (!childResult.op || (childResult.op->getNumResults() == 0u)) {
         throw std::runtime_error("Failed to translate Agg child plan");
+    }
 
     auto childOutput = childResult.op->getResult(0);
     auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -196,11 +198,11 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         // RelAlg doesn't support implicit passthrough, so add them to GROUP BY explicitly
         if (agg->plan.targetlist) {
             const bool is_partial_agg = (agg->aggsplit & AGGSPLITOP_SERIALIZE) != 0;
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, agg->plan.targetlist) {
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
                 // Include if: (1) explicit GROUP BY (ressortgroupref > 0), or (2) passthrough in partial agg
-                const bool should_include = (tle && !tle->resjunk && IsA(tle->expr, Var))
+                const bool should_include = ((tle != nullptr) && !tle->resjunk && IsA(tle->expr, Var))
                                             && (tle->ressortgroupref > 0 || is_partial_agg);
                 if (should_include) {
                     auto* var = reinterpret_cast<Var*>(tle->expr);
@@ -276,7 +278,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
             // COUNT(*) - but in combining mode, we sum partial counts instead
             if (is_combining) {
-                const auto argTE = getFirstAggregateArgument(aggref);
+                auto* const argTE = getFirstAggregateArgument(aggref);
                 if (!argTE) {
                     PGX_ERROR("COUNT in combining mode but no argument found (aggno=%d)", aggref->aggno);
                     return;
@@ -325,9 +327,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 createdValues.push_back(aggResult);
             }
         } else {
-            const auto argTE = getFirstAggregateArgument(aggref);
-            if (!argTE)
+            auto* const argTE = getFirstAggregateArgument(aggref);
+            if (!argTE) {
                 return;
+            }
 
             const auto childCtx = QueryCtxT::createChildContextWithOuter(ctx, childResult);
 
@@ -376,7 +379,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         table_name.c_str(), column_name.c_str(), aggref->aggno);
             }
             aggResult = createAggregateOperation(aggr_builder, ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum,
-                                                 relation, column_ref, aggref->aggdistinct, &childResult);
+                                                 relation, column_ref, aggref->aggdistinct);
             createdCols.push_back(attrDef);
             createdValues.push_back(aggResult);
         }
@@ -384,14 +387,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
     // Section 2: Translate expressions in the targetlist - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     {
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, agg->plan.targetlist) {
-            auto te = static_cast<TargetEntry*>(lfirst(lc));
-            if (!te || !te->expr)
+            auto* te = static_cast<TargetEntry*>(lfirst(lc));
+            if (!te || !te->expr) {
                 continue;
+            }
 
             if (IsA(te->expr, Aggref)) {
-                auto aggref = reinterpret_cast<Aggref*>(te->expr);
+                auto* aggref = reinterpret_cast<Aggref*>(te->expr);
                 process_single_aggregate(aggref, te->resname);
             } else {
                 // This could be a complex expression with nested aggregation, like SUM(x) / SUM(y) has two aggregations
@@ -404,8 +408,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                             nested_aggrefs.size(), te->resno);
 
                     for (auto* nested_aggref : nested_aggrefs) {
-                        if (!aggregateMappings.contains(nested_aggref->aggno))
+                        if (!aggregateMappings.contains(nested_aggref->aggno)) {
                             process_single_aggregate(nested_aggref);
+                        }
                     }
 
                     needs_post_processing.insert(te->resno);
@@ -422,7 +427,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     {
         if (agg->plan.qual && agg->plan.qual->length > 0) {
             auto having_aggrefs = std::vector<Aggref*>();
-            ListCell* qual_lc;
+            ListCell* qual_lc = nullptr;
             foreach (qual_lc, agg->plan.qual) {
                 auto* qual_expr = static_cast<Expr*>(lfirst(qual_lc));
                 find_all_aggrefs(qual_expr, having_aggrefs);
@@ -521,11 +526,12 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         result.op = finalOutput.getDefiningOp();
         result.current_scope = finalScope;
 
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, agg->plan.targetlist) {
             auto* te = static_cast<TargetEntry*>(lfirst(lc));
-            if (!te || !te->expr)
+            if (!te || !te->expr) {
                 continue;
+            }
 
             if (IsA(te->expr, Aggref)) {
                 auto* aggref = reinterpret_cast<Aggref*>(te->expr);

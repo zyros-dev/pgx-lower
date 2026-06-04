@@ -25,38 +25,49 @@ extern Oid g_jit_table_oid;
 #include <functional>
 
 #ifdef POSTGRESQL_EXTENSION
-extern bool g_extension_after_load;
+
 #endif
 
 namespace pgx_lower {
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
     std::vector<std::string> features;
-    if (isSelectStatement)
+    if (isSelectStatement) {
         features.emplace_back("SELECT");
-    if (requiresSeqScan)
+    }
+    if (requiresSeqScan) {
         features.emplace_back("SeqScan");
-    if (requiresProjection)
+    }
+    if (requiresProjection) {
         features.emplace_back("Projection");
-    if (hasExpressions)
+    }
+    if (hasExpressions) {
         features.emplace_back("Expressions");
-    if (requiresFilter)
+    }
+    if (requiresFilter) {
         features.emplace_back("WHERE");
-    if (requiresAggregation)
+    }
+    if (requiresAggregation) {
         features.emplace_back("Aggregation");
-    if (requiresSort)
+    }
+    if (requiresSort) {
         features.emplace_back("ORDER BY");
-    if (requiresJoin)
+    }
+    if (requiresJoin) {
         features.emplace_back("JOIN");
-    if (requiresLimit)
+    }
+    if (requiresLimit) {
         features.emplace_back("LIMIT");
-    if (hasCompatibleTypes)
+    }
+    if (hasCompatibleTypes) {
         features.emplace_back("CompatibleTypes");
+    }
 
     if (!features.empty()) {
         auto feature_list = std::string();
-        for (const auto& f : features)
+        for (const auto& f : features) {
             feature_list += f + ", ";
+        }
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: %s", feature_list.c_str());
     }
 
@@ -70,38 +81,45 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     if (compatible) {
         PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
         return true;
-    } else {
-        if (!isSelectStatement) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Not a SELECT statement");
-        } else if (!hasCompatibleTypes) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Incompatible types detected");
-        } else {
-            PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Unknown reason");
-        }
-        return false;
     }
+    if (!isSelectStatement) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Not a SELECT statement");
+    } else if (!hasCompatibleTypes) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Incompatible types detected");
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Unknown reason");
+    }
+    return false;
 }
 
 auto QueryCapabilities::getDescription() const -> std::string {
-    if (isMLIRCompatible())
+    if (isMLIRCompatible()) {
         return "Sequential scan with optional aggregation - MLIR compatible";
+    }
 
     auto requirements = std::vector<std::string>{};
 
-    if (requiresSeqScan)
+    if (requiresSeqScan) {
         requirements.emplace_back("SeqScan");
-    if (requiresFilter)
+    }
+    if (requiresFilter) {
         requirements.emplace_back("Filter");
-    if (requiresProjection)
+    }
+    if (requiresProjection) {
         requirements.emplace_back("Projection");
-    if (requiresAggregation)
+    }
+    if (requiresAggregation) {
         requirements.emplace_back("Aggregation");
-    if (requiresJoin)
+    }
+    if (requiresJoin) {
         requirements.emplace_back("Join");
-    if (requiresSort)
+    }
+    if (requiresSort) {
         requirements.emplace_back("Sort");
-    if (requiresLimit)
+    }
+    if (requiresLimit) {
         requirements.emplace_back("Limit");
+    }
 
 #ifdef POSTGRESQL_EXTENSION
     if (hasExpressions) {
@@ -113,8 +131,9 @@ auto QueryCapabilities::getDescription() const -> std::string {
 
     std::ostringstream oss;
     oss << "Requires: ";
-    for (const auto& r : requirements)
+    for (const auto& r : requirements) {
         oss << r << ", ";
+    }
     oss << " - Not yet supported by MLIR";
 
     return oss.str();
@@ -133,8 +152,9 @@ auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> QueryCapabilities {
 
     try {
         caps.isSelectStatement = checkCommandType(stmt);
-        if (!caps.isSelectStatement)
+        if (!caps.isSelectStatement) {
             return caps;
+        }
 
         caps = analyzeNode(stmt->planTree);
         caps.isSelectStatement = true; // Preserve the SELECT check
@@ -232,7 +252,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
     return caps;
 }
 
-auto QueryAnalyzer::analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps) -> void {
+auto QueryAnalyzer::analyzeSeqScan(const SeqScan* /*seqScan*/, QueryCapabilities& caps) -> void {
     caps.requiresSeqScan = true;
 }
 
@@ -242,8 +262,7 @@ auto QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) -> 
     }
 }
 
-auto QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps) -> void {
-}
+auto QueryAnalyzer::analyzeProjection(const Plan* /*plan*/, QueryCapabilities& /*caps*/) -> void {}
 
 auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> void {
     if (!plan || !plan->targetlist) {
@@ -253,7 +272,7 @@ auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> v
     }
 
     auto columnTypes = std::vector<Oid>{};
-    ListCell* lc;
+    ListCell* lc = nullptr;
 
     // Extract types from plan's target list
     foreach (lc, plan->targetlist) {
@@ -335,18 +354,20 @@ auto QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) -> s
     auto unsupportedCount = 0;
 
     for (const auto type : types) {
-        if (isTypeSupportedByMLIR(type))
+        if (isTypeSupportedByMLIR(type)) {
             supportedCount++;
-        else
+        } else {
             unsupportedCount++;
+        }
     }
 
     return {supportedCount, unsupportedCount};
 }
 
 auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
-    if (!rootPlan)
+    if (!rootPlan) {
         return;
+    }
     PGX_LOG(AST_TRANSLATE, DEBUG, "=== POSTGRESQL EXECUTION TREE ===");
 
     char* plan_str = nodeToString(rootPlan);
@@ -360,7 +381,7 @@ auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
 }
 
 auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool {
-    const auto rootPlan = stmt->planTree;
+    auto* const rootPlan = stmt->planTree;
     Plan* scanPlan = nullptr;
 
     logExecutionTree(rootPlan);
@@ -369,7 +390,7 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
         PGX_LOG(AST_TRANSLATE, DEBUG, "=== SUBPLANS (%d total) ===", list_length(stmt->subplans));
 
         int i = 1;
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach(lc, stmt->subplans) {
             Plan* subplan = (Plan*)lfirst(lc);
             PGX_LOG(AST_TRANSLATE, DEBUG, "\n--- SubPlan %d ---", i);
@@ -415,8 +436,8 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
     }
 
     if (scanPlan) {
-        const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
-        const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
+        auto* const scan = reinterpret_cast<SeqScan*>(scanPlan);
+        auto* const rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
 
         PGX_LOG(AST_TRANSLATE, DEBUG, " Table OID: %d", rte->relid);
         g_jit_table_oid = rte->relid;
@@ -434,8 +455,9 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
 auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilities {
     auto caps = QueryCapabilities{};
 
-    if (!queryText)
+    if (!queryText) {
         return caps;
+    }
 
     if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "FROM") != nullptr)) {
         caps.isSelectStatement = true;
@@ -459,19 +481,26 @@ auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilitie
         }
     }
 
-    if (strstr(queryText, "WHERE") != nullptr)
+    if (strstr(queryText, "WHERE") != nullptr) {
         caps.requiresFilter = true;
-    if (strstr(queryText, "JOIN") != nullptr)
+    }
+    if (strstr(queryText, "JOIN") != nullptr) {
         caps.requiresJoin = true;
-    if (strstr(queryText, "ORDER BY") != nullptr)
+    }
+    if (strstr(queryText, "ORDER BY") != nullptr) {
         caps.requiresSort = true;
-    if (strstr(queryText, "LIMIT") != nullptr)
+    }
+    if (strstr(queryText, "LIMIT") != nullptr) {
         caps.requiresLimit = true;
+    }
     if ((strstr(queryText, "COUNT") != nullptr) || (strstr(queryText, "SUM") != nullptr)
         || (strstr(queryText, "AVG") != nullptr) || (strstr(queryText, "GROUP BY") != nullptr))
+    {
         caps.requiresAggregation = true;
-    if (strstr(queryText, "(SELECT") != nullptr)
+    }
+    if (strstr(queryText, "(SELECT") != nullptr) {
         caps.requiresJoin = true; // Treat nested queries as requiring joins for now
+    }
 
     return caps;
 }

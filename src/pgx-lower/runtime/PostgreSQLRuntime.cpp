@@ -18,7 +18,6 @@
 #include "pgx-lower/utility/logging.h"
 
 // Need access to g_computed_results for decimal handling
-extern ComputedResultStorage g_computed_results;
 
 extern "C" {
 #include "postgres.h"
@@ -33,14 +32,8 @@ extern "C" {
 }
 
 extern "C" {
-extern void mark_results_ready_for_streaming();
-extern void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
+
 extern void store_bool_result(int32_t columnIndex, bool value, bool isNull);
-extern void prepare_computed_results(int32_t numColumns);
-extern bool add_tuple_to_result(int64_t value);
-extern void* open_postgres_table(const char* tableName);
-extern int64_t read_next_tuple_from_table(void* tableHandle);
-extern TupleDesc get_table_handle_tupledesc(void* tableHandle);
 }
 
 static void* g_execution_context = nullptr;
@@ -197,7 +190,7 @@ static TableSpec parse_table_spec(const char* json_str) {
 static void cleanup_tablebuilder_callback(void* arg) {
     PGX_IO(RUNTIME);
     // ReSharper disable once CppDeclaratorNeverUsed
-    auto tb = static_cast<runtime::TableBuilder*>(arg);
+    auto* tb = static_cast<runtime::TableBuilder*>(arg);
 }
 
 namespace runtime {
@@ -209,18 +202,18 @@ TableBuilder::TableBuilder()
 , total_columns(0) {}
 
 // ReSharper disable once CppParameterNeverUsed
-TableBuilder* TableBuilder::create(VarLen32 schema_param) {
+TableBuilder* TableBuilder::create(VarLen32 /*schema_param*/) {
     PGX_IO(RUNTIME);
 
     const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
     void* builder_memory = palloc(sizeof(TableBuilder));
-    const auto builder = new (builder_memory) TableBuilder();
+    auto* const builder = new (builder_memory) TableBuilder();
 
     builder->total_columns = 0;
     PGX_LOG(RUNTIME, DEBUG, "Initialized with dynamic column tracking");
 
-    const auto callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
+    auto* const callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
     callback->func = cleanup_tablebuilder_callback;
     callback->arg = builder;
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
@@ -229,7 +222,7 @@ TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     return builder;
 }
 
-void TableBuilder::destroy(void* builder) {
+void TableBuilder::destroy(void* /*builder*/) {
     PGX_IO(RUNTIME);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
@@ -320,7 +313,7 @@ void TableBuilder::addNumericDatum(const bool is_valid, const ::runtime::Numeric
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
     } else {
         const Datum numeric_datum = ::runtime::numeric_datum_from_carrier(value);
-        const auto numeric_value = DatumGetNumeric(numeric_datum);
+        auto* const numeric_value = DatumGetNumeric(numeric_datum);
 
         PGX_LOG(RUNTIME, DEBUG, "addNumericDatum: passthrough Numeric datum at %p", numeric_value);
 
@@ -346,7 +339,7 @@ void TableBuilder::setNextDecimalScale(int32_t scale) {
 
 static void cleanup_datasourceiterator_callback(void* arg) {
     PGX_IO(RUNTIME);
-    if (const auto iter = static_cast<DataSourceIterator*>(arg)) {
+    if (auto* const iter = static_cast<DataSourceIterator*>(arg)) {
         iter->~DataSourceIterator();
     }
 }
@@ -524,7 +517,7 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
 
     const MemoryContext oldContext = MemoryContextSwitchTo(batchContext);
 
-    const auto batch = static_cast<BatchStorage*>(palloc(sizeof(BatchStorage)));
+    auto* const batch = static_cast<BatchStorage*>(palloc(sizeof(BatchStorage)));
     batch->batchContext = batchContext;
     batch->tupleDesc = tupleDesc;
     batch->capacity = capacity;
@@ -540,7 +533,7 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
     for (size_t col = 0; col < num_cols; col++) {
         batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
         batch->column_nulls[col] = static_cast<bool*>(palloc(capacity * sizeof(bool)));
-        memset(batch->column_nulls[col], true, capacity * sizeof(bool));
+        memset(batch->column_nulls[col], 1, capacity * sizeof(bool));
 
         batch->string_lengths[col] = static_cast<int32_t*>(palloc(capacity * sizeof(int32_t)));
         batch->string_data_ptrs[col] = static_cast<uint8_t**>(palloc(capacity * sizeof(uint8_t*)));
@@ -584,9 +577,9 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
     const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
     void* iter_memory = palloc(sizeof(DataSourceIterator));
-    const auto iter = new (iter_memory) DataSourceIterator();
+    auto* const iter = new (iter_memory) DataSourceIterator();
 
-    const auto callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
+    auto* const callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
     callback->func = cleanup_datasourceiterator_callback;
     callback->arg = iter;
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
@@ -682,7 +675,7 @@ namespace {
 
     void process_tuple_into_batch(DataSourceIterator* iter, TupleDesc tupleDesc,
                                    Datum* temp_values, bool* temp_nulls) {
-        const auto tuple = g_current_tuple_passthrough.originalTuple;
+        auto* const tuple = g_current_tuple_passthrough.originalTuple;
         if (!tuple) {
             PGX_ERROR("g_current_tuple_passthrough.originalTuple is NULL");
             return;
@@ -707,7 +700,7 @@ namespace {
                     iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
                 } else {
                     const Datum transferred_datum = datumTransfer(value, meta.attbyval, meta.attlen);
-                    const auto pg_text = DatumGetTextPP(transferred_datum);
+                    auto* const pg_text = DatumGetTextPP(transferred_datum);
                     iter->batch->string_lengths[json_col_idx][row_idx] = VARSIZE_ANY_EXHDR(pg_text);
                     iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(
                         const_cast<char*>(VARDATA_ANY(pg_text)));
@@ -834,7 +827,7 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
     // RecordBatchInfo structure (from lingodb):
     // [numRows: size_t][columnInfo[0]...][columnInfo[1]...]...
     // Each columnInfo has 5 fields: offset, validMultiplier, validBuffer, dataBuffer, varLenBuffer
-    const auto row_data_ptr = reinterpret_cast<size_t*>(row_data);
+    auto* const row_data_ptr = reinterpret_cast<size_t*>(row_data);
     row_data_ptr[0] = 1;
 
     for (size_t col = 0; col < num_columns; ++col) {
@@ -904,7 +897,6 @@ void DataSourceIteration::end(DataSourceIteration* iterator) {
         auto* iter = reinterpret_cast<DataSourceIterator*>(iterator);
 
         if (iter->table_handle) {
-            extern void close_postgres_table(void* tableHandle);
             close_postgres_table(iter->table_handle);
             iter->table_handle = nullptr;
         }

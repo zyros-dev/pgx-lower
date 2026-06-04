@@ -88,9 +88,9 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                 throw std::runtime_error("Invalid BoolExpr parameters");
             }
 
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, bool_expr->args) {
-                if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+                if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
                     if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                         if (!argValue.getType().isInteger(1)) {
                             argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
@@ -123,9 +123,9 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                 throw std::runtime_error("BoolExpr OR args list has length but no elements array");
             }
 
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, bool_expr->args) {
-                if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+                if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
                     if (auto argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                         if (!argValue.getType().isInteger(1)) { // Ensur
                             argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
@@ -154,7 +154,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 
         if (bool_expr->args && bool_expr->args->length > 0) {
             if (const ListCell* lc = list_head(bool_expr->args)) {
-                if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+                if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
                     argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
                 }
             }
@@ -195,14 +195,15 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
 
     if (isa<mlir::db::NullableType>(argVal.getType())) {
         auto isNull = ctx.builder.create<mlir::db::IsNullOp>(ctx.builder.getUnknownLoc(), argVal);
-        if (null_test->nulltesttype == PG_IS_NOT_NULL)
+        if (null_test->nulltesttype == PG_IS_NOT_NULL) {
             return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), isNull);
-        else
-            return isNull;
+        }
+        return isNull;
     } else {
         return ctx.builder.create<mlir::db::ConstantOp>(
             ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
-            ctx.builder.getIntegerAttr(ctx.builder.getI1Type(), null_test->nulltesttype == PG_IS_NOT_NULL));
+            ctx.builder.getIntegerAttr(ctx.builder.getI1Type(),
+                                       static_cast<int64_t>(null_test->nulltesttype == PG_IS_NOT_NULL)));
     }
 }
 
@@ -224,9 +225,9 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 
     auto translatedArgs = std::vector<mlir::Value>{};
 
-    ListCell* cell;
+    ListCell* cell = nullptr;
     foreach (cell, coalesce_expr->args) {
-        const auto expr = static_cast<Expr*>(lfirst(cell));
+        auto* const expr = static_cast<Expr*>(lfirst(cell));
         if (mlir::Value val = translate_expression(ctx, expr)) {
             translatedArgs.push_back(val);
         } else {
@@ -327,7 +328,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         throw std::runtime_error("ScalarArrayOpExpr: Expected 2 arguments");
     }
 
-    const auto leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
+    auto* const leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
     auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
     if (!leftValue) {
         PGX_ERROR("Failed to translate left operand of IN expression");
@@ -342,28 +343,28 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         PGX_LOG(AST_TRANSLATE, DEBUG, "Left operand is BPCHAR with length=%d", bpcharLength);
     }
 
-    const auto rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
+    auto* const rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
     auto arrayElements = std::vector<mlir::Value>{};
 
     if (nodeTag(rightNode) == T_ArrayExpr) {
-        const auto arrayExpr = reinterpret_cast<ArrayExpr*>(rightNode);
+        auto* const arrayExpr = reinterpret_cast<ArrayExpr*>(rightNode);
         if (const auto* elements = arrayExpr->elements) {
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, elements) {
-                const auto elemNode = static_cast<Node*>(lfirst(lc));
+                auto* const elemNode = static_cast<Node*>(lfirst(lc));
                 if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode))) {
                     arrayElements.push_back(elemValue);
                 }
             }
         }
     } else if (nodeTag(rightNode) == T_Const) {
-        if (const auto constNode = reinterpret_cast<Const*>(rightNode); constNode->consttype == INT4ARRAYOID) {
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems;
-            Datum* values;
-            bool* nulls;
+        if (auto* const constNode = reinterpret_cast<Const*>(rightNode); constNode->consttype == INT4ARRAYOID) {
+            auto* const array = DatumGetArrayTypeP(constNode->constvalue);
+            int nitems = 0;
+            Datum* values = nullptr;
+            bool* nulls = nullptr;
 
             deconstruct_array(array, INT4OID, sizeof(int32), true, TYPALIGN_INT, &values, &nulls, &nitems);
 
@@ -376,16 +377,16 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
                 }
             }
         } else if (constNode->consttype == PG_TEXT_ARRAY_OID) {
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems;
-            Datum* values;
-            bool* nulls;
+            auto* const array = DatumGetArrayTypeP(constNode->constvalue);
+            int nitems = 0;
+            Datum* values = nullptr;
+            bool* nulls = nullptr;
 
             deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i = 0; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
-                    const auto textValue = DatumGetTextP(values[i]);
+                    auto* const textValue = DatumGetTextP(values[i]);
                     std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
 
                     auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
@@ -397,16 +398,16 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         } else if (constNode->consttype == BPCHARARRAYOID) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Processing BPCHAR array (CHAR/VARCHAR), target column length=%d",
                     bpcharLength);
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems;
-            Datum* values;
-            bool* nulls;
+            auto* const array = DatumGetArrayTypeP(constNode->constvalue);
+            int nitems = 0;
+            Datum* values = nullptr;
+            bool* nulls = nullptr;
 
             deconstruct_array(array, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i = 0; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
-                    const auto bpcharValue = DatumGetBpCharP(values[i]);
+                    auto* const bpcharValue = DatumGetBpCharP(values[i]);
                     std::string str_value(VARDATA_ANY(bpcharValue), VARSIZE_ANY_EXHDR(bpcharValue));
 
                     str_value.erase(str_value.find_last_not_of(' ') + 1);
@@ -545,8 +546,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
 
     char* oprname = get_opname(scalar_array_op->opno);
     std::string op = oprname ? std::string(oprname) : "=";
-    if (oprname)
+    if (oprname) {
         pfree(oprname);
+    }
 
     if (op == "=" && scalar_array_op->useOr) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Using db.oneof for IN clause with %zu array elements", arrayElements.size());
@@ -657,13 +659,13 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     mlir::Value result = elseResult;
     if (case_expr->args && case_expr->args->length > 0) {
         for (int i = case_expr->args->length - 1; i >= 0; i--) {
-            const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
+            auto* const whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
             if (nodeTag(whenNode) != T_CaseWhen) {
                 PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
                 throw std::runtime_error("Check logs");
             }
 
-            const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
+            auto* const whenClause = reinterpret_cast<CaseWhen*>(whenNode);
 
             mlir::Value condition = nullptr;
             if (caseArg) {
@@ -741,15 +743,15 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
     }
 
     if (nodeTag(expr) == T_OpExpr) {
-        const auto opExpr = reinterpret_cast<OpExpr*>(expr);
+        auto* const opExpr = reinterpret_cast<OpExpr*>(expr);
 
         if (!opExpr->args || opExpr->args->length != 2) {
             PGX_ERROR("OpExpr in CASE requires exactly 2 arguments");
             throw std::runtime_error("OpExpr in CASE requires exactly 2 arguments");
         }
 
-        const auto leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
-        const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
+        auto* const leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
+        auto* const rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
 
         mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
                                     ? case_test_value

@@ -26,7 +26,6 @@
 #include "lingodb/mlir/Dialect/DB/Passes.h"
 
 #include "pgx-lower/execution/mlir_runner.h"
-#include "pgx-lower/utility/logging.h"
 
 extern "C" void initialize_mlir_passes() {
     try {

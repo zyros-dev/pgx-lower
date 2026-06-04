@@ -6,7 +6,7 @@
 #include "mlir/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
 
-namespace pgx_lower { namespace log {
+namespace pgx_lower::log {
 
 auto verify_and_print(const mlir::Value val) -> void {
 #ifndef PGX_RELEASE_MODE
@@ -75,4 +75,4 @@ auto verify_module_or_throw(::mlir::ModuleOp module, const char* phase_name, con
     return true;
 }
 
-}} // namespace pgx_lower::log
+} // namespace pgx_lower::log

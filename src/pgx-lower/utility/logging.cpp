@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace pgx_lower { namespace log {
+namespace pgx_lower::log {
 
 bool log_enable = false;
 bool log_io = true;
@@ -17,8 +17,9 @@ std::set<Category> enabled_categories;
 static bool initialized = false;
 
 static void initialize_if_needed() {
-    if (initialized)
+    if (initialized) {
         return;
+    }
     initialized = true;
 
     const char* enable_env = std::getenv("PGX_LOWER_LOG_ENABLE");
@@ -57,22 +58,23 @@ static void initialize_if_needed() {
 
             std::transform(cat.begin(), cat.end(), cat.begin(), ::tolower);
 
-            if (cat == "ast_translate")
+            if (cat == "ast_translate") {
                 enabled_categories.insert(Category::AST_TRANSLATE);
-            else if (cat == "relalg_lower")
+            } else if (cat == "relalg_lower") {
                 enabled_categories.insert(Category::RELALG_LOWER);
-            else if (cat == "db_lower")
+            } else if (cat == "db_lower") {
                 enabled_categories.insert(Category::DB_LOWER);
-            else if (cat == "dsa_lower")
+            } else if (cat == "dsa_lower") {
                 enabled_categories.insert(Category::DSA_LOWER);
-            else if (cat == "util_lower")
+            } else if (cat == "util_lower") {
                 enabled_categories.insert(Category::UTIL_LOWER);
-            else if (cat == "runtime")
+            } else if (cat == "runtime") {
                 enabled_categories.insert(Category::RUNTIME);
-            else if (cat == "jit")
+            } else if (cat == "jit") {
                 enabled_categories.insert(Category::JIT);
-            else if (cat == "general")
+            } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+            }
         }
     }
     initialized = true;
@@ -109,8 +111,9 @@ bool should_log(const Category cat, const Level level) {
     initialize_if_needed();
     if (cat == Category::PROBLEM) return true;
 
-    if (!log_enable)
+    if (!log_enable) {
         return false;
+    }
 
     if (!enabled_categories.contains(cat)) {
         return false;
@@ -118,20 +121,24 @@ bool should_log(const Category cat, const Level level) {
 
     switch (level) {
     case Level::IO:
-        if (!log_io)
+        if (!log_io) {
             return false;
+        }
         break;
     case Level::DEBUG:
-        if (!log_debug)
+        if (!log_debug) {
             return false;
+        }
         break;
     case Level::IR:
-        if (!log_ir)
+        if (!log_ir) {
             return false;
+        }
         break;
     case Level::TRACE:
-        if (!log_trace)
+        if (!log_trace) {
             return false;
+        }
         break;
     default:;
     }
@@ -145,8 +152,9 @@ const char* basename_only(const char* filepath) {
 }
 
 void log(Category cat, Level level, const char* file, int line, const char* fmt, ...) {
-    if (!should_log(cat, level))
+    if (!should_log(cat, level)) {
         return;
+    }
 
     va_list args_size;
     va_start(args_size, fmt);
@@ -199,7 +207,7 @@ ScopeLogger::~ScopeLogger() {
     }
 }
 
-}} // namespace pgx_lower::log
+} // namespace pgx_lower::log
 
 extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char* categories) {
     using namespace pgx_lower::log;
@@ -223,22 +231,23 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
 
             std::ranges::transform(cat, cat.begin(), ::tolower);
 
-            if (cat == "ast_translate")
+            if (cat == "ast_translate") {
                 enabled_categories.insert(Category::AST_TRANSLATE);
-            else if (cat == "relalg_lower")
+            } else if (cat == "relalg_lower") {
                 enabled_categories.insert(Category::RELALG_LOWER);
-            else if (cat == "db_lower")
+            } else if (cat == "db_lower") {
                 enabled_categories.insert(Category::DB_LOWER);
-            else if (cat == "dsa_lower")
+            } else if (cat == "dsa_lower") {
                 enabled_categories.insert(Category::DSA_LOWER);
-            else if (cat == "util_lower")
+            } else if (cat == "util_lower") {
                 enabled_categories.insert(Category::UTIL_LOWER);
-            else if (cat == "runtime")
+            } else if (cat == "runtime") {
                 enabled_categories.insert(Category::RUNTIME);
-            else if (cat == "jit")
+            } else if (cat == "jit") {
                 enabled_categories.insert(Category::JIT);
-            else if (cat == "general")
+            } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+            }
         }
     }
 }

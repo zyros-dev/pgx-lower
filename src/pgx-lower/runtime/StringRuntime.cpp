@@ -54,69 +54,71 @@ static inline uint8_t* pgx_alloc(size_t size) {
 // (MIT License, Copyright (c) 2018 CMU Database Group)
 #define NextByte(p, plen) ((p)++, (plen)--)
 bool iterativeLike(const char* str, size_t strLen, const char* pattern, size_t patternLen, char escape) {
-   const char *s = str, *p = pattern;
-   std::size_t slen = strLen, plen = patternLen;
+    const char* s = str;
+    const char* p = pattern;
+    std::size_t slen = strLen;
+    std::size_t plen = patternLen;
 
-   for (; plen > 0 && slen > 0; NextByte(p, plen)) {
-      if (*p == escape) {
-         // Next pattern character must match exactly, whatever it is
-         NextByte(p, plen);
-
-         if (plen == 0 || *p != *s) {
-            return false;
-         }
-
-         NextByte(s, slen);
-      } else if (*p == '%') {
-         // Any sequence of '%' wildcards can essentially be replaced by one '%'. Similarly, any
-         // sequence of N '_'s will blindly consume N characters from the input string. Process the
-         // pattern until we reach a non-wildcard character.
-         NextByte(p, plen);
-         while (plen > 0) {
-            if (*p == '%') {
-               NextByte(p, plen);
-            } else if (*p == '_') {
-               if (slen == 0) {
-                  return false;
-               }
-               NextByte(s, slen);
-               NextByte(p, plen);
-            } else {
-               break;
-            }
-         }
-
-         // If we've reached the end of the pattern, the tail of the input string is accepted.
-         if (plen == 0) {
-            return true;
-         }
-
-         if (*p == escape) {
+    for (; plen > 0 && slen > 0; NextByte(p, plen)) {
+        if (*p == escape) {
+            // Next pattern character must match exactly, whatever it is
             NextByte(p, plen);
-            if (plen == 0) {
-               return false;
-            }
-         }
 
-         while (slen > 0) {
-            if (iterativeLike(s, slen, p, plen, escape)) {
-               return true;
+            if (plen == 0 || *p != *s) {
+                return false;
             }
+
             NextByte(s, slen);
-         }
-         // No match
-         return false;
-      } else if (*p == '_') {
-         // '_' wildcard matches a single character in the input
-         NextByte(s, slen);
-      } else if (*p == *s) {
-         // Exact character match
-         NextByte(s, slen);
-      } else {
-         // Unmatched!
-         return false;
-      }
-   }
+        } else if (*p == '%') {
+            // Any sequence of '%' wildcards can essentially be replaced by one '%'. Similarly, any
+            // sequence of N '_'s will blindly consume N characters from the input string. Process the
+            // pattern until we reach a non-wildcard character.
+            NextByte(p, plen);
+            while (plen > 0) {
+                if (*p == '%') {
+                    NextByte(p, plen);
+                } else if (*p == '_') {
+                    if (slen == 0) {
+                        return false;
+                    }
+                    NextByte(s, slen);
+                    NextByte(p, plen);
+                } else {
+                    break;
+                }
+            }
+
+            // If we've reached the end of the pattern, the tail of the input string is accepted.
+            if (plen == 0) {
+                return true;
+            }
+
+            if (*p == escape) {
+                NextByte(p, plen);
+                if (plen == 0) {
+                    return false;
+                }
+            }
+
+            while (slen > 0) {
+                if (iterativeLike(s, slen, p, plen, escape)) {
+                    return true;
+                }
+                NextByte(s, slen);
+            }
+            // No match
+            return false;
+        } else if (*p == '_') {
+            // '_' wildcard matches a single character in the input
+            NextByte(s, slen);
+        } else if (*p == *s) {
+            // Exact character match
+            NextByte(s, slen);
+        } else {
+            // Unmatched!
+            return false;
+        }
+    }
    while (plen > 0 && *p == '%') {
       NextByte(p, plen);
    }
@@ -138,10 +140,11 @@ bool runtime::StringRuntime::startsWith(runtime::VarLen32 str1, runtime::VarLen3
 
 // Helper function to trim leading and trailing spaces
 static void trim_string(const char* data, int32_t len, const char** trimmed_data, int32_t* trimmed_len) {
-   int32_t start = 0, end = len - 1;
-   while (start <= end && data[start] == ' ') {
-      ++start;
-   }
+    int32_t start = 0;
+    int32_t end = len - 1;
+    while (start <= end && data[start] == ' ') {
+        ++start;
+    }
    while (end >= start && data[end] == ' ') {
       --end;
    }
@@ -155,15 +158,15 @@ int64_t runtime::StringRuntime::toInt(runtime::VarLen32 str) {
    int32_t len = str.getLen();
    
    // Trim leading and trailing spaces
-   const char* trimmed_data;
-   int32_t trimmed_len;
+   const char* trimmed_data = nullptr;
+   int32_t trimmed_len = 0;
    trim_string(data, len, &trimmed_data, &trimmed_len);
    
    // Create null-terminated string for strtoll
    std::string temp_str(trimmed_data, trimmed_len);
    
    // Parse the integer
-   char* endptr;
+   char* endptr = nullptr;
    errno = 0;
    int64_t val = strtoll(temp_str.c_str(), &endptr, 10);
    
@@ -182,15 +185,15 @@ float runtime::StringRuntime::toFloat32(runtime::VarLen32 str) {
    int32_t len = str.getLen();
    
    // Trim leading and trailing spaces
-   const char* trimmed_data;
-   int32_t trimmed_len;
+   const char* trimmed_data = nullptr;
+   int32_t trimmed_len = 0;
    trim_string(data, len, &trimmed_data, &trimmed_len);
    
    // Create null-terminated string for strtof
    std::string temp_str(trimmed_data, trimmed_len);
    
    // Parse the float
-   char* endptr;
+   char* endptr = nullptr;
    errno = 0;
    float val = strtof(temp_str.c_str(), &endptr);
    
@@ -209,15 +212,15 @@ double runtime::StringRuntime::toFloat64(runtime::VarLen32 str) {
    int32_t len = str.getLen();
    
    // Trim leading and trailing spaces
-   const char* trimmed_data;
-   int32_t trimmed_len;
+   const char* trimmed_data = nullptr;
+   int32_t trimmed_len = 0;
    trim_string(data, len, &trimmed_data, &trimmed_len);
    
    // Create null-terminated string for strtod
    std::string temp_str(trimmed_data, trimmed_len);
    
    // Parse the double
-   char* endptr;
+   char* endptr = nullptr;
    errno = 0;
    double val = strtod(temp_str.c_str(), &endptr);
    
@@ -314,7 +317,7 @@ bool runtime::StringRuntime::compareNEq(runtime::VarLen32 str1, runtime::VarLen3
    return std::string_view(str1.data(), str1.getLen()) != std::string_view(str2.data(), str2.getLen());
 }
 EXPORT runtime::VarLen32 rt_varlen_from_ptr(uint8_t* ptr, uint32_t len) {
-   return runtime::VarLen32(ptr, len);
+    return runtime::VarLen32(ptr, len);
 }
 
 EXPORT char* rt_varlen_to_ref(runtime::VarLen32* varlen) {
@@ -346,7 +349,7 @@ runtime::VarLen32 runtime::StringRuntime::concat(runtime::VarLen32 left, runtime
    memcpy(result, left.getPtr(), left.getLen());
    // Copy right string
    memcpy(result + left.getLen(), right.getPtr(), right.getLen());
-   
+
    return runtime::VarLen32(result, totalLen);
 }
 
@@ -360,7 +363,7 @@ runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::
    memcpy(result + offset, b.getPtr(), b.getLen());
    offset += b.getLen();
    memcpy(result + offset, c.getPtr(), c.getLen());
-   
+
    return runtime::VarLen32(result, totalLen);
 }
 
@@ -373,7 +376,7 @@ runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
       char ch = static_cast<char>(str.getPtr()[i]);
       result[i] = static_cast<uint8_t>(std::toupper(ch));
    }
-   
+
    return runtime::VarLen32(result, len);
 }
 
@@ -385,7 +388,7 @@ runtime::VarLen32 runtime::StringRuntime::lower(runtime::VarLen32 str) {
       char ch = static_cast<char>(str.getPtr()[i]);
       result[i] = static_cast<uint8_t>(std::tolower(ch));
    }
-   
+
    return runtime::VarLen32(result, len);
 }
 
@@ -402,7 +405,7 @@ runtime::VarLen32 runtime::StringRuntime::substring(runtime::VarLen32 str, int32
    
    // Handle out of bounds
    if (startIdx >= strLen || length <= 0) {
-      return runtime::VarLen32(pgx_alloc(0), 0);
+       return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
    // Adjust length if it exceeds string length
@@ -412,7 +415,7 @@ runtime::VarLen32 runtime::StringRuntime::substring(runtime::VarLen32 str, int32
    
    uint8_t* result = pgx_alloc(length);
    memcpy(result, str.getPtr() + startIdx, length);
-   
+
    return runtime::VarLen32(result, length);
 }
 
@@ -445,12 +448,12 @@ runtime::VarLen32 runtime::StringRuntime::trim(runtime::VarLen32 str) {
    
    int32_t trimmedLen = end - start + 1;
    if (trimmedLen <= 0) {
-      return runtime::VarLen32(pgx_alloc(0), 0);
+       return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
    uint8_t* result = pgx_alloc(trimmedLen);
    memcpy(result, data + start, trimmedLen);
-   
+
    return runtime::VarLen32(result, trimmedLen);
 }
 
@@ -466,12 +469,12 @@ runtime::VarLen32 runtime::StringRuntime::ltrim(runtime::VarLen32 str) {
    
    int32_t trimmedLen = len - start;
    if (trimmedLen <= 0) {
-      return runtime::VarLen32(pgx_alloc(0), 0);
+       return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
    uint8_t* result = pgx_alloc(trimmedLen);
    memcpy(result, data + start, trimmedLen);
-   
+
    return runtime::VarLen32(result, trimmedLen);
 }
 
@@ -487,12 +490,12 @@ runtime::VarLen32 runtime::StringRuntime::rtrim(runtime::VarLen32 str) {
    
    int32_t trimmedLen = end + 1;
    if (trimmedLen <= 0) {
-      return runtime::VarLen32(pgx_alloc(0), 0);
+       return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
    uint8_t* result = pgx_alloc(trimmedLen);
    memcpy(result, data, trimmedLen);
-   
+
    return runtime::VarLen32(result, trimmedLen);
 }
 

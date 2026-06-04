@@ -54,10 +54,10 @@ extern "C" {
 
 namespace llvm {
 class Module;
-}
+} // namespace llvm
 namespace mlir_runner {
 extern void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::Category phase);
-}
+} // namespace mlir_runner
 
 namespace pgx_lower::execution {
 
@@ -134,7 +134,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
     // directly; any crash surfaces as a test failure instead of being wrapped
     // in a PG-level exception.
 #ifdef POSTGRESQL_EXTENSION
-    const auto saved_context = CurrentMemoryContext;
+    auto* const saved_context = CurrentMemoryContext;
 
     PG_TRY();
     {
@@ -233,7 +233,7 @@ JITEngine::create_mlir_to_llvm_translator() {
         auto module = mlir::cast<mlir::ModuleOp>(op);
 
         size_t input_ops_count = 0;
-        module.walk([&](mlir::Operation* operation) { input_ops_count++; });
+        module.walk([&](mlir::Operation* /*operation*/) { input_ops_count++; });
 
         PGX_LOG(JIT, IO, "MLIR→LLVM IN: Standard MLIR Module with %zu operations", input_ops_count);
 
@@ -293,7 +293,7 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
             // Install LLVM fatal error handler
             static bool handler_installed = false;
             if (!handler_installed) {
-                llvm::install_fatal_error_handler([](void* user_data, const char* reason, bool gen_crash_diag) {
+                llvm::install_fatal_error_handler([](void* /*user_data*/, const char* reason, bool gen_crash_diag) {
                     PGX_ERROR("LLVM FATAL ERROR: %s (gen_crash_diag=%d)", reason, gen_crash_diag);
                 });
                 handler_installed = true;
@@ -451,7 +451,7 @@ bool JITEngine::compile_to_shared_library(const std::string& obj_path, const std
 
     std::array<char, 256> buffer;
     std::string result;
-    while (!std::feof(pipe)) {
+    while (std::feof(pipe) == 0) {
         const auto bytes = std::fread(buffer.data(), 1, buffer.size(), pipe);
         result.append(buffer.data(), bytes);
     }
