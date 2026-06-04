@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { DEFAULT_CONFIG_PATH, writeConfig } from "./config.js";
 import { helpText, runCli } from "./cli.js";
 import { NodeCommandRunner } from "./commands.js";
+import { runDevCommand } from "./dev.js";
 import { connectMcp } from "./mcp.js";
 import {
   runBuildCommand,
@@ -105,6 +106,19 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "dev") {
+    process.exitCode = await runDevCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      buildQueue: config.buildQueue,
+      checkQueue: config.checkQueue
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);

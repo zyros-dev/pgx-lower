@@ -386,6 +386,37 @@ utest-pg: _preflight
     ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "export PATH=/usr/local/pgsql/bin:\$PATH && mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}/tests/regress-unit && su postgres -c \"/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit\" && fail=0; for sql in {{_wdir}}/tests/regress-unit/sql/*.sql; do echo \"--- \$(basename \$sql) ---\"; su postgres -c \"/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \$sql\" || { fail=1; echo FAIL: \$sql; }; done; echo; if [ \$fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
     just _refresh-clion-db
 
+# Run one PG-aware unit test SQL file.
+utest-pg-one TEST: _preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python3 {{invocation_directory()}}/scripts/gen_unit_test_sql.py
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "export PATH=/usr/local/pgsql/bin:\$PATH && test -f {{_wdir}}/tests/regress-unit/sql/{{TEST}}.sql && mkdir -p {{_bdir}} && cd {{_bdir}} && ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}}) && cmake --build . && cmake --install . && chmod o+x /workspace/.worktrees 2>/dev/null || true; chmod -R o+rX {{_wdir}}/tests/regress-unit && su postgres -c \"/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f {{_wdir}}/tests/regress-unit/sql/{{TEST}}.sql\"") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    just _refresh-clion-db
+
+# Run the output-equivalence TPC-H regression subset.
+test-tpch: _preflight
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -lc '"'"'
+        set -euo pipefail
+        export PATH=/usr/local/pgsql/bin:$PATH
+        mkdir -p {{_bdir}} {{_bdir}}/extension
+        cd {{_bdir}}
+        ([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache {{_wdir}})
+        cmake --build .
+        cmake --install .
+        mkdir -p /tmp/pgx_ir
+        chmod 777 /tmp/pgx_ir
+        chmod o+x /workspace/.worktrees 2>/dev/null || true
+        chmod -R o+rX {{_wdir}}
+        chown -R postgres:postgres {{_bdir}}
+        pg_regress_bin="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
+        su postgres -c "$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir={{_wdir}}/tests --outputdir={{_bdir}}/extension --load-extension=pgx_lower 36_tpch_minimal 37_tpch_minimal_2 38_tpch_minimal_3 39_tpch_minimal 40_tpch_not_lowered init_tpch tpch_no_lower tpch" 2>&1 | tee /tmp/pg_regress_tpch.out
+        cat /tmp/pg_regress_tpch.out | python3 {{_wdir}}/scripts/ptest_with_baseline.py --baseline-file {{_wdir}}/tests/pg_regress_baseline.txt
+    '"'"') && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
+    just _refresh-clion-db
+
 # Re-record the pg_regress baseline. Run only when you have consciously
 # accepted a new set of red tests on main — each entry that gets added
 # here must be justified in the PR body. Removing entries is free (those

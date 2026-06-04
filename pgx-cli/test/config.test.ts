@@ -20,6 +20,8 @@ describe("loadConfig", () => {
     expect(config.remoteProjectPath).toBe("/home/zel/repos/pgx-lower");
     expect(config.mutagenSession).toBe("pgx-lower");
     expect(config.dockerContainer).toBe("pgx-lower-dev");
+    expect(config.buildQueue).toBe("pgx-build");
+    expect(config.checkQueue).toBe("pgx-check");
   });
 
   test("uses pgx-cli config directory", () => {
@@ -59,7 +61,9 @@ describe("loadConfig", () => {
       localProjectPath: "/Users/nickvandermerwe/repos/pgx-lower",
       remoteProjectPath: "/home/zel/repos/pgx-lower",
       mutagenSession: "pgx-lower",
-      dockerContainer: "pgx-lower-dev"
+      dockerContainer: "pgx-lower-dev",
+      buildQueue: "pgx-build",
+      checkQueue: "pgx-check"
     });
 
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
@@ -70,7 +74,9 @@ describe("loadConfig", () => {
       localProjectPath: "/Users/nickvandermerwe/repos/pgx-lower",
       remoteProjectPath: "/home/zel/repos/pgx-lower",
       mutagenSession: "pgx-lower",
-      dockerContainer: "pgx-lower-dev"
+      dockerContainer: "pgx-lower-dev",
+      buildQueue: "pgx-build",
+      checkQueue: "pgx-check"
     });
 
     rmSync(dir, { recursive: true, force: true });
@@ -102,6 +108,8 @@ describe("loadConfig", () => {
     expect(config.projectPath).toBe("/project/remote");
     expect(config.mutagenSession).toBe("project-session");
     expect(config.dockerContainer).toBe("pgx-lower-dev");
+    expect(config.buildQueue).toBe("project-build");
+    expect(config.checkQueue).toBe("project-check");
   });
 
   test("keeps personal JSON and environment overrides above project config", () => {
