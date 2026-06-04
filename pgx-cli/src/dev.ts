@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { CommandRunner } from "./commands.js";
+import type { RunResult } from "./commands.js";
 import { fullLintShellCommand, targetedLintShellCommand } from "./lint.js";
+import { evaluatePgRegressBaseline, hasPgRegressBaselineInput } from "./pg-regress-baseline.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 import { writeUnitSqlFiles } from "./unit-sql.js";
 
@@ -259,10 +263,10 @@ async function runTpchTests(runner: CommandRunner, output: OperationOutput, conf
     "chmod -R o+rX /workspace",
     "chown -R postgres:postgres /workspace/build-artifacts/ptest",
     "pg_regress_bin=\"$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress\"",
-    "su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests --outputdir=/workspace/build-artifacts/ptest/extension --load-extension=pgx_lower 36_tpch_minimal 37_tpch_minimal_2 38_tpch_minimal_3 39_tpch_minimal 40_tpch_not_lowered init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out",
-    "cat /tmp/pg_regress_tpch.out | python3 /workspace/scripts/ptest_with_baseline.py --baseline-file /workspace/tests/pg_regress_baseline.txt"
+    "(su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests --outputdir=/workspace/build-artifacts/ptest/extension --load-extension=pgx_lower 36_tpch_minimal 37_tpch_minimal_2 38_tpch_minimal_3 39_tpch_minimal 40_tpch_not_lowered init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out; true)"
   ].join(" && ");
-  return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+  const result = await runRemoteShellResult(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+  return evaluateRemotePgRegressResult(result, output, config);
 }
 
 async function runCompile(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
@@ -282,9 +286,10 @@ async function runFullTests(runner: CommandRunner, output: OperationOutput, conf
     "chmod -R o+rX /workspace",
     "chown -R postgres:postgres /workspace/build-artifacts/ptest",
     "cd /workspace/build-artifacts/ptest",
-    "(su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 /workspace/scripts/ptest_with_baseline.py --baseline-file /workspace/tests/pg_regress_baseline.txt)"
+    "(su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; true)"
   ].join(" && ");
-  return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+  const result = await runRemoteShellResult(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+  return evaluateRemotePgRegressResult(result, output, config);
 }
 
 async function flushMutagen(runner: CommandRunner, output: OperationOutput, session: string): Promise<number> {
@@ -307,10 +312,35 @@ async function runRemoteShell(
   config: DevConfig,
   shellCommand: string
 ): Promise<number> {
+  const result = await runRemoteShellResult(runner, output, config, shellCommand);
+  return result.exitCode;
+}
+
+async function runRemoteShellResult(
+  runner: CommandRunner,
+  output: OperationOutput,
+  config: DevConfig,
+  shellCommand: string
+): Promise<RunResult> {
   const result = await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(shellCommand)]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
-  return result.exitCode;
+  return result;
+}
+
+function evaluateRemotePgRegressResult(result: RunResult, output: OperationOutput, config: DevConfig): number {
+  const raw = result.stdout + result.stderr;
+  if (result.exitCode !== 0 && !hasPgRegressBaselineInput(raw)) {
+    return result.exitCode;
+  }
+  const evaluated = evaluatePgRegressBaseline(raw, readBaselineText(config));
+  output.stdout += evaluated.stdout;
+  output.stderr += evaluated.stderr;
+  return evaluated.exitCode;
+}
+
+function readBaselineText(config: DevConfig): string {
+  return readFileSync(join(config.localProjectPath, "tests/pg_regress_baseline.txt"), "utf8");
 }
 
 function checkDiffScript(config: DevConfig): string {
