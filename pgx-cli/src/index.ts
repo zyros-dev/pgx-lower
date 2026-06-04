@@ -7,6 +7,7 @@ import { NodeCommandRunner } from "./commands.js";
 import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { connectMcp } from "./mcp.js";
+import { formatLedgerSummary, loadMigrationLedger, validateMigrationLedger } from "./migration-ledger.js";
 import {
   runBuildCommand,
   runCheckCommand,
@@ -113,6 +114,25 @@ try {
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
     process.exit();
+  }
+
+  if (argv[0] === "migrate") {
+    const ledger = loadMigrationLedger(config.localProjectPath);
+    if (argv[1] === "inventory") {
+      process.stdout.write(formatLedgerSummary(ledger));
+      process.exit(0);
+    }
+    if (argv[1] === "check") {
+      const errors = validateMigrationLedger(config.localProjectPath, ledger);
+      if (errors.length > 0) {
+        process.stderr.write(`${errors.join("\n")}\n`);
+        process.exit(1);
+      }
+      process.stdout.write("migration ledger: clean\n");
+      process.exit(0);
+    }
+    process.stderr.write("Usage: pgx-cli migrate <inventory|check>\n");
+    process.exit(1);
   }
 
   if (argv[0] === "dev" && argv[1] === "build") {

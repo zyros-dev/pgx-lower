@@ -1,0 +1,55 @@
+version: 1
+classifications:
+  - path: justfile
+    kind: recipe-file
+    outcome: wrap
+    replacement: pgx-cli dev gate review
+    reason: temporary implementation substrate until final retirement removes it
+
+  - path: scripts/run_lint.sh
+    kind: script
+    outcome: wrap
+    replacement: pgx-cli dev lint file|files|diff
+    reason: lint logic remains useful but agents should call pgx-cli
+
+  - path: scripts/ptest_with_baseline.py
+    kind: script
+    outcome: keep-internal
+    replacement: pgx-cli dev gate review
+    reason: baseline comparison helper is part of the pg_regress harness
+
+  - path: scripts/gen_unit_test_sql.py
+    kind: script
+    outcome: keep-internal
+    replacement: pgx-cli dev test unit
+    reason: test-generation helper remains internal to test maintenance
+
+  - path: benchmark/run_benchmark_config.py
+    kind: script
+    outcome: wrap
+    replacement: pgx-cli bench tpch
+    reason: benchmark behavior should become a pgx-cli command before deleting this script
+
+  - path: benchmark/report.py
+    kind: script
+    outcome: wrap
+    replacement: pgx-cli bench report
+    reason: benchmark reporting should become a pgx-cli command before deleting this script
+
+  - path: tools/scripts/profile.sh
+    kind: script
+    outcome: wrap
+    replacement: pgx-cli profile run
+    reason: profiling workflow should be agent-facing through pgx-cli
+
+  - path: tools/scripts/extract-perf-data.py
+    kind: script
+    outcome: wrap
+    replacement: pgx-cli profile extract
+    reason: perf extraction should be agent-facing through pgx-cli
+
+  - path: tools/repeat_test.sh
+    kind: script
+    outcome: wrap
+    replacement: pgx-cli dev test repeat
+    reason: repeated test execution should be named in pgx-cli

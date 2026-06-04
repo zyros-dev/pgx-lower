@@ -202,6 +202,8 @@ describe("runCli", () => {
     expect(io.stdout).toContain("pgx-cli dev gate batch");
     expect(io.stdout).toContain("pgx-cli dev gate review");
     expect(io.stdout).toContain("pgx-cli dev build explain --profile <name>");
+    expect(io.stdout).toContain("pgx-cli migrate inventory");
+    expect(io.stdout).toContain("pgx-cli migrate check");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");

@@ -10,6 +10,46 @@ edits sync via mutagen). All generated build and benchmark scratch output lives
 under the gitignored `build-artifacts/` directory; `bench-results/` holds the
 committed per-PR benchmark reports.
 
+## pgx-cli workflow
+
+`pgx-cli` is the preferred command surface for pgx-lower development workflows.
+The CLI lives in `pgx-cli/` and wraps thor, Mutagen, task-spooler, CLion, build,
+check, and queue operations.
+
+Install or relink it from this checkout:
+
+```bash
+pgx-cli setup install
+```
+
+Diagnose the local/thor workflow:
+
+```bash
+pgx-cli setup doctor
+pgx-cli sync status
+pgx-cli queue status
+```
+
+The current implementation still wraps existing `just` recipes under the hood,
+but pgx-cli is the agent-facing command surface. Use `pgx-cli dev ...` and
+`pgx-cli queue ...` as the normal workflow commands; treat raw `just`, raw
+`ssh comfy`, raw `mutagen`, and raw `tsp` as debugging escape hatches.
+
+## Workflow migration ledger
+
+The project temporarily tracks old script and recipe entry points in
+`pgx-cli-migration-ledger.yaml`.
+
+```bash
+pgx-cli migrate inventory
+pgx-cli migrate check
+```
+
+Agents should use pgx-cli commands for workflow tasks. Direct `scripts/*.sh`,
+`benchmark/*.py`, `tools/scripts/*`, raw task-spooler, and raw `just` calls are
+allowed only as implementation details or debugging escape hatches while the
+ledger says the old entry point is still wrapped.
+
 The inherited `tools/` tree is tracked in `docs/tools-ledger.md`; do not delete
 entries without updating that ledger.
 
