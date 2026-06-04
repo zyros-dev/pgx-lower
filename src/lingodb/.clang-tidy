@@ -1,0 +1,4 @@
+# Vendored LingoDB tree: intentionally excluded from the lint gate until the
+# later rewrite. This is a scope boundary, not a warning suppression.
+Checks: '-*'
+WarningsAsErrors: ''
