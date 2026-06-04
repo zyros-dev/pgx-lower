@@ -282,6 +282,12 @@ ffix-diff: _preflight
 lint: _preflight
     @ssh {{_thor}} 'export TS_SOCKET=/tmp/{{_build_q}}.sock && tsp -S 1 >/dev/null && id=$(tsp docker exec {{_ctr}} bash -c "bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} check") && echo "[job $id queued on {{_build_q}}]" && tsp -c $id'
 
+# Fast targeted clang-tidy check for one or more explicit files. Reuses the
+# existing lint compile database; run `just lint` once after a clean checkout or
+# build-dir reset to create it.
+lint-files +FILES: _preflight
+    @ssh {{_thor}} 'docker exec {{_ctr}} bash -c "cd {{_wdir}} && LINT_SKIP_BUILD=1 bash {{_wdir}}/scripts/run_lint.sh {{_wdir}} check {{FILES}}"'
+
 # Capture a grouped clang-tidy inventory without failing on findings. This is
 # the checkpoint command before choosing rule deletion vs auto-fix cleanup.
 lint-inventory: _preflight
@@ -555,6 +561,10 @@ sync-main-reset:
         --ignore='/benchmark_results/' \
         "{{_main_root}}" {{_thor}}:/home/zel/repos/pgx-lower
     echo "sync-main-reset: main session recreated with canonical ignores."
+
+# Point git at the version-controlled hooks in .githooks/ (one-time per clone).
+hooks-install:
+    @chmod +x .githooks/* && git config core.hooksPath .githooks && echo "hooks-install: core.hooksPath -> .githooks"
 
 # --- PR --------------------------------------------------------------------
 

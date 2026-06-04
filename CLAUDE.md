@@ -9,6 +9,16 @@
 
 Comments: would a human write this? If a comment restates what well-named code says, delete it. File-header banners are noise unless they encode a non-obvious WHY. In tests, the test names ARE the documentation.
 
+## Code & comment standard
+
+- **clang-tidy is the floor, not the ceiling.** `just lint` must be green on
+  `src/pgx-lower/` before a PR. Use `just lint-diff` for active-change feedback.
+  A rule either gates or it is deleted from `.clang-tidy` with a rationale.
+- **Comments earn their place.** Explain why; do not narrate what the code
+  already says. Review catches prose slop that clang-tidy cannot.
+- **Surgical lint diffs.** Lint cleanups change only what the rule flags; no
+  opportunistic rewrites in a lint commit.
+
 ## PostgreSQL type truthfulness
 
 This fork is allowed to use PostgreSQL-owned runtime types where the code is
