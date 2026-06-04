@@ -30,6 +30,75 @@ extern Oid g_jit_table_oid;
 
 namespace pgx_lower {
 
+auto unsupportedReasonKindName(const UnsupportedReasonKind kind) -> const char* {
+    switch (kind) {
+    case UnsupportedReasonKind::invalid: return "invalid";
+    case UnsupportedReasonKind::unsupported_plan_node: return "unsupported_plan_node";
+    case UnsupportedReasonKind::unsupported_expr_node: return "unsupported_expr_node";
+    case UnsupportedReasonKind::unsupported_type: return "unsupported_type";
+    case UnsupportedReasonKind::unsupported_operator: return "unsupported_operator";
+    case UnsupportedReasonKind::unsupported_function: return "unsupported_function";
+    case UnsupportedReasonKind::unsupported_collation: return "unsupported_collation";
+    case UnsupportedReasonKind::missing_metadata: return "missing_metadata";
+    }
+    return "invalid";
+}
+
+AnalyzerResult::AnalyzerResult() {
+    reasons_.push_back({UnsupportedReasonKind::invalid, "analyzer result was not explicitly constructed", {}});
+}
+
+auto AnalyzerResult::supported() -> AnalyzerResult {
+    auto result = AnalyzerResult{};
+    result.supported_ = true;
+    result.reasons_.clear();
+    return result;
+}
+
+auto AnalyzerResult::unsupported(UnsupportedReasonKind kind, std::string message, std::string location)
+    -> AnalyzerResult {
+    auto result = AnalyzerResult{};
+    result.supported_ = false;
+    result.reasons_.clear();
+    result.reasons_.push_back({kind, std::move(message), std::move(location)});
+    return result;
+}
+
+auto AnalyzerResult::isSupported() const -> bool {
+    return supported_ && reasons_.empty();
+}
+
+auto AnalyzerResult::reasons() const -> const std::vector<UnsupportedReason>& {
+    return reasons_;
+}
+
+auto AnalyzerResult::primaryReason() const -> const UnsupportedReason& {
+    return reasons_.front();
+}
+
+auto AnalyzerResult::primaryReasonKindName() const -> std::string {
+    return unsupportedReasonKindName(primaryReason().kind);
+}
+
+auto AnalyzerResult::humanSummary() const -> std::string {
+    if (isSupported()) {
+        return "supported";
+    }
+
+    const auto& reason = primaryReason();
+    auto summary = std::string(unsupportedReasonKindName(reason.kind)) + ": " + reason.message;
+    if (!reason.location.empty()) {
+        summary += " at " + reason.location;
+    }
+    return summary;
+}
+
+auto AnalyzerResult::addUnsupportedReason(UnsupportedReasonKind kind, std::string message, std::string location)
+    -> void {
+    supported_ = false;
+    reasons_.push_back({kind, std::move(message), std::move(location)});
+}
+
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
     std::vector<std::string> features;
     if (isSelectStatement) {

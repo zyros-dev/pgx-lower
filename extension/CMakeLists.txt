@@ -9,6 +9,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/ast_const_translation_tests.cpp
             ../src/pgx-lower/test/standalone_mlir_runner.cpp
             ../src/pgx-lower/test/pipeline_phases_tests.cpp
+            ../src/pgx-lower/test/query_analyzer_tests.cpp
         )
     endif()
 

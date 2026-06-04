@@ -15,6 +15,49 @@ extern "C" {
 
 namespace pgx_lower {
 
+enum class UnsupportedReasonKind {
+    invalid,
+    unsupported_plan_node,
+    unsupported_expr_node,
+    unsupported_type,
+    unsupported_operator,
+    unsupported_function,
+    unsupported_collation,
+    missing_metadata,
+};
+
+auto unsupportedReasonKindName(UnsupportedReasonKind kind) -> const char*;
+
+struct UnsupportedReason {
+    UnsupportedReasonKind kind = UnsupportedReasonKind::invalid;
+    std::string message;
+    std::string location;
+};
+
+class AnalyzerResult {
+   public:
+    AnalyzerResult();
+
+    static auto supported() -> AnalyzerResult;
+    static auto unsupported(UnsupportedReasonKind kind,
+                            std::string message,
+                            std::string location = {}) -> AnalyzerResult;
+
+    [[nodiscard]] auto isSupported() const -> bool;
+    [[nodiscard]] auto reasons() const -> const std::vector<UnsupportedReason>&;
+    [[nodiscard]] auto primaryReason() const -> const UnsupportedReason&;
+    [[nodiscard]] auto primaryReasonKindName() const -> std::string;
+    [[nodiscard]] auto humanSummary() const -> std::string;
+
+    auto addUnsupportedReason(UnsupportedReasonKind kind,
+                              std::string message,
+                              std::string location = {}) -> void;
+
+   private:
+    bool supported_ = false;
+    std::vector<UnsupportedReason> reasons_;
+};
+
 struct QueryCapabilities {
     bool requiresSeqScan = false;
     bool requiresFilter = false;
