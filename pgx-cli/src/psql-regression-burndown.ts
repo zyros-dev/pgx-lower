@@ -36,7 +36,8 @@ type Io = {
   stderr: string;
 };
 
-const statusLineRe = /^(?:\d+:\s+)?(not\s+ok|ok)\s+\d+\s*-\s*([^\s]+)(?:\s|$)/;
+const defaultPgRegressPath = "/usr/local/pgsql/lib/pgxs/src/test/regress/pg_regress";
+const statusLineRe = /^(?:\d+:\s+)?(not\s+ok|ok)\s+\d+\s*[-+]\s*([^\s]+)(?:\s|$)/;
 
 export function parsePgRegressStatusLines(text: string): PsqlRegressionStatus {
   const passing = new Set<string>();
@@ -191,7 +192,7 @@ export function parsePsqlRegressionBurndownArgs(args: readonly string[]): PsqlRe
     summary: values.get("--summary") ?? "build-artifacts/test-runs/psql-regression-burndown/summary.md",
     routeSummary: values.get("--route-summary")
       ?? "build-artifacts/test-runs/psql-regression-burndown/route-summary.md",
-    pgRegress: values.get("--pg-regress") ?? "pg_regress",
+    pgRegress: values.get("--pg-regress") ?? defaultPgRegressPath,
     bindir: values.get("--bindir") ?? "/usr/local/pgsql/bin",
     dlpath: values.get("--dlpath") ?? "/usr/local/pgsql/lib",
     schedule: values.get("--schedule") ?? "parallel_schedule",
@@ -362,7 +363,7 @@ function psqlRegressionBurndownUsage(): string {
     "  [--output-dir <results-dir>]",
     "  [--summary <summary.md>]",
     "  [--route-summary <route-summary.md>]",
-    "  [--pg-regress <pg_regress>]",
+    `  [--pg-regress <pg_regress>] default: ${defaultPgRegressPath}`,
     "  [--bindir <postgres-bindir>]",
     "  [--dlpath <postgres-libdir>]",
     "  [--schedule <schedule-file>]",

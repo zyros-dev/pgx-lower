@@ -200,7 +200,7 @@ pgx-cli test psql-regression-burndown \
   --output-dir tests/psql-regression/results \
   --summary build-artifacts/test-runs/psql-regression-burndown/summary.md \
   --route-summary build-artifacts/test-runs/psql-regression-burndown/route-summary.md \
-  --pg-regress pg_regress \
+  --pg-regress /usr/local/pgsql/lib/pgxs/src/test/regress/pg_regress \
   --bindir /usr/local/pgsql/bin \
   --dlpath /usr/local/pgsql/lib \
   --schedule parallel_schedule \
@@ -209,6 +209,8 @@ pgx-cli test psql-regression-burndown \
 
 Use `--record` only after reviewing the run; it replaces the baseline with the
 current failing upstream PostgreSQL test names.
+The default `--pg-regress` path matches the pgx-lower dev container; pass an
+explicit path when using a different PostgreSQL installation.
 
 ## Development
 

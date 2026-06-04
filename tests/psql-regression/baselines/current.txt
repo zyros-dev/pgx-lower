@@ -1,1 +1,16 @@
+alter_generic
+alter_table
+conversion
+copy2
+create_function_c
+create_type
+create_view
+foreign_data
+indirect_toast
+lock
+misc
+misc_functions
+opr_sanity
+select_views
 test_setup
+triggers

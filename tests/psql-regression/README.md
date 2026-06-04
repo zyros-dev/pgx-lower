@@ -26,3 +26,7 @@ Check delta against the committed baseline:
 ```bash
 pgx-cli test psql-regression-burndown
 ```
+
+The default `pg_regress` path is the pgx-lower dev container's installed
+`/usr/local/pgsql/lib/pgxs/src/test/regress/pg_regress`. Pass `--pg-regress`
+explicitly for another PostgreSQL installation.

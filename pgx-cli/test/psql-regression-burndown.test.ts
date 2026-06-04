@@ -33,12 +33,13 @@ describe("psql regression burndown helpers", () => {
       [
         "ok 1 - boolean 10 ms",
         "1: not ok 3 - date 20 ms",
+        "not ok 47 + opr_sanity 30 ms",
         "ignored diagnostic line"
       ].join("\n")
     );
 
     expect([...parsed.passing]).toEqual(["boolean"]);
-    expect([...parsed.failing]).toEqual(["date"]);
+    expect([...parsed.failing]).toEqual(["date", "opr_sanity"]);
   });
 
   test("classifies new failures, still failing, and newly passing baseline entries", () => {
@@ -167,6 +168,12 @@ describe("psql regression burndown command", () => {
       "--schedule=tests/psql-regression/parallel_schedule",
       "--load-extension=pgx_lower"
     ]);
+  });
+
+  test("defaults pg_regress to the installed pgxs path used by the dev container", () => {
+    const options = parsePsqlRegressionBurndownArgs([]);
+
+    expect(options.pgRegress).toBe("/usr/local/pgsql/lib/pgxs/src/test/regress/pg_regress");
   });
 
   test("record mode writes the current failing set as the reviewed baseline", async () => {
