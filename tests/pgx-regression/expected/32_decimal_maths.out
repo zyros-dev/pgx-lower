@@ -1,0 +1,287 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS test_decimal_maths;
+NOTICE:  table "test_decimal_maths" does not exist, skipping
+CREATE TABLE test_decimal_maths
+(
+    id       SERIAL PRIMARY KEY,
+    price    DECIMAL(10, 2),
+    quantity DECIMAL(8, 3),
+    rate     DECIMAL(5, 4),
+    discount DECIMAL(4, 2)
+);
+INSERT INTO test_decimal_maths(price, quantity, rate, discount)
+VALUES (99.99, 2.500, 0.1575, 10.50),
+       (149.95, 1.750, 0.2250, 15.00),
+       (29.50, 5.333, 0.0825, 5.25),
+       (199.00, 0.500, 0.3000, 20.00),
+       (75.25, 3.125, 0.1000, 12.75);
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_001 */
+-- Basic arithmetic operations
+SELECT price + discount AS price_plus_discount
+FROM test_decimal_maths;
+ price_plus_discount 
+---------------------
+              110.49
+              164.95
+               34.75
+              219.00
+               88.00
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_002 */
+SELECT price - discount AS price_minus_discount
+FROM test_decimal_maths;
+ price_minus_discount 
+----------------------
+                89.49
+               134.95
+                24.25
+               179.00
+                62.50
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_003 */
+SELECT price * quantity AS total_value
+FROM test_decimal_maths;
+ total_value 
+-------------
+   249.97500
+   262.41250
+   157.32350
+    99.50000
+   235.15625
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_004 */
+SELECT price / quantity AS price_per_unit
+FROM test_decimal_maths;
+    price_per_unit    
+----------------------
+  39.9960000000000000
+  85.6857142857142857
+   5.5315957247327958
+ 398.0000000000000000
+  24.0800000000000000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_005 */
+-- Mixed precision operations
+SELECT price * rate AS tax_amount
+FROM test_decimal_maths;
+ tax_amount 
+------------
+  15.748425
+  33.738750
+   2.433750
+  59.700000
+   7.525000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_006 */
+SELECT (price * quantity) AS total_before_discount
+FROM test_decimal_maths;
+ total_before_discount 
+-----------------------
+             249.97500
+             262.41250
+             157.32350
+              99.50000
+             235.15625
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_007 */
+SELECT (price * quantity * (1 - discount / 100)) AS total_after_discount
+FROM test_decimal_maths;
+     total_after_discount      
+-------------------------------
+ 223.7276250000000000000000000
+ 223.0506250000000000000000000
+ 149.0640162500000000000000000
+  79.6000000000000000000000000
+ 205.1738281250000000000000000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_008 */
+-- Division with different scales
+SELECT discount / 100 AS discount_rate
+FROM test_decimal_maths;
+     discount_rate      
+------------------------
+ 0.10500000000000000000
+ 0.15000000000000000000
+ 0.05250000000000000000
+ 0.20000000000000000000
+ 0.12750000000000000000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_009 */
+SELECT price / 2 AS half_price
+FROM test_decimal_maths;
+     half_price      
+---------------------
+ 49.9950000000000000
+ 74.9750000000000000
+ 14.7500000000000000
+ 99.5000000000000000
+ 37.6250000000000000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_010 */
+SELECT quantity / 3 AS third_quantity
+FROM test_decimal_maths;
+     third_quantity     
+------------------------
+ 0.83333333333333333333
+ 0.58333333333333333333
+     1.7776666666666667
+ 0.16666666666666666667
+ 1.04166666666666666667
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_011 */
+-- Complex expressions
+SELECT ((price + 10) * quantity) / (1 + rate) AS complex_calc
+FROM test_decimal_maths;
+     complex_calc     
+----------------------
+ 237.5593952483801296
+ 228.5000000000000000
+ 194.5990762124711316
+  80.3846153846153846
+ 242.1875000000000000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_012 */
+SELECT price * quantity * rate AS tax_on_total
+FROM test_decimal_maths;
+ tax_on_total 
+--------------
+ 39.371062500
+ 59.042812500
+ 12.979188750
+ 29.850000000
+ 23.515625000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_013 */
+-- Edge cases
+SELECT 1.0 / 3.0 AS one_third;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+       one_third        
+------------------------
+ 0.33333333333333333333
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_014 */
+SELECT 10.0 / 3.0 AS ten_thirds;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+     ten_thirds     
+--------------------
+ 3.3333333333333333
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_015 */
+SELECT 100.00 / 7.00 AS hundred_sevenths;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+  hundred_sevenths   
+---------------------
+ 14.2857142857142857
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_016 */
+-- Operations with integer literals
+SELECT price * 2 AS double_price
+FROM test_decimal_maths;
+ double_price 
+--------------
+       199.98
+       299.90
+        59.00
+       398.00
+       150.50
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_017 */
+SELECT price / 10 AS tenth_price
+FROM test_decimal_maths;
+     tenth_price     
+---------------------
+  9.9990000000000000
+ 14.9950000000000000
+  2.9500000000000000
+ 19.9000000000000000
+  7.5250000000000000
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_32_decimal_maths_018 */
+SELECT quantity + 1 AS quantity_plus_one
+FROM test_decimal_maths;
+ quantity_plus_one 
+-------------------
+             3.500
+             2.750
+             6.333
+             1.500
+             4.125
+(5 rows)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_019 */
+-- Precision preservation tests
+SELECT CAST(1.23456789 AS DECIMAL(10, 8)) AS high_precision;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+ high_precision 
+----------------
+     1.23456789
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_020 */
+SELECT CAST(1.23456789 AS DECIMAL(10, 2)) AS low_precision;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+ low_precision 
+---------------
+          1.23
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_021 */
+-- Division by small numbers (precision test)
+SELECT 1.00 / 0.01 AS hundred;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+       hundred        
+----------------------
+ 100.0000000000000000
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_022 */
+SELECT 1.00 / 0.001 AS thousand;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+       thousand        
+-----------------------
+ 1000.0000000000000000
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_023 */
+SELECT 10.00 / 0.1 AS hundred_alt;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+     hundred_alt      
+----------------------
+ 100.0000000000000000
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_024 */
+-- Large number operations
+SELECT CAST(999999.99 AS DECIMAL(10, 2)) * CAST(0.01 AS DECIMAL(5, 2)) AS large_times_small;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+ large_times_small 
+-------------------
+         9999.9999
+(1 row)
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_32_decimal_maths_025 */
+SELECT CAST(999999.99 AS DECIMAL(10, 2)) / CAST(1000.00 AS DECIMAL(10, 2)) AS large_div_thousand;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 327 at Plan
+  large_div_thousand  
+----------------------
+ 999.9999900000000000
+(1 row)
+
+DROP TABLE test_decimal_maths;

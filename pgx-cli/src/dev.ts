@@ -263,7 +263,7 @@ async function runTpchTests(runner: CommandRunner, output: OperationOutput, conf
     "chmod -R o+rX /workspace",
     "chown -R postgres:postgres /workspace/build-artifacts/ptest",
     "pg_regress_bin=\"$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress\"",
-    "(su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests --outputdir=/workspace/build-artifacts/ptest/extension --load-extension=pgx_lower 36_tpch_minimal 37_tpch_minimal_2 38_tpch_minimal_3 39_tpch_minimal 40_tpch_not_lowered init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out; true)"
+    "(su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests/tpch --outputdir=/workspace/build-artifacts/ptest/extension/tpch --load-extension=pgx_lower init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out; true)"
   ].join(" && ");
   const result = await runRemoteShellResult(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
   return evaluateRemotePgRegressResult(result, output, config);

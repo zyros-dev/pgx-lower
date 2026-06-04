@@ -50,6 +50,10 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/runtime/DateRuntime.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql
+        REGRESS_INPUTDIR
+            ${CMAKE_SOURCE_DIR}/tests/pgx-regression
+        REGRESS_OUTPUTDIR
+            ${CMAKE_CURRENT_BINARY_DIR}/pgx-regression
         REGRESS
             1_one_tuple
             2_two_tuples
@@ -96,10 +100,23 @@ if(NOT BUILDING_UNIT_TESTS)
             43_decode_at_scan
             44_numeric_correctness
             45_route_notices
-            init_tpch
-            tpch_no_lower
-            tpch
 )
+
+if(PG_REGRESS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tpch)
+    add_test(
+        NAME pgx_lower_tpch_regress
+        COMMAND ${PG_REGRESS}
+                --bindir=${_pg_bindir}
+                --dlpath=${PostgreSQL_PACKAGE_LIBRARY_DIR}
+                --inputdir=${CMAKE_SOURCE_DIR}/tests/tpch
+                --outputdir=${CMAKE_CURRENT_BINARY_DIR}/tpch
+                --load-extension=pgx_lower
+                init_tpch
+                tpch_no_lower
+                tpch
+    )
+endif()
 
 target_link_libraries(pgx_lower PRIVATE
     -Wl,--no-as-needed

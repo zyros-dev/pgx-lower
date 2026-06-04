@@ -1,0 +1,40 @@
+LOAD
+'pgx_lower.so';
+
+DROP TABLE IF EXISTS test_logical;
+
+CREATE TABLE test_logical
+(
+    id    SERIAL PRIMARY KEY,
+    flag1 BOOLEAN,
+    flag2 BOOLEAN,
+    value INTEGER
+);
+
+INSERT INTO test_logical(flag1, flag2, value)
+VALUES (true, false, 10),
+       (false, true, 20),
+       (true, true, 30),
+       (false, false, 40),
+       (true, false, 50);
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_11_logical_ops_001 */
+SELECT (flag1 AND flag2) AS and_result
+FROM test_logical;
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_11_logical_ops_002 */
+SELECT (flag1 OR flag2) AS or_result
+FROM test_logical;
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_11_logical_ops_003 */
+SELECT (NOT flag1) AS not_flag1
+FROM test_logical;
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_11_logical_ops_004 */
+SELECT (NOT flag2) AS not_flag2
+FROM test_logical;
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_11_logical_ops_005 */
+SELECT (flag1 AND flag2 AND value > 25) AS complex_and
+FROM test_logical;
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_11_logical_ops_006 */
+SELECT (flag1 OR flag2 OR value < 15) AS complex_or
+FROM test_logical;
+
+DROP TABLE test_logical;
