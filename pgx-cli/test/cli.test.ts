@@ -192,12 +192,16 @@ describe("runCli", () => {
     expect(exitCode).toBe(0);
     expect(io.stdout).toContain("Usage: pgx-cli");
     expect(io.stdout).toContain("config set-project <project-path>");
+    expect(io.stdout).toContain("pgx-cli config validate");
+    expect(io.stdout).toContain("pgx-cli config show --profile <name>");
+    expect(io.stdout).toContain("pgx-cli config show --sources");
     expect(io.stdout).toContain("setup install");
     expect(io.stdout).toContain("setup doctor");
     expect(io.stdout).toContain("pgx-cli dev status");
     expect(io.stdout).toContain("pgx-cli dev lint diff");
     expect(io.stdout).toContain("pgx-cli dev gate batch");
     expect(io.stdout).toContain("pgx-cli dev gate review");
+    expect(io.stdout).toContain("pgx-cli dev build explain --profile <name>");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");
