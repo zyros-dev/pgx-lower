@@ -57,10 +57,10 @@ template<typename T>
 using OptRefT = std::optional<std::reference_wrapper<T>>;
 
 struct ColumnInfo {
-    std::string name;
-    unsigned int type_oid;
-    int32_t typmod;
-    bool nullable;
+    std::string name{};
+    unsigned int type_oid{};
+    int32_t typmod{};
+    bool nullable{};
 
     ColumnInfo(std::string n, const unsigned int T, const int32_t TYPEMOD, const bool nullable)
     : name(std::move(n))
@@ -73,12 +73,12 @@ struct TranslationResult {
     mlir::Operation* op = nullptr;
 
     struct ColumnSchema {
-        std::string table_name;
-        std::string column_name;
-        Oid type_oid;
-        int32_t typmod;
+        std::string table_name{};
+        std::string column_name{};
+        Oid type_oid{};
+        int32_t typmod{};
         mlir::Type mlir_type;
-        bool nullable;
+        bool nullable{};
         [[nodiscard]] auto toString() const -> std::string {
             return "ColumnSchema(table='" + table_name + "', column='" + column_name
                    + "', oid=" + std::to_string(type_oid) + ", typmod=" + std::to_string(typmod)
@@ -87,8 +87,8 @@ struct TranslationResult {
     };
 
     std::vector<ColumnSchema> columns;
-    std::string current_scope;
-    size_t left_child_column_count = 0;
+    std::string current_scope{};
+    size_t left_child_column_count{};
 
     [[nodiscard]] auto toString() const -> std::string {
         std::string result = "TranslationResult(op=" + (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null")
@@ -103,19 +103,19 @@ struct TranslationResult {
 };
 
 struct SubqueryInfo {
-    std::string join_scope;
-    std::string join_column_name;
+    std::string join_scope{};
+    std::string join_column_name{};
     mlir::Type output_type;
 
     SubqueryInfo() = default;
 };
 
 struct ResolvedParam {
-    std::string table_name;
-    std::string column_name;
-    Oid type_oid;
-    int32 typmod;
-    bool nullable;
+    std::string table_name{};
+    std::string column_name{};
+    Oid type_oid{};
+    int32 typmod{};
+    bool nullable{};
     mlir::Type mlir_type;
     std::optional<mlir::Value> cached_value;
 };
@@ -222,8 +222,8 @@ inline int TranslationContext::outer_join_counter = 0;
 struct StreamExpressionResult {
     mlir::Value stream;
     mlir::relalg::ColumnRefAttr column_ref;
-    std::string column_name;
-    std::string table_name;
+    std::string column_name{};
+    std::string table_name{};
 };
 
 } // namespace pgx_lower::frontend::sql

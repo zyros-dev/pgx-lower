@@ -252,7 +252,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
     return caps;
 }
 
-auto QueryAnalyzer::analyzeSeqScan(const SeqScan* /*seqScan*/, QueryCapabilities& caps) -> void {
+auto QueryAnalyzer::analyzeSeqScan(const SeqScan*, QueryCapabilities& caps) -> void {
     caps.requiresSeqScan = true;
 }
 
@@ -262,7 +262,7 @@ auto QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) -> 
     }
 }
 
-auto QueryAnalyzer::analyzeProjection(const Plan* /*plan*/, QueryCapabilities& /*caps*/) -> void {}
+auto QueryAnalyzer::analyzeProjection(const Plan*, QueryCapabilities&) -> void {}
 
 auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> void {
     if (!plan || !plan->targetlist) {

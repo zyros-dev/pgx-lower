@@ -50,7 +50,7 @@ PGX_TEST_FN(pipeline_mapop_print) {
     );
     (void) mapOp;
 
-    std::string output;
+    std::string output{};
     llvm::raw_string_ostream stream(output);
     module.print(stream);
     stream.flush();

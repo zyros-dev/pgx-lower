@@ -198,7 +198,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
 }
 
 void JITEngine::setup_llvm_target() {
-    static bool initialized = false;
+    static bool initialized{};
     if (!initialized) {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
@@ -232,8 +232,8 @@ JITEngine::create_mlir_to_llvm_translator() {
 
         auto module = mlir::cast<mlir::ModuleOp>(op);
 
-        size_t input_ops_count = 0;
-        module.walk([&](mlir::Operation* /*operation*/) { input_ops_count++; });
+        size_t input_ops_count{};
+        module.walk([&](mlir::Operation*) { input_ops_count++; });
 
         PGX_LOG(JIT, IO, "MLIR→LLVM IN: Standard MLIR Module with %zu operations", input_ops_count);
 
@@ -245,7 +245,7 @@ JITEngine::create_mlir_to_llvm_translator() {
         }
 
 #ifndef PGX_RELEASE_MODE
-        std::string verify_error;
+        std::string verify_error{};
         llvm::raw_string_ostream verify_stream(verify_error);
         if (llvm::verifyModule(*llvm_module, &verify_stream)) {
             verify_stream.flush();
@@ -264,7 +264,7 @@ JITEngine::create_mlir_to_llvm_translator() {
         }
 
         const size_t output_func_count = llvm_module->size();
-        size_t output_inst_count = 0;
+        size_t output_inst_count{};
         for (const auto& func : *llvm_module) {
             for (const auto& bb : func) {
                 output_inst_count += bb.size();
@@ -291,9 +291,9 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
 
         try {
             // Install LLVM fatal error handler
-            static bool handler_installed = false;
+            static bool handler_installed{};
             if (!handler_installed) {
-                llvm::install_fatal_error_handler([](void* /*user_data*/, const char* reason, bool gen_crash_diag) {
+                llvm::install_fatal_error_handler([](void*, const char* reason, bool gen_crash_diag) {
                     PGX_ERROR("LLVM FATAL ERROR: %s (gen_crash_diag=%d)", reason, gen_crash_diag);
                 });
                 handler_installed = true;
@@ -306,7 +306,7 @@ std::function<llvm::Error(llvm::Module*)> JITEngine::create_llvm_optimizer() con
                 module->setTargetTriple(triple);
             }
 
-            std::string error;
+            std::string error{};
             const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, error);
             if (target) {
                 llvm::TargetOptions target_options;
@@ -450,7 +450,7 @@ bool JITEngine::compile_to_shared_library(const std::string& obj_path, const std
     }
 
     std::array<char, 256> buffer{};
-    std::string result;
+    std::string result{};
     while (std::feof(pipe) == 0) {
         const auto bytes = std::fread(buffer.data(), 1, buffer.size(), pipe);
         result.append(buffer.data(), bytes);

@@ -124,10 +124,10 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
 
-    std::string tableName;
-    std::string colName;
-    bool nullable = false;
-    bool resolved_from_mapping = false;
+    std::string tableName{};
+    std::string colName{};
+    bool nullable{};
+    bool resolved_from_mapping{};
 
     std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
     std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)
@@ -231,10 +231,10 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_aggref: Looking for Aggref with function %s (OID %u, aggno=%d, aggtype=%d)",
             funcName.c_str(), aggref->aggfnoid, aggref->aggno, aggref->aggtype);
 
-    std::string scopeName;
-    std::string columnName;
+    std::string scopeName{};
+    std::string columnName{};
 
-    bool found = false;
+    bool found{};
     if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {
         scopeName = resolved->table_name;
         columnName = resolved->column_name;

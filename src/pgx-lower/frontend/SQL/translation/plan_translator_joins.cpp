@@ -262,7 +262,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
                 auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn)
                                                                          : std::nullopt;
 
-                bool resolved = false;
+                bool resolved{};
                 if (auto resolved_var = rightCtx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt,
                                                              varattnosyn_opt))
                 {
@@ -392,7 +392,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         const auto basePredicateCtx = QueryCtxT::createChildContext(queryCtx, predicateBuilder, tupleArg);
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc = nullptr;
-        int clauseIdx = 0;
+        int clauseIdx{};
         foreach (lc, clauses) {
             const auto clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Processing clause %d of type %d", ++clauseIdx,
@@ -526,7 +526,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
             struct OuterJoinResult {
                 mlir::Operation* op;
-                std::string scope;
+                std::string scope{};
             };
 
             return OuterJoinResult{outerJoinOp, outerJoinScope};
@@ -553,7 +553,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         const auto& basePredicateCtx = predicateCtx;
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc = nullptr;
-        int clauseIdx = 0;
+        int clauseIdx{};
         foreach (lc, join_clauses_) {
             const auto clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing clause %d", ++clauseIdx);
@@ -719,7 +719,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         }
 
         result.current_scope = scope;
-        for (int i = 0; i < result.columns.size(); ++i) {
+        for (int i{}; i < result.columns.size(); ++i) {
             const auto& col = result.columns[i];
             std::pair<int, int> make_pair = std::make_pair<int, int>(OUTER_VAR, i + 1);
             ctx.varno_resolution[make_pair] = std::make_pair(col.table_name, col.column_name);

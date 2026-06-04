@@ -78,8 +78,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     if (nodeTag(expr) == T_Var) {
         const auto var = reinterpret_cast<Var*>(expr);
 
-        std::string tableName;
-        std::string columnName;
+        std::string tableName{};
+        std::string columnName{};
 
         // Both OUTER_VAR (-2) and regular vars should use child output positions
         if (var->varattno > 0 && var->varattno <= static_cast<int>(child_columns.size())) {
@@ -106,7 +106,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
 
     // Temp map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     PGX_LOG(AST_TRANSLATE, DEBUG, "Creating MapOp for complex expression (type=%d)", expr->type);
-    static size_t exprId = 0;
+    static size_t exprId{};
     const std::string scopeName = "map_expr";
     const std::string columnName = suggested_name.empty() ? "expr_" + std::to_string(exprId++) : suggested_name;
 
@@ -298,7 +298,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         // args[0] is the field to extract (e.g., 'year', 'month', 'day')
         // args[1] is the date/timestamp value
         mlir::Type resultType = ctx.builder.getI64Type();
-        bool hasNullableOperand = false;
+        bool hasNullableOperand{};
         for (const auto& arg : args) {
             if (isa<mlir::db::NullableType>(arg.getType())) {
                 hasNullableOperand = true;
@@ -320,7 +320,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating EXTRACT function to ExtractFromDate runtime call");
         mlir::Type resultType = ctx.builder.getI64Type();
-        bool hasNullableOperand = false;
+        bool hasNullableOperand{};
         for (const auto& arg : args) {
             if (isa<mlir::db::NullableType>(arg.getType())) {
                 hasNullableOperand = true;
@@ -343,7 +343,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast");
 
         int precision = 38;
-        int scale = 0;
+        int scale{};
 
         // PostgreSQL passes typmod as second argument which encodes (precision, scale)
         // The typmod encoding is: ((precision - 1) << 16) | (scale + VARHDRSZ)
@@ -437,26 +437,26 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         auto* subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
 
         struct CorrelationInfo {
-            std::string table_scope;
-            std::string column_name;
-            bool nullable = false;
-            Oid type_oid = InvalidOid;
-            int32 typmod = -1;
+            std::string table_scope{};
+            std::string column_name{};
+            bool nullable{};
+            Oid type_oid{InvalidOid};
+            int32 typmod{-1};
         };
         std::unordered_map<int, CorrelationInfo> correlation_mapping;
         if (subplan->parParam && subplan->args) {
             int num_params = list_length(subplan->parParam);
-            for (int i = 0; i < num_params; i++) {
+            for (int i{}; i < num_params; i++) {
                 int param_id = lfirst_int(list_nth_cell(subplan->parParam, i));
                 auto* arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
 
                 if (arg_expr && nodeTag(arg_expr) == T_Var) {
                     auto* var = reinterpret_cast<Var*>(arg_expr);
-                    std::string table_scope;
-                    std::string column_name;
-                    bool nullable = false;
-                    Oid type_oid = var->vartype;
-                    int32 typmod = var->vartypmod;
+                    std::string table_scope{};
+                    std::string column_name{};
+                    bool nullable{};
+                    Oid type_oid{var->vartype};
+                    int32 typmod{var->vartypmod};
 
                     if (IS_SPECIAL_VARNO(var->varno)) {
                         auto varnosyn_opt = std::optional<int>(var->varnosyn);
@@ -622,7 +622,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                 PGX_LOG(AST_TRANSLATE, DEBUG, "%s: Mapping %d paramIds to subquery columns",
                         negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK", num_params);
 
-                for (int i = 0; i < num_params; ++i) {
+                for (int i{}; i < num_params; ++i) {
                     const int param_id = lfirst_int(list_nth_cell(subplan->paramIds, i));
 
                     if (i < static_cast<int>(subquery_result.columns.size())) {
@@ -686,7 +686,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan,
-                                                            const PlannedStmt* /*parent_stmt*/)
+                                                            const PlannedStmt*)
     -> std::pair<mlir::Value, TranslationResult> {
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_subquery_plan: Starting subquery translation");
     auto subquery_ctx = QueryCtxT::createChildContext(parent_ctx, parent_ctx.builder, mlir::Value());

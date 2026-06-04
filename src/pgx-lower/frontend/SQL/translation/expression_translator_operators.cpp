@@ -187,7 +187,7 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
     mlir::Value lhs;
     mlir::Value rhs;
 
-    for (int argIndex = 0; argIndex < op_expr->args->length && argIndex < 2; argIndex++) {
+    for (int argIndex{}; argIndex < op_expr->args->length && argIndex < 2; argIndex++) {
         const ListCell* lc = &op_expr->args->elements[argIndex];
         if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
             if (const mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
@@ -600,7 +600,7 @@ auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> v
 
     PGX_LOG(AST_TRANSLATE, TRACE, "finished verification - now printing.");
     try {
-        std::string valueStr;
+        std::string valueStr{};
         llvm::raw_string_ostream stream(valueStr);
         val.print(stream);
         stream.flush();
@@ -618,7 +618,7 @@ auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> v
 }
 
 auto PostgreSQLASTTranslator::Impl::print_type(const mlir::Type val) -> void {
-    std::string valueStr;
+    std::string valueStr{};
     llvm::raw_string_ostream stream(valueStr);
     val.print(stream);
     stream.flush();

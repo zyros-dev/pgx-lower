@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cctype>
 #include <cmath>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -59,15 +60,15 @@ void* rt_get_execution_context() {
         return g_execution_context;
     }
     static struct {
-        void* table_ref;
-        int64_t row_count;
+        void* table_ref{};
+        int64_t row_count{};
     } dummy_context = {nullptr, 1};
 
     return &dummy_context;
 }
 
 enum class ColumnType {
-    UNKNOWN,
+    INVALID,
     SMALLINT, // INT2OID (16-bit)
     INTEGER, // INT4OID (32-bit)
     BIGINT, // INT8OID (64-bit)
@@ -84,8 +85,8 @@ enum class ColumnType {
 };
 
 struct ColumnSpec {
-    std::string name;
-    ColumnType type = ColumnType::UNKNOWN;
+    std::string name{};
+    ColumnType type{ColumnType::INVALID};
 };
 
 // Per-column decode metadata cached at iterator-start time so the per-row hot
@@ -100,53 +101,53 @@ enum class DecodeKind : uint8_t {
 };
 
 struct ColumnDecodeMeta {
-    DecodeKind kind;
-    bool attbyval;
-    int16 attlen;
+    DecodeKind kind{};
+    bool attbyval{};
+    int16 attlen{};
 };
 
 struct BatchStorage {
-    MemoryContext batchContext;
-    TupleDesc tupleDesc;
+    MemoryContext batchContext{};
+    TupleDesc tupleDesc{};
 
-    size_t capacity;
-    size_t num_rows;
+    size_t capacity{};
+    size_t num_rows{};
 
-    Datum** column_values;
-    bool** column_nulls;
+    Datum** column_values{};
+    bool** column_nulls{};
 
     // Lingodb designed its string lookups to do this... so either we can make our storage work like this,
     // or we can edit the LLVM commands. Unfortunately, I opted to be lazy.
-    int32_t** string_lengths;
-    uint8_t*** string_data_ptrs;
+    int32_t** string_lengths{};
+    uint8_t*** string_data_ptrs{};
 
-    ::runtime::NumericDatumCarrier** numeric_values;
+    ::runtime::NumericDatumCarrier** numeric_values{};
 };
 
 struct DataSourceIterator {
     void* context = nullptr;
     void* table_handle = nullptr;
 
-    std::string table_name;
+    std::string table_name{};
     std::vector<ColumnSpec> columns;
     std::vector<int32_t> column_positions;
     std::vector<ColumnDecodeMeta> column_decode_meta;
 
     BatchStorage* batch = nullptr;
-    size_t current_row_in_batch = 0;
+    size_t current_row_in_batch{};
 
-    int32_t current_id = 0;
-    bool current_id_is_null = false;
-    int32_t current_col2 = 0;
-    bool current_col2_is_null = false;
-    int32_t current_value = 0;
-    bool current_is_null = false;
+    int32_t current_id{};
+    bool current_id_is_null{};
+    int32_t current_col2{};
+    bool current_col2_is_null{};
+    int32_t current_value{};
+    bool current_is_null{};
 };
 
 static DataSourceIterator* g_current_iterator = nullptr;
 
 struct TableSpec {
-    std::string table_name;
+    std::string table_name{};
     std::vector<std::string> column_names;
 };
 
@@ -210,7 +211,7 @@ TableBuilder::TableBuilder()
 , total_columns(0) {}
 
 // ReSharper disable once CppParameterNeverUsed
-TableBuilder* TableBuilder::create(VarLen32 /*schema_param*/) {
+TableBuilder* TableBuilder::create(VarLen32) {
     PGX_IO(RUNTIME);
 
     const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
@@ -230,7 +231,7 @@ TableBuilder* TableBuilder::create(VarLen32 /*schema_param*/) {
     return builder;
 }
 
-void TableBuilder::destroy(void* /*builder*/) {
+void TableBuilder::destroy(void*) {
     PGX_IO(RUNTIME);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
@@ -247,7 +248,7 @@ TableBuilder* TableBuilder::build() {
     PGX_LOG(RUNTIME, DEBUG, "\t- current_column_index: %d", current_column_index);
     if (g_computed_results.numComputedColumns > 0) {
         PGX_LOG(RUNTIME, DEBUG, "\t- computed columns: %d", g_computed_results.numComputedColumns);
-        for (int i = 0; i < g_computed_results.numComputedColumns && i < 10; i++) {
+        for (int i{}; i < g_computed_results.numComputedColumns && i < 10; i++) {
             PGX_LOG(RUNTIME, DEBUG, "\t\t- col[%d]: type=%d, null=%d", i, g_computed_results.computedTypes[i],
                     g_computed_results.computedNulls[i]);
         }
@@ -365,7 +366,7 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
         return false;
     }
 
-    bool json_parsed = false;
+    bool json_parsed{};
     PG_TRY();
     {
         std::string json_string(json_spec, actual_len);
@@ -414,12 +415,12 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
                     json_parsed = true;
                     iter->table_name = spec.table_name;
                 } else {
-                    for (size_t i = 0; i < spec.column_names.size(); ++i) {
+                    for (size_t i{}; i < spec.column_names.size(); ++i) {
                         ColumnSpec col_spec;
                         col_spec.name = spec.column_names[i];
 
-                        int32_t type_oid = 0;
-                        for (int32_t j = 0; j < total_columns; ++j) {
+                        int32_t type_oid{};
+                        for (int32_t j{}; j < total_columns; ++j) {
                             if (strcmp(metadata[j].name, col_spec.name.c_str()) == 0) {
                                 type_oid = metadata[j].type_oid;
                                 break;
@@ -484,8 +485,8 @@ static size_t calculate_batch_capacity(const TupleDesc tupleDesc) {
     extern int work_mem;
     const size_t work_mem_bytes = static_cast<size_t>(work_mem) * 1024L;
 
-    size_t bytes_per_row = 0;
-    for (int i = 0; i < tupleDesc->natts; i++) {
+    size_t bytes_per_row{};
+    for (int i{}; i < tupleDesc->natts; i++) {
         const Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
         if (attr->attlen > 0) {
             bytes_per_row += attr->attlen;
@@ -538,10 +539,10 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
     batch->numeric_values = static_cast<::runtime::NumericDatumCarrier**>(
         palloc(num_cols * sizeof(::runtime::NumericDatumCarrier*)));
 
-    for (size_t col = 0; col < num_cols; col++) {
+    for (size_t col{}; col < num_cols; col++) {
         batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
         batch->column_nulls[col] = static_cast<bool*>(palloc(capacity * sizeof(bool)));
-        memset(batch->column_nulls[col], 1, capacity * sizeof(bool));
+        std::fill_n(batch->column_nulls[col], capacity, true);
 
         batch->string_lengths[col] = static_cast<int32_t*>(palloc(capacity * sizeof(int32_t)));
         batch->string_data_ptrs[col] = static_cast<uint8_t**>(palloc(capacity * sizeof(uint8_t*)));
@@ -623,7 +624,7 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
     {
         const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
         iter->column_decode_meta.reserve(iter->columns.size());
-        for (size_t i = 0; i < iter->columns.size(); i++) {
+        for (size_t i{}; i < iter->columns.size(); i++) {
             ColumnDecodeMeta meta{};
             const int32_t pg_idx = iter->column_positions[i];
             if (pg_idx < 0 || !tupleDesc || pg_idx >= tupleDesc->natts) {
@@ -695,7 +696,7 @@ namespace {
         const ColumnDecodeMeta* metas = iter->column_decode_meta.data();
         const int32_t* positions = iter->column_positions.data();
 
-        for (size_t json_col_idx = 0; json_col_idx < num_cols; json_col_idx++) {
+        for (size_t json_col_idx{}; json_col_idx < num_cols; json_col_idx++) {
             const ColumnDecodeMeta& meta = metas[json_col_idx];
             const int pg_col_idx = positions[json_col_idx];
             const bool is_null = temp_nulls[pg_col_idx];
@@ -840,8 +841,8 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
     const auto row_data_ptr = reinterpret_cast<size_t*>(row_data);
     row_data_ptr[0] = 1;
 
-    for (size_t col = 0; col < num_columns; ++col) {
-        constexpr size_t COLUMN_OFFSET_IDX = 0;
+    for (size_t col{}; col < num_columns; ++col) {
+        constexpr size_t COLUMN_OFFSET_IDX{};
         constexpr size_t VALID_MULTIPLIER_IDX = 1;
         constexpr size_t VALID_BUFFER_IDX = 2;
         constexpr size_t DATA_BUFFER_IDX = 3;

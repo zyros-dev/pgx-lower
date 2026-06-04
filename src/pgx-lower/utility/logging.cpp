@@ -7,14 +7,14 @@
 
 namespace pgx_lower::log {
 
-bool log_enable = false;
+bool log_enable{};
 bool log_io = true;
-bool log_debug = false;
-bool log_ir = false;
-bool log_trace = false;
+bool log_debug{};
+bool log_ir{};
+bool log_trace{};
 std::set<Category> enabled_categories;
 
-static bool initialized = false;
+static bool initialized{};
 
 static void initialize_if_needed() {
     if (initialized) {
@@ -51,7 +51,7 @@ static void initialize_if_needed() {
     if (cat_env && strlen(cat_env) > 0) {
         std::string cats(cat_env);
         std::stringstream ss(cats);
-        std::string cat;
+        std::string cat{};
         while (std::getline(ss, cat, ',')) {
             cat.erase(0, cat.find_first_not_of(" \t"));
             cat.erase(cat.find_last_not_of(" \t") + 1);
@@ -181,7 +181,7 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 #endif
 }
 
-static thread_local int scope_logger_depth = 0;
+static thread_local int scope_logger_depth{};
 static constexpr int MAX_SCOPE_LOGGER_DEPTH = 3000;
 
 ScopeLogger::ScopeLogger(Category cat, const char* file, int line, const char* function_name)

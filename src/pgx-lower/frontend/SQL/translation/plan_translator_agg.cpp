@@ -179,7 +179,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     {
         if (agg->numCols > 0 && agg->grpColIdx) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Building GROUP BY from grpColIdx, numCols=%d", agg->numCols);
-            for (int i = 0; i < agg->numCols; i++) {
+            for (int i{}; i < agg->numCols; i++) {
                 int colIdx = agg->grpColIdx[i];
                 if (colIdx > 0 && colIdx <= static_cast<int>(childResult.columns.size())) {
                     const auto& childCol = childResult.columns[colIdx - 1];
@@ -210,7 +210,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         const auto& childCol = childResult.columns[var->varattno - 1];
 
                         // Skip if already added
-                        bool alreadyInGroup = false;
+                        bool alreadyInGroup{};
                         for (const auto& attr : groupByAttrs) {
                             if (auto existingColRef = mlir::dyn_cast<mlir::relalg::ColumnRefAttr>(attr)) {
                                 auto existingName = existingColRef.getName();
@@ -234,7 +234,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         }
     }
 
-    static size_t aggrId = 0;
+    static size_t aggrId{};
     auto aggrScopeName = "aggr" + std::to_string(aggrId++);
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
     if (!agg->plan.targetlist || agg->plan.targetlist->length <= 0) {
@@ -540,7 +540,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                       ? ctx.builder.getI64Type()
                                       : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
 
-                std::string resultColumnName;
+                std::string resultColumnName{};
                 if (aggregateMappings.contains(aggref->aggno)) {
                     const auto& mapping = aggregateMappings[aggref->aggno];
                     resultColumnName = mapping.second;
@@ -567,7 +567,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 auto* var = reinterpret_cast<Var*>(te->expr);
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     const auto& childCol = childResult.columns[var->varattno - 1];
-                    bool inGroupBy = false;
+                    bool inGroupBy{};
                     for (const auto& attr : groupByAttrs) {
                         if (auto colRef = mlir::dyn_cast<mlir::relalg::ColumnRefAttr>(attr)) {
                             auto name = colRef.getName();
@@ -590,8 +590,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));
                 auto exprMlirType = type_mapper.map_postgre_sqltype(exprTypeOid, -1, true);
 
-                std::string scopeName;
-                std::string columnName;
+                std::string scopeName{};
+                std::string columnName{};
 
                 if (needs_post_processing.contains(te->resno)) {
                     scopeName = finalScope;

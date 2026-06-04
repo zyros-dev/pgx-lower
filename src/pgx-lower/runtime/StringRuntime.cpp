@@ -140,7 +140,7 @@ bool runtime::StringRuntime::startsWith(runtime::VarLen32 str1, runtime::VarLen3
 
 // Helper function to trim leading and trailing spaces
 static void trim_string(const char* data, int32_t len, const char** trimmed_data, int32_t* trimmed_len) {
-    int32_t start = 0;
+    int32_t start{};
     int32_t end = len - 1;
     while (start <= end && data[start] == ' ') {
         ++start;
@@ -159,7 +159,7 @@ int64_t runtime::StringRuntime::toInt(runtime::VarLen32 str) {
    
    // Trim leading and trailing spaces
    const char* trimmed_data = nullptr;
-   int32_t trimmed_len = 0;
+   int32_t trimmed_len{};
    trim_string(data, len, &trimmed_data, &trimmed_len);
    
    // Create null-terminated string for strtoll
@@ -186,7 +186,7 @@ float runtime::StringRuntime::toFloat32(runtime::VarLen32 str) {
    
    // Trim leading and trailing spaces
    const char* trimmed_data = nullptr;
-   int32_t trimmed_len = 0;
+   int32_t trimmed_len{};
    trim_string(data, len, &trimmed_data, &trimmed_len);
    
    // Create null-terminated string for strtof
@@ -213,7 +213,7 @@ double runtime::StringRuntime::toFloat64(runtime::VarLen32 str) {
    
    // Trim leading and trailing spaces
    const char* trimmed_data = nullptr;
-   int32_t trimmed_len = 0;
+   int32_t trimmed_len{};
    trim_string(data, len, &trimmed_data, &trimmed_len);
    
    // Create null-terminated string for strtod
@@ -316,9 +316,16 @@ bool runtime::StringRuntime::compareNEq(runtime::VarLen32 str1, runtime::VarLen3
    if (str1.getLen() != str2.getLen()) return true;
    return std::string_view(str1.data(), str1.getLen()) != std::string_view(str2.data(), str2.getLen());
 }
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
+#endif
 EXPORT runtime::VarLen32 rt_varlen_from_ptr(uint8_t* ptr, uint32_t len) {
     return runtime::VarLen32(ptr, len);
 }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 EXPORT char* rt_varlen_to_ref(runtime::VarLen32* varlen) {
    return varlen->data();
@@ -356,8 +363,8 @@ runtime::VarLen32 runtime::StringRuntime::concat(runtime::VarLen32 left, runtime
 runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::VarLen32 b, runtime::VarLen32 c) {
    uint32_t totalLen = a.getLen() + b.getLen() + c.getLen();
    uint8_t* result = pgx_alloc(totalLen);
-   
-   uint32_t offset = 0;
+
+   uint32_t offset{};
    memcpy(result + offset, a.getPtr(), a.getLen());
    offset += a.getLen();
    memcpy(result + offset, b.getPtr(), b.getLen());
@@ -371,10 +378,10 @@ runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::
 runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
    uint32_t len = str.getLen();
    uint8_t* result = pgx_alloc(len);
-   
-   for (uint32_t i = 0; i < len; i++) {
-      char ch = static_cast<char>(str.getPtr()[i]);
-      result[i] = static_cast<uint8_t>(std::toupper(ch));
+
+   for (uint32_t i{}; i < len; i++) {
+       char ch = static_cast<char>(str.getPtr()[i]);
+       result[i] = static_cast<uint8_t>(std::toupper(ch));
    }
 
    return runtime::VarLen32(result, len);
@@ -383,10 +390,10 @@ runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
 runtime::VarLen32 runtime::StringRuntime::lower(runtime::VarLen32 str) {
    uint32_t len = str.getLen();
    uint8_t* result = pgx_alloc(len);
-   
-   for (uint32_t i = 0; i < len; i++) {
-      char ch = static_cast<char>(str.getPtr()[i]);
-      result[i] = static_cast<uint8_t>(std::tolower(ch));
+
+   for (uint32_t i{}; i < len; i++) {
+       char ch = static_cast<char>(str.getPtr()[i]);
+       result[i] = static_cast<uint8_t>(std::tolower(ch));
    }
 
    return runtime::VarLen32(result, len);
@@ -435,7 +442,7 @@ runtime::VarLen32 runtime::StringRuntime::trim(runtime::VarLen32 str) {
    int32_t len = str.getLen();
    
    // Find first non-space
-   int32_t start = 0;
+   int32_t start{};
    while (start < len && data[start] == ' ') {
       start++;
    }
@@ -462,7 +469,7 @@ runtime::VarLen32 runtime::StringRuntime::ltrim(runtime::VarLen32 str) {
    int32_t len = str.getLen();
    
    // Find first non-space
-   int32_t start = 0;
+   int32_t start{};
    while (start < len && data[start] == ' ') {
       start++;
    }

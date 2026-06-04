@@ -19,7 +19,7 @@ extern "C" {
 #undef restrict
 #endif
 
-bool g_extension_after_load = false;
+bool g_extension_after_load{};
 
 #ifdef gettext
 #undef gettext
@@ -73,7 +73,7 @@ class StderrToLogRedirector {
 
         reader_thread = std::thread([this]() {
             char buffer[4096];
-            std::string line_buffer;
+            std::string line_buffer{};
 
             while (!should_stop) {
                 ssize_t count = read(pipe_fds[0], buffer, sizeof(buffer) - 1);
@@ -84,7 +84,7 @@ class StderrToLogRedirector {
                 buffer[count] = '\0';
                 line_buffer += buffer;
 
-                size_t pos = 0;
+                size_t pos{};
                 while ((pos = line_buffer.find('\n')) != std::string::npos) {
                     std::string line = line_buffer.substr(0, pos);
                     if (!line.empty()) {
@@ -135,7 +135,7 @@ static void log_cpp_backtrace() {
     if (char** strings = backtrace_symbols(array, size)) {
         std::ostringstream oss;
         oss << "C++ backtrace:" << '\n';
-        for (size_t i = 0; i < size; ++i) {
+        for (size_t i{}; i < size; ++i) {
             oss << strings[i] << '\n';
         }
         PGX_LOG(GENERAL, DEBUG, "%s", oss.str().c_str());
@@ -171,7 +171,7 @@ Datum log_cpp_notice(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-bool execute_mlir_text(const char* mlir_text, void* /*dest_receiver*/) {
+bool execute_mlir_text(const char* mlir_text, void*) {
     try {
         mlir::MLIRContext context;
         if (!mlir_runner::setupMLIRContextForJIT(context)) {
@@ -193,8 +193,8 @@ bool execute_mlir_text(const char* mlir_text, void* /*dest_receiver*/) {
             return false;
         }
 
-        static int dummy_estate = 0;
-        static int dummy_dest = 0;
+        static int dummy_estate{};
+        static int dummy_dest{};
 
         if (!mlir_runner::executeJITWithDestReceiver(module, (EState*)&dummy_estate, (DestReceiver*)&dummy_dest)) {
             PGX_ERROR("JIT execution failed");

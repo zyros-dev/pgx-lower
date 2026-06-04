@@ -23,7 +23,7 @@ static inline int64_t postgresTimestampToNanos(Timestamp ts) {
     return micros * 1000;
 }
 
-int64_t runtime::DateRuntime::subtractMonths(int64_t /*date*/, int64_t /*months*/) {
+int64_t runtime::DateRuntime::subtractMonths(int64_t, int64_t) {
     ereport(ERROR,
             (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
              errmsg("date interval month arithmetic not yet implemented"),
@@ -31,7 +31,7 @@ int64_t runtime::DateRuntime::subtractMonths(int64_t /*date*/, int64_t /*months*
     return 0;
 }
 
-int64_t runtime::DateRuntime::addMonths(int64_t /*date*/, int64_t /*months*/) {
+int64_t runtime::DateRuntime::addMonths(int64_t, int64_t) {
     ereport(ERROR,
             (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
              errmsg("date interval month arithmetic not yet implemented"),
@@ -42,15 +42,15 @@ int64_t runtime::DateRuntime::addMonths(int64_t /*date*/, int64_t /*months*/) {
 int64_t runtime::DateRuntime::extractYear(int64_t nanos) {
     PGX_LOG(RUNTIME, DEBUG, "extractYear called with nanos=%ld", nanos);
 
-    DateADT pg_date = nanosToPostgresDate(nanos);
+    DateADT pg_date{nanosToPostgresDate(nanos)};
     PGX_LOG(RUNTIME, DEBUG, "converted to pg_date=%d", pg_date);
 
-    int jd = pg_date + POSTGRES_EPOCH_JDATE;
+    int jd{pg_date + POSTGRES_EPOCH_JDATE};
     PGX_LOG(RUNTIME, DEBUG, "julian date=%d", jd);
 
-    int year;
-    int month;
-    int day;
+    int year{};
+    int month{};
+    int day{};
     j2date(jd, &year, &month, &day);
 
     PGX_LOG(RUNTIME, DEBUG, "extracted year=%d", year);
@@ -59,24 +59,24 @@ int64_t runtime::DateRuntime::extractYear(int64_t nanos) {
 }
 
 int64_t runtime::DateRuntime::extractMonth(int64_t nanos) {
-    DateADT pg_date = nanosToPostgresDate(nanos);
+    DateADT pg_date{nanosToPostgresDate(nanos)};
 
-    int jd = pg_date + POSTGRES_EPOCH_JDATE;
-    int year;
-    int month;
-    int day;
+    int jd{pg_date + POSTGRES_EPOCH_JDATE};
+    int year{};
+    int month{};
+    int day{};
     j2date(jd, &year, &month, &day);
 
     return month;
 }
 
 int64_t runtime::DateRuntime::extractDay(int64_t nanos) {
-    DateADT pg_date = nanosToPostgresDate(nanos);
+    DateADT pg_date{nanosToPostgresDate(nanos)};
 
-    int jd = pg_date + POSTGRES_EPOCH_JDATE;
-    int year;
-    int month;
-    int day;
+    int jd{pg_date + POSTGRES_EPOCH_JDATE};
+    int year{};
+    int month{};
+    int day{};
     j2date(jd, &year, &month, &day);
 
     return day;

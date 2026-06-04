@@ -252,7 +252,7 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
         throw std::runtime_error("Invalid - read logs");
     }
 
-    for (int i = 0; i < tupleDesc->natts; i++) {
+    for (int i{}; i < tupleDesc->natts; i++) {
         const Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
         if (attr->attisdropped) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Skipping attr");

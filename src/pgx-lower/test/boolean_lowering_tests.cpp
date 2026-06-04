@@ -49,7 +49,7 @@ struct Fixture {
     }
 
     std::string asString() {
-        std::string s;
+        std::string s{};
         llvm::raw_string_ostream os(s);
         module.print(os);
         return s;

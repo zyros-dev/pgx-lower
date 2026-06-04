@@ -80,7 +80,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 
     switch (bool_expr->boolop) {
     case AND_EXPR: {
-        mlir::Value result = nullptr;
+        mlir::Value result{nullptr};
 
         if (bool_expr->args && bool_expr->args->length > 0) {
             if (!bool_expr->args->elements) {
@@ -115,7 +115,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     }
 
     case OR_EXPR: {
-        mlir::Value result = nullptr;
+        mlir::Value result{nullptr};
 
         if (bool_expr->args && bool_expr->args->length > 0) {
             if (!bool_expr->args->elements) {
@@ -150,7 +150,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     }
 
     case NOT_EXPR: {
-        mlir::Value argVal = nullptr;
+        mlir::Value argVal{nullptr};
 
         if (bool_expr->args && bool_expr->args->length > 0) {
             if (const ListCell* lc = list_head(bool_expr->args)) {
@@ -241,7 +241,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
         throw std::runtime_error("All COALESCE arguments failed to translate");
     }
 
-    mlir::Type baseType = nullptr;
+    mlir::Type baseType{nullptr};
     for (const auto& arg : translatedArgs) {
         const auto argType = arg.getType();
         if (auto nullableType = dyn_cast<mlir::db::NullableType>(argType)) {
@@ -337,7 +337,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
 
     Oid leftTypeOid = exprType(leftNode);
     int32 leftTypeMod = exprTypmod(leftNode);
-    int bpcharLength = -1;
+    int bpcharLength{-1};
     if (leftTypeOid == BPCHAROID && leftTypeMod >= VARHDRSZ) {
         bpcharLength = leftTypeMod - VARHDRSZ;
         PGX_LOG(AST_TRANSLATE, DEBUG, "Left operand is BPCHAR with length=%d", bpcharLength);
@@ -362,13 +362,13 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     } else if (nodeTag(rightNode) == T_Const) {
         if (const auto constNode = reinterpret_cast<Const*>(rightNode); constNode->consttype == INT4ARRAYOID) {
             const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems = 0;
+            int nitems{};
             Datum* values = nullptr;
             bool* nulls = nullptr;
 
             deconstruct_array(array, INT4OID, sizeof(int32), true, TYPALIGN_INT, &values, &nulls, &nitems);
 
-            for (int i = 0; i < nitems; i++) {
+            for (int i{}; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
                     int32 intValue = DatumGetInt32(values[i]);
                     auto elemValue = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
@@ -378,13 +378,13 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             }
         } else if (constNode->consttype == PG_TEXT_ARRAY_OID) {
             const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems = 0;
+            int nitems{};
             Datum* values = nullptr;
             bool* nulls = nullptr;
 
             deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
-            for (int i = 0; i < nitems; i++) {
+            for (int i{}; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
                     const auto textValue = DatumGetTextP(values[i]);
                     std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
@@ -399,13 +399,13 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             PGX_LOG(AST_TRANSLATE, DEBUG, "Processing BPCHAR array (CHAR/VARCHAR), target column length=%d",
                     bpcharLength);
             const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems = 0;
+            int nitems{};
             Datum* values = nullptr;
             bool* nulls = nullptr;
 
             deconstruct_array(array, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
-            for (int i = 0; i < nitems; i++) {
+            for (int i{}; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
                     const auto bpcharValue = DatumGetBpCharP(values[i]);
                     std::string str_value(VARDATA_ANY(bpcharValue), VARSIZE_ANY_EXHDR(bpcharValue));
@@ -565,7 +565,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     PGX_LOG(AST_TRANSLATE, DEBUG, "Using comparison loop for operator '%s' with useOr=%d", op.c_str(),
             scalar_array_op->useOr);
 
-    mlir::Value result = nullptr;
+    mlir::Value result{nullptr};
     for (auto elemValue : arrayElements) {
         auto normalizedLeft = leftValue;
         auto normalizedElem = elemValue;
@@ -584,7 +584,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             PGX_LOG(AST_TRANSLATE, DEBUG, "String comparison in array operation - BPCHAR normalization may apply");
         }
 
-        mlir::Value cmp = nullptr;
+        mlir::Value cmp{nullptr};
 
         if (op == "=") {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
@@ -629,7 +629,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 
     // 1. Simple:   CASE expr WHEN val1 THEN result1 WHEN val2 THEN result2 ELSE default END
     // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
-    mlir::Value caseArg = nullptr;
+    mlir::Value caseArg{nullptr};
     if (case_expr->arg) {
         caseArg = translate_expression(ctx, case_expr->arg);
         if (!caseArg) {
@@ -642,7 +642,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     }
 
     // Build nested if-then-else structure from WHEN clauses
-    mlir::Value elseResult = nullptr;
+    mlir::Value elseResult{nullptr};
     if (case_expr->defresult) {
         elseResult = translate_expression(ctx, case_expr->defresult);
         if (!elseResult) {
@@ -667,7 +667,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 
             const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
 
-            mlir::Value condition = nullptr;
+            mlir::Value condition{nullptr};
             if (caseArg) {
                 const mlir::Value whenCondition = translate_expression_with_case_test(ctx, whenClause->expr, caseArg);
                 if (!whenCondition) {
