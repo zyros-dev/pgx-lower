@@ -101,6 +101,7 @@ describe("dev commands", () => {
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(runner.calls.some((call) => call.command === command && call.args.join(" ").includes(marker))).toBe(true);
+    expect(runner.calls.some((call) => call.command === "python3")).toBe(false);
     expect(commands).not.toContain("scripts/run_lint.sh");
     expect(commands).not.toContain("just");
   });
