@@ -27,7 +27,7 @@ describe("repo tooling audit", () => {
     writeFileSync(join(root, "docker/dev/Dockerfile"), "FROM scratch\n");
     writeFileSync(join(root, "docker/docker-compose.yml"), "services: {}\n");
     writeFileSync(join(root, "pgx-cli.yaml"), "project: {}\n");
-    writeExecutable(join(root, "tools/clion/container-clang"));
+    writeExecutable(join(root, "pgx-cli/clion-wrappers/container-clang"));
     writeExecutable(join(root, "pgx-cli/dist/index.js"));
 
     expect(auditToolSurface(root)).toEqual([]);
@@ -35,9 +35,9 @@ describe("repo tooling audit", () => {
 
   test("reports loose helper scripts", () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-audit-"));
-    writeExecutable(join(root, "tools/random.sh"));
+    writeExecutable(join(root, "scratch/random.sh"));
 
-    expect(auditToolSurface(root)).toEqual(["tools/random.sh"]);
+    expect(auditToolSurface(root)).toEqual(["scratch/random.sh"]);
   });
 
   test("repo audit-tools returns non-zero with unexpected files", async () => {

@@ -13,10 +13,10 @@ const allowedExact = new Set([
   ".githooks/pre-push",
   "docker/docker-compose.yml",
   "pgx-cli.yaml",
+  "pgx-cli/clion-wrappers/container-clang",
+  "pgx-cli/clion-wrappers/container-clang++",
+  "pgx-cli/clion-wrappers/container-compiler",
   "pgx-cli/dist/index.js",
-  "tools/clion/container-clang",
-  "tools/clion/container-clang++",
-  "tools/clion/container-compiler"
 ]);
 
 export async function runRepoCommand(
