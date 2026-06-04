@@ -9,6 +9,7 @@ import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
 import { connectMcp } from "./mcp.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
+import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
 import {
   runQueueCommand,
   runSetupCommand,
@@ -117,6 +118,13 @@ try {
 
   if (argv[0] === "test" && argv[1] === "route-check") {
     process.exitCode = await runRouteCheckCommand(argv.slice(2), runner, io);
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
+    process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
     process.exit();
