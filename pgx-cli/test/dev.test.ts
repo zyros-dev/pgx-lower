@@ -8,6 +8,10 @@ class FakeRunner implements CommandRunner {
 
   async run(command: string, args: string[]): Promise<RunResult> {
     this.calls.push({ command, args });
+    const rendered = [command, ...args].join(" ");
+    if (rendered.includes("pg_regress") || rendered.includes("ctest -V")) {
+      return { exitCode: 0, stdout: "1: ok 1 - 1_one_tuple 10 ms\n", stderr: "" };
+    }
     return this.results.shift() ?? { exitCode: 0, stdout: "", stderr: "" };
   }
 }
@@ -103,6 +107,7 @@ describe("dev commands", () => {
     expect(runner.calls.some((call) => call.command === command && call.args.join(" ").includes(marker))).toBe(true);
     expect(runner.calls.some((call) => call.command === "python3")).toBe(false);
     expect(commands).not.toContain("scripts/run_lint.sh");
+    expect(commands).not.toContain("ptest_with_baseline.py");
     expect(commands).not.toContain("just");
   });
 
@@ -133,6 +138,7 @@ describe("dev commands", () => {
     expect(commands).toContain("pgx-compile.out");
     expect(commands).toContain("UTEST-PG_OK");
     expect(commands).toContain("ctest -V");
+    expect(commands).not.toContain("ptest_with_baseline.py");
     expect(commands).not.toContain("just");
   });
 
