@@ -11,10 +11,13 @@ extern "C" {
 #include "pgx-lower/test/pgx_test_fn.h"
 #include "pgx-lower/test/standalone_mlir_runner.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #define REQUIRE(cond) \
@@ -127,5 +130,39 @@ PGX_TEST_FN(accepted_plan_verifier_rejects_high_level_op_after_lowering) {
         pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
     REQUIRE(!result.ok());
     REQUIRE(result.summary().find("after_lowering: high-level dialect operation remains after lowering:") == 0);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(accepted_plan_verifier_accepts_llvm_main_after_lowering) {
+    ValidPlanFixture fixture;
+    mlir::MLIRContext context;
+    context.loadDialect<mlir::LLVM::LLVMDialect>();
+    const auto loc = mlir::UnknownLoc::get(&context);
+    auto module = mlir::ModuleOp::create(loc);
+    mlir::OpBuilder builder(&context);
+    builder.setInsertionPointToStart(module.getBody());
+    const auto functionType = mlir::LLVM::LLVMFunctionType::get(mlir::LLVM::LLVMVoidType::get(&context), {});
+    builder.create<mlir::LLVM::LLVMFuncOp>(loc, "main", functionType);
+
+    const auto result = pgx_lower::execution::verifyAcceptedPlanModule(
+        &fixture.stmt,
+        module,
+        pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
+    REQUIRE(result.ok());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(accepted_plan_verifier_throw_names_internal_verifier) {
+    auto stmt = PlannedStmt{};
+    try {
+        pgx_lower::execution::verifyAcceptedPlanOrThrow(
+            &stmt,
+            mlir::ModuleOp{},
+            pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
+    } catch (const std::runtime_error& error) {
+        REQUIRE(std::string(error.what()).find("Accepted plan verifier failed:") != std::string::npos);
+        PG_RETURN_VOID();
+    }
+    elog(ERROR, "expected accepted plan verifier to throw");
     PG_RETURN_VOID();
 }

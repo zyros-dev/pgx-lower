@@ -1,4 +1,5 @@
 #include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/accepted_plan_verifier.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
 
@@ -82,6 +83,10 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
 
         // Verify the generated module
         pgx_lower::log::verify_module_or_throw(*module, "AST Translation", "PostgreSQL AST to RelAlg MLIR verification failed");
+        pgx_lower::execution::verifyAcceptedPlanOrThrow(
+            plannedStmt,
+            *module,
+            pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
 
         if (!module) {
             PGX_ERROR("Module is null after AST translation");
@@ -119,6 +124,11 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         if (!pipelineSuccess) {
             return false;
         }
+
+        pgx_lower::execution::verifyAcceptedPlanOrThrow(
+            plannedStmt,
+            *module,
+            pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
 
         // Phase 4: JIT execution
         return executeJITWithDestReceiver(*module, estate, dest);

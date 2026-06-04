@@ -3,6 +3,7 @@
 #include "pgx-lower/utility/logging.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 
@@ -137,6 +138,16 @@ static auto verifyModuleEntryPoint(mlir::ModuleOp module, const AcceptedPlanVeri
     if (!module) {
         return AcceptedPlanVerificationResult::failure(phase, "MLIR module is null", "mlir.module");
     }
+
+    if (phase == AcceptedPlanVerificationPhase::after_lowering) {
+        if (module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("main")
+            || module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("_mlir_ciface_main"))
+        {
+            return AcceptedPlanVerificationResult::success();
+        }
+        return AcceptedPlanVerificationResult::failure(phase, "missing lowered main function", "mlir.module");
+    }
+
     if (!module.lookupSymbol<mlir::func::FuncOp>("main")) {
         return AcceptedPlanVerificationResult::failure(phase, "missing main function", "mlir.module");
     }
@@ -173,8 +184,12 @@ auto verifyAcceptedPlanModule(const PlannedStmt* stmt,
                               const AcceptedPlanVerificationPhase phase)
     -> AcceptedPlanVerificationResult {
     auto result = verifyAcceptedPlanMetadata(stmt, phase);
-    mergeVerificationResult(result, verifyModuleEntryPoint(module, phase));
-    mergeVerificationResult(result, verifyNoHighLevelDialectsAfterLowering(module, phase));
+    if (phase == AcceptedPlanVerificationPhase::after_lowering) {
+        mergeVerificationResult(result, verifyNoHighLevelDialectsAfterLowering(module, phase));
+        mergeVerificationResult(result, verifyModuleEntryPoint(module, phase));
+    } else {
+        mergeVerificationResult(result, verifyModuleEntryPoint(module, phase));
+    }
     return result;
 }
 
