@@ -46,7 +46,8 @@ Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md
 
 ## pgx-cli workflow
 
-Use `pgx-cli` for agent-facing pgx-lower workflows.
+Use `pgx-cli` as the default interface for agent-facing pgx-lower workflows:
+build, test, lint, queue, Docker, setup, and repo maintenance.
 
 - The source package lives at `pgx-cli/`.
 - Run `pgx-cli setup doctor` when onboarding or diagnosing the local/thor setup.
@@ -56,6 +57,8 @@ Use `pgx-cli` for agent-facing pgx-lower workflows.
   `pgx-cli dev test tpch`, `pgx-cli dev build compile --profile debug`, and
   `pgx-cli queue status` before reaching for raw `ssh comfy`, `mutagen`, or
   `tsp`.
+- Before adding a new script, just recipe, or direct SSH workflow, first add or
+  extend a `pgx-cli` command.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow
   commands outside `pgx-cli` unless a new spec explicitly calls for it.
 - Run `pgx-cli repo audit-tools` after adding or moving workflow files. Loose
