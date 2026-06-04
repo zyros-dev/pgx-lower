@@ -53,23 +53,6 @@ class AnalyzerResult {
     std::vector<UnsupportedReason> reasons_;
 };
 
-struct QueryCapabilities {
-    bool requiresSeqScan = false;
-    bool requiresFilter = false;
-    bool requiresProjection = false;
-    bool requiresAggregation = false;
-    bool requiresJoin = false;
-    bool requiresSort = false;
-    bool requiresLimit = false;
-    bool isSelectStatement = false;
-    bool hasCompatibleTypes = false;
-    bool hasExpressions = false;
-
-    [[nodiscard]] auto isMLIRCompatible() const -> bool;
-
-    [[nodiscard]] auto getDescription() const -> std::string;
-};
-
 class QueryAnalyzer {
    public:
 #ifdef POSTGRESQL_EXTENSION
@@ -82,8 +65,6 @@ class QueryAnalyzer {
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
 #endif
-
-    static auto analyzeForTesting(const char* queryText) -> QueryCapabilities;
 
    private:
 #ifdef POSTGRESQL_EXTENSION

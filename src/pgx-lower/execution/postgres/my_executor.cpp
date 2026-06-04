@@ -397,8 +397,8 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
         return false;
     }
 
-    const auto* stmt = plan->plannedstmt;
 #ifdef POSTGRESQL_EXTENSION
+    const auto* stmt = plan->plannedstmt;
     const auto mode = currentExecutionMode();
 
     if (mode == ExecutionMode::force_fallback) {
@@ -423,13 +423,6 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 
     PGX_LOG(GENERAL, DEBUG, "FORCING tree logging for all queries in comprehensive collection mode");
     pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
-#else
-    auto capabilities = pgx_lower::QueryAnalyzer::analyzeForTesting("test query");
-
-    if (!capabilities.isMLIRCompatible()) {
-        PGX_LOG(GENERAL, DEBUG, "Query requires features not yet supported by MLIR");
-        return false;
-    }
 #endif
 
     bool mlir_success = run_mlir_with_ast_translation(plan);

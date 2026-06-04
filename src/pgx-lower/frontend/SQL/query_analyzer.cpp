@@ -25,10 +25,6 @@ extern Oid g_jit_table_oid;
 #include "pgx-lower/execution/postgres/executor_c.h"
 #endif
 
-#include <cstring>
-#include <vector>
-#include <sstream>
-#include <functional>
 #include <iterator>
 
 #ifdef POSTGRESQL_EXTENSION
@@ -103,115 +99,6 @@ auto AnalyzerResult::humanSummary() const -> std::string {
 auto AnalyzerResult::addUnsupportedReason(UnsupportedReasonKind kind, std::string message, std::string location) -> void {
     supported_ = false;
     reasons_.push_back({kind, std::move(message), std::move(location)});
-}
-
-auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    std::vector<std::string> features;
-    if (isSelectStatement) {
-        features.emplace_back("SELECT");
-    }
-    if (requiresSeqScan) {
-        features.emplace_back("SeqScan");
-    }
-    if (requiresProjection) {
-        features.emplace_back("Projection");
-    }
-    if (hasExpressions) {
-        features.emplace_back("Expressions");
-    }
-    if (requiresFilter) {
-        features.emplace_back("WHERE");
-    }
-    if (requiresAggregation) {
-        features.emplace_back("Aggregation");
-    }
-    if (requiresSort) {
-        features.emplace_back("ORDER BY");
-    }
-    if (requiresJoin) {
-        features.emplace_back("JOIN");
-    }
-    if (requiresLimit) {
-        features.emplace_back("LIMIT");
-    }
-    if (hasCompatibleTypes) {
-        features.emplace_back("CompatibleTypes");
-    }
-
-    if (!features.empty()) {
-        auto feature_list = std::string();
-        for (const auto& f : features) {
-            feature_list += f + ", ";
-        }
-        PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: %s", feature_list.c_str());
-    }
-
-    else
-    {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
-    }
-
-    const auto compatible = isSelectStatement && hasCompatibleTypes
-                            && (requiresSeqScan || requiresAggregation || requiresJoin || requiresLimit);
-    if (compatible) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
-        return true;
-    }
-    if (!isSelectStatement) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Not a SELECT statement");
-    } else if (!hasCompatibleTypes) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Incompatible types detected");
-    } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Unknown reason");
-    }
-    return false;
-}
-
-auto QueryCapabilities::getDescription() const -> std::string {
-    if (isMLIRCompatible()) {
-        return "Sequential scan with optional aggregation - MLIR compatible";
-    }
-
-    auto requirements = std::vector<std::string>{};
-
-    if (requiresSeqScan) {
-        requirements.emplace_back("SeqScan");
-    }
-    if (requiresFilter) {
-        requirements.emplace_back("Filter");
-    }
-    if (requiresProjection) {
-        requirements.emplace_back("Projection");
-    }
-    if (requiresAggregation) {
-        requirements.emplace_back("Aggregation");
-    }
-    if (requiresJoin) {
-        requirements.emplace_back("Join");
-    }
-    if (requiresSort) {
-        requirements.emplace_back("Sort");
-    }
-    if (requiresLimit) {
-        requirements.emplace_back("Limit");
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (hasExpressions) {
-        if (g_extension_after_load) {
-            requirements.emplace_back("Expressions (disabled after LOAD)");
-        }
-    }
-#endif
-
-    std::ostringstream oss;
-    oss << "Requires: ";
-    for (const auto& r : requirements) {
-        oss << r << ", ";
-    }
-    oss << " - Not yet supported by MLIR";
-
-    return oss.str();
 }
 
 #ifdef POSTGRESQL_EXTENSION
@@ -944,58 +831,5 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
 }
 
 #endif // POSTGRESQL_EXTENSION
-
-auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilities {
-    auto caps = QueryCapabilities{};
-
-    if (!queryText) {
-        return caps;
-    }
-
-    if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "FROM") != nullptr)) {
-        caps.isSelectStatement = true;
-        caps.requiresSeqScan = true;
-        caps.hasCompatibleTypes = true;
-    }
-
-    // Check for projection (specific columns rather than *)
-    // TODO: NV: Errr... yeah... hmm... this looks sus. TODO: Delete this entire method!
-    if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "SELECT *") == nullptr)) {
-        const char* selectPos = strstr(queryText, "SELECT");
-        const char* fromPos = strstr(queryText, "FROM");
-        if (selectPos && fromPos) {
-            const char* selectContent = selectPos + 6; // "select"
-            while (*selectContent == ' ') {
-                selectContent++;
-            }
-            if (selectContent < fromPos && *selectContent != '*') {
-                caps.requiresProjection = true;
-            }
-        }
-    }
-
-    if (strstr(queryText, "WHERE") != nullptr) {
-        caps.requiresFilter = true;
-    }
-    if (strstr(queryText, "JOIN") != nullptr) {
-        caps.requiresJoin = true;
-    }
-    if (strstr(queryText, "ORDER BY") != nullptr) {
-        caps.requiresSort = true;
-    }
-    if (strstr(queryText, "LIMIT") != nullptr) {
-        caps.requiresLimit = true;
-    }
-    if ((strstr(queryText, "COUNT") != nullptr) || (strstr(queryText, "SUM") != nullptr)
-        || (strstr(queryText, "AVG") != nullptr) || (strstr(queryText, "GROUP BY") != nullptr))
-    {
-        caps.requiresAggregation = true;
-    }
-    if (strstr(queryText, "(SELECT") != nullptr) {
-        caps.requiresJoin = true; // Treat nested queries as requiring joins for now
-    }
-
-    return caps;
-}
 
 } // namespace pgx_lower
