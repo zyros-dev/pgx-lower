@@ -11,8 +11,8 @@ Comments: would a human write this? If a comment restates what well-named code s
 
 ## Code & comment standard
 
-- **clang-tidy is the floor, not the ceiling.** `just lint` must be green on
-  `src/pgx-lower/` before a PR. Use `just lint-diff` for active-change feedback.
+- **clang-tidy is the floor, not the ceiling.** `pgx-cli dev gate review` must
+  be green before a PR. Use `pgx-cli dev lint diff` for active-change feedback.
   A rule either gates or it is deleted from `.clang-tidy` with a rationale.
 - **Comments earn their place.** Explain why; do not narrate what the code
   already says. Review catches prose slop that clang-tidy cannot.
@@ -40,13 +40,13 @@ human owns final review and merge.
 
 **Everything runs on thor.** The mac is an edit host only. Don't build, run Postgres, execute the extension, or run benchmarks locally — the toolchain (LLVM 20, MLIR 20, Postgres 17.6 from source) lives in a Docker image on thor.
 
-Edits sync to thor via a single **mutagen** session named `pgx-lower`, between `/Users/nickvandermerwe/repos/pgx-lower` (mac, alpha) and `comfy:/home/zel/repos/pgx-lower` (thor, beta). We work in this one checkout — no worktrees. Feature work is a branch in this directory; the recipes always flush the `pgx-lower` session, so any branch's edits reach thor. Give mutagen a second after editing before running a command on thor (the recipes' `_preflight` flush handles this for you). If the session's ignore list drifts, `just sync-main-reset`.
+Edits sync to thor via a single **mutagen** session named `pgx-lower`, between `/Users/nickvandermerwe/repos/pgx-lower` (mac, alpha) and `comfy:/home/zel/repos/pgx-lower` (thor, beta). We work in this one checkout — no worktrees. Feature work is a branch in this directory; `pgx-cli` workflow commands flush the `pgx-lower` session, so any branch's edits reach thor. Give mutagen a second after editing before running a command on thor; `pgx-cli` preflight flushes handle normal workflows.
 
 Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md`).
 
 ## pgx-cli workflow
 
-Prefer `pgx-cli` for agent-facing pgx-lower workflows.
+Use `pgx-cli` for agent-facing pgx-lower workflows.
 
 - The source package lives at `pgx-cli/`.
 - Run `pgx-cli setup doctor` when onboarding or diagnosing the local/thor setup.
@@ -54,19 +54,10 @@ Prefer `pgx-cli` for agent-facing pgx-lower workflows.
   command resolves outside this checkout.
 - Use `pgx-cli dev lint diff`, `pgx-cli dev test focused`,
   `pgx-cli dev test tpch`, `pgx-cli dev build compile --profile debug`, and
-  `pgx-cli queue status` before reaching for raw `just`, `ssh comfy`,
-  `mutagen`, or `tsp`.
-- The `justfile` still exists as the implementation substrate for this slice.
-  Do not delete it until the final retirement migration replaces the remaining
-  behavior.
-
-## Workflow migration ledger
-
-Use `pgx-cli migrate inventory` and `pgx-cli migrate check` before removing old
-workflow scripts or recipes. Every old entry point must be classified in
-`pgx-cli-migration-ledger.yaml` as `wrap`, `move`, `keep-internal`, or `delete`.
-Do not delete helpers used by CMake, CTest, Docker, or pg_regress unless their
-callers have been migrated.
+  `pgx-cli queue status` before reaching for raw `ssh comfy`, `mutagen`, or
+  `tsp`.
+- The old recipe layer has been retired. Do not reintroduce parallel workflow
+  commands outside `pgx-cli` unless a new spec explicitly calls for it.
 
 ## How we work: spec-first, human-in-the-loop
 
@@ -91,20 +82,25 @@ Commit a wiki spec/plan from `~/repos/sandbox/`: `git add wiki/specs/ && git com
 
 Default bar for every plan, before its PR opens:
 
-- **red/green TDD** — write the failing test first, run `just test`, confirm it fails, then implement the minimum to turn it green. No exceptions; we don't merge untested code.
+- **red/green TDD** — write the failing test first, run the narrowest relevant
+  `pgx-cli` or package test, confirm it fails, then implement the minimum to
+  turn it green. No exceptions; we don't merge untested code.
 - `git diff --check` clean.
-- `just check-diff` clean on touched files.
-- `just compile` + `just utest` + `just test` green (this includes the fast TPC-H-as-correctness regression checks — run a query, diff output vs stock PG).
+- `pgx-cli dev lint diff` clean on touched files.
+- `pgx-cli dev gate batch` green for batch handoff.
+- `pgx-cli dev gate review` green before PR review (this includes compile,
+  PostgreSQL unit tests, and pg_regress correctness checks).
 
 Opt-in, only when the plan's "Done means" turns it on:
 
-- `just bench` + `just bench-report` — the A/B speed report. Token-heavy (full TPC-H sweep on thor); most plans don't need it. Correctness ≠ benchmark: validate correctness always, benchmark only to prove a speedup the plan promised.
-
-Run `just --list` for the full recipe surface.
+- Benchmark plans must declare their own current benchmark command until a
+  dedicated `pgx-cli bench ...` namespace lands. Correctness != benchmark:
+  validate correctness always, benchmark only to prove a speedup the plan
+  promised.
 
 ## Long-running subagents: run in the background
 
-When spawning a subagent that will take more than a few minutes (implementing a plan, anything that runs `just compile` / `just bench` / `just test`), **pass `run_in_background: true`** to the Agent tool. A foreground agent blocks this conversation, and if the user submits a message (or Ctrl-C's) while it's running, the subagent dies mid-flight and we lose the work. Background agents notify on completion and survive interjections. Only run foreground if the result is needed within ~60s to decide the very next tool call.
+When spawning a subagent that will take more than a few minutes (implementing a plan, anything that runs `pgx-cli dev gate review`, a full compile/test gate, or a benchmark), **pass `run_in_background: true`** to the Agent tool. A foreground agent blocks this conversation, and if the user submits a message (or Ctrl-C's) while it's running, the subagent dies mid-flight and we lose the work. Background agents notify on completion and survive interjections. Only run foreground if the result is needed within ~60s to decide the very next tool call.
 
 ## Skill catalog
 

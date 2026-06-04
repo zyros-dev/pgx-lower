@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { NodeCommandRunner } from "../src/commands.js";
 import {
-  runBuildCommand,
-  runCheckCommand,
   runQueueCommand,
   runSetupCommand,
   runSyncCommand,
@@ -61,7 +59,7 @@ describe("operations", () => {
       { command: "sh", args: ["-lc", "command -v pgx-cli || true"] },
       { command: "npm", args: ["--prefix", "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli", "install"] },
       { command: "npm", args: ["--prefix", "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli", "run", "build"] },
-      { command: "npm", args: ["--prefix", "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli", "link"] }
+      { command: "sh", args: ["-lc", "cd /Users/nickvandermerwe/repos/pgx-lower/pgx-cli && npm link --force"] }
     ]);
     expect(output.stdout).toContain("Existing pgx-cli: /usr/local/bin/pgx-cli");
   });
@@ -118,37 +116,14 @@ describe("operations", () => {
     ]);
   });
 
-  test("thor just flushes then runs just on thor", async () => {
+  test("thor rejects retired just passthrough", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
     const exitCode = await runThorCommand(["just", "compile"], runner, output, thorConfig);
 
-    expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          "'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && just compile'"
-        ]
-      }
-    ]);
-  });
-
-  test("thor just stops when mutagen flush fails", async () => {
-    const runner = new FakeRunner();
-    runner.results = [{ exitCode: 2, stdout: "", stderr: "flush failed\n" }];
-    const output = { stdout: "", stderr: "" };
-    const exitCode = await runThorCommand(["just", "compile"], runner, output, thorConfig);
-
-    expect(exitCode).toBe(2);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] }
-    ]);
-    expect(output.stderr).toContain("flush failed");
+    expect(exitCode).toBe(1);
+    expect(runner.calls).toEqual([]);
+    expect(output.stderr).toContain("Usage: thor shell --dangerous -- <cmd...>");
   });
 
   test("thor shell requires dangerous flag", async () => {
@@ -184,64 +159,6 @@ describe("operations", () => {
         ]
       }
     ]);
-  });
-
-  test.each([
-    ["compile", "compile"],
-    ["test", "test"],
-    ["utest-pg", "utest-pg"],
-    ["bench", "bench"]
-  ])("build %s flushes then runs just %s on thor", async (command, recipe) => {
-    const runner = new FakeRunner();
-    const output = { stdout: "", stderr: "" };
-    const exitCode = await runBuildCommand([command], runner, output, thorConfig);
-
-    expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          `'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && just ${recipe}'`
-        ]
-      }
-    ]);
-  });
-
-  test.each([
-    ["diff", "check-diff"],
-    ["all", "check"]
-  ])("check %s flushes then runs just %s on thor", async (command, recipe) => {
-    const runner = new FakeRunner();
-    const output = { stdout: "", stderr: "" };
-    const exitCode = await runCheckCommand([command], runner, output, thorConfig);
-
-    expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          `'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && just ${recipe}'`
-        ]
-      }
-    ]);
-  });
-
-  test("build rejects unknown subcommands before running external commands", async () => {
-    const runner = new FakeRunner();
-    const output = { stdout: "", stderr: "" };
-    const exitCode = await runBuildCommand(["unknown"], runner, output, thorConfig);
-
-    expect(exitCode).toBe(1);
-    expect(runner.calls).toEqual([]);
-    expect(output.stderr).toContain("Usage: build");
   });
 
   test("queue status checks task-spooler queues directly on thor", async () => {

@@ -1,8 +1,8 @@
 # pgx-cli
 
 TypeScript CLI for pgx-lower development workflows. It wraps CLion MCP, thor,
-Mutagen, queued build/check commands, setup diagnostics, and workflow migration
-checks from the pgx-lower checkout.
+Mutagen, queued workflow commands, and setup diagnostics from the pgx-lower
+checkout.
 
 Default workflow: CLion runs through JetBrains Gateway on thor, so the useful MCP server is on thor's loopback interface. `pgx-cli` defaults to a local SSH tunnel:
 
@@ -41,17 +41,18 @@ pgx-cli call <tool-name> '{"arg":"value"}'
 pgx-cli tunnel
 pgx-cli sync status
 pgx-cli sync flush
-pgx-cli build compile
-pgx-cli build test
-pgx-cli build utest-pg
-pgx-cli build bench
-pgx-cli check diff
-pgx-cli check all
+pgx-cli dev status
+pgx-cli dev lint diff
+pgx-cli dev test focused
+pgx-cli dev test tpch
+pgx-cli dev gate batch
+pgx-cli dev gate review
+pgx-cli dev build explain --profile debug
+pgx-cli dev build compile --profile debug
 pgx-cli queue status
 pgx-cli queue tail <id>
 pgx-cli queue cancel <id>
 pgx-cli queue flush
-pgx-cli thor just --list
 pgx-cli thor shell --dangerous -- git status --short
 pgx-cli request feature make the compile gate easier to inspect
 pgx-cli request complaint thor command output is too noisy
@@ -69,9 +70,10 @@ pgx-cli run <configuration-name>
 
 The `call` command supports every tool the CLion MCP server advertises. The convenience commands resolve against the discovered tool list, so they fail loudly if the installed CLion MCP exposes a different tool surface.
 
-`pgx-cli thor just ...` always flushes the `pgx-lower` Mutagen session first, then runs `just` on `comfy` in `/home/zel/repos/pgx-lower`. `pgx-cli thor shell ...` is reserved for explicit remote shell work and requires `--dangerous`.
-
-`pgx-cli build ...` and `pgx-cli check ...` are the normal pgx-lower development commands. They flush Mutagen and then run the existing queued thor `just` recipes, so agents do not need to know task-spooler details. `pgx-cli queue ...` is for diagnostics and recovery only.
+`pgx-cli dev ...` commands are the normal pgx-lower development workflow. They
+flush Mutagen and run the needed local/thor/Docker/task-spooler steps directly.
+`pgx-cli thor shell ...` is reserved for explicit remote shell work and requires
+`--dangerous`. `pgx-cli queue ...` is for diagnostics and recovery.
 
 `pgx-cli request feature ...` and `pgx-cli request complaint ...` write timestamped Markdown notes to `~/.config/pgx-cli/requests/`. They are local inbox commands for agents to lodge friction quickly and continue with the current task.
 
@@ -79,8 +81,7 @@ Planned command groups:
 
 ```text
 pgx-cli clion ...
-pgx-cli build ...
-pgx-cli check ...
+pgx-cli dev ...
 pgx-cli thor ...
 pgx-cli queue ...
 pgx-cli lsp ...
@@ -94,8 +95,8 @@ The current top-level CLion commands are the first slice. Future work should mov
 Conversation mining found these recurring workflows worth turning into commands:
 
 1. `pgx-cli doctor` - read-only health check for thor, mutagen, branch, Docker image, and local-build hazards.
-2. `pgx-cli thor <cmd>` / `pgx-cli just <recipe>` - flush mutagen, then run on `comfy` in `/home/zel/repos/pgx-lower`.
-3. `pgx-cli gate` - standard diff/check/compile/unit/test gate with logs and summary.
+2. `pgx-cli dev ...` - flush mutagen, then run the direct workflow on local/thor/Docker as needed.
+3. `pgx-cli dev gate ...` - standard diff/check/compile/unit/test gate with logs and summary.
 4. `pgx-cli clion doctor` - Gateway backend, MCP tunnel, project-path, and local-vs-thor endpoint diagnosis.
 5. `pgx-cli clion db` - compile database / CLion indexing validation for PG, LLVM 20, and generated includes.
 6. `pgx-cli lsp ...` - code-intelligence helpers such as diagnostics, symbols, definition, references, and compile-command checks.
@@ -151,16 +152,6 @@ pgx-cli dev build install --profile debug
 
 Use `dev build explain` before expensive work when changing profiles. The command
 prints the resolved inherited profile without running CMake.
-
-## Migration ledger
-
-```sh
-pgx-cli migrate inventory
-pgx-cli migrate check
-```
-
-The ledger validates the cleanup from historical shell/Python/just entry points
-to pgx-cli commands. It must be clean before the final justfile-retirement plan.
 
 ## Development
 

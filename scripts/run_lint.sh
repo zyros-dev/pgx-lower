@@ -20,7 +20,7 @@ mkdir -p "$LINT_DIR"
 
 if [ "${LINT_SKIP_BUILD:-0}" = "1" ]; then
     if [ ! -f "$LINT_DIR/compile_commands.json" ]; then
-        echo "LINT: $LINT_DIR/compile_commands.json missing; run just lint once first"
+        echo "LINT: $LINT_DIR/compile_commands.json missing; run pgx-cli dev gate review once first"
         exit 2
     fi
 else

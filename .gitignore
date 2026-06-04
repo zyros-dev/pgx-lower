@@ -121,3 +121,5 @@ overnight_bench_v2.sh
 pgx-cli.local.yaml
 pgx-cli/node_modules/
 pgx-cli/dist/
+pgx-cli/bin/
+pgx-cli/share/

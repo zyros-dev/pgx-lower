@@ -5,16 +5,16 @@ engine with a compiler. Read more at https://pgx.zyros.dev/
 
 ## Development
 
-Builds run in the dev container on thor, driven by `just` (the mac is an edit host;
+Builds run in the dev container on thor through `pgx-cli` (the mac is an edit host;
 edits sync via mutagen). All generated build and benchmark scratch output lives
 under the gitignored `build-artifacts/` directory; `bench-results/` holds the
 committed per-PR benchmark reports.
 
 ## pgx-cli workflow
 
-`pgx-cli` is the preferred command surface for pgx-lower development workflows.
-The CLI lives in `pgx-cli/` and wraps thor, Mutagen, task-spooler, CLion, build,
-check, and queue operations.
+`pgx-cli` is the command surface for pgx-lower development workflows. The CLI
+lives in `pgx-cli/` and owns thor, Mutagen, task-spooler, CLion, build, check,
+and queue operations.
 
 Install or relink it from this checkout:
 
@@ -30,25 +30,9 @@ pgx-cli sync status
 pgx-cli queue status
 ```
 
-The current implementation still wraps existing `just` recipes under the hood,
-but pgx-cli is the agent-facing command surface. Use `pgx-cli dev ...` and
-`pgx-cli queue ...` as the normal workflow commands; treat raw `just`, raw
-`ssh comfy`, raw `mutagen`, and raw `tsp` as debugging escape hatches.
-
-## Workflow migration ledger
-
-The project temporarily tracks old script and recipe entry points in
-`pgx-cli-migration-ledger.yaml`.
-
-```bash
-pgx-cli migrate inventory
-pgx-cli migrate check
-```
-
-Agents should use pgx-cli commands for workflow tasks. Direct `scripts/*.sh`,
-`benchmark/*.py`, `tools/scripts/*`, raw task-spooler, and raw `just` calls are
-allowed only as implementation details or debugging escape hatches while the
-ledger says the old entry point is still wrapped.
+Use `pgx-cli dev ...` and `pgx-cli queue ...` as the normal workflow commands;
+treat raw `ssh comfy`, raw `mutagen`, and raw `tsp` as debugging escape hatches.
+The old recipe layer has been retired.
 
 The inherited `tools/` tree is tracked in `docs/tools-ledger.md`; do not delete
 entries without updating that ledger.
@@ -57,8 +41,8 @@ Cheap PR hygiene checks:
 
 ```bash
 git diff --check
-just check-diff
-just ffix-diff  # apply clang-format to changed C/C++ hunks
+pgx-cli dev lint diff
+pgx-cli dev gate batch
 ```
 
 ### IDE setup (compile_commands.json)
@@ -67,16 +51,14 @@ The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from
 source), so the IDE can't drive CMake itself. Instead, every build exports a
 `compile_commands.json` and a remote IDE reads it.
 
-- `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` is set on the configure in `just compile`,
-  `just test`, and `just utest-pg`, so the raw DB is re-emitted as a side effect
-  of any normal build.
+- `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` is set on the debug build profile, so the
+  raw DB is re-emitted as a side effect of normal build and test commands.
 - The raw Docker DB lands at `build-artifacts/ptest/compile_commands.json` on
   thor and contains `/workspace/...` paths.
-- Those normal build recipes automatically rewrite the DB for the thor host
-  checkout and write `compile_commands.json` at the repo root. `just clion-db`
-  exists only as a manual repair/bootstrap command.
+- The raw Docker DB can be copied or rewritten for the thor host checkout when
+  the IDE needs a refreshed `compile_commands.json`.
 
-First-time bootstrap: run any normal build command (`just compile` is enough) so
+First-time bootstrap: run `pgx-cli dev build compile --profile debug` so
 the host-path DB exists, then in the IDE:
 
 - CLion: open the project in Compilation Database mode and select

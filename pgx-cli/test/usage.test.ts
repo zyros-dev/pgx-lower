@@ -8,7 +8,7 @@ describe("usage counters", () => {
   test("normalizes command keys", () => {
     expect(normalizeCommandKey(["doctor"])).toBe("doctor");
     expect(normalizeCommandKey(["clion", "doctor"])).toBe("clion doctor");
-    expect(normalizeCommandKey(["thor", "just", "compile"])).toBe("thor just");
+    expect(normalizeCommandKey(["dev", "lint", "diff"])).toBe("dev lint");
     expect(normalizeCommandKey(["sync", "status"])).toBe("sync status");
   });
 
@@ -16,10 +16,10 @@ describe("usage counters", () => {
     const dir = mkdtempSync(join(tmpdir(), "pgx-cli-usage-"));
     const path = join(dir, "usage.json");
 
-    incrementUsage(path, ["thor", "just", "compile"]);
-    incrementUsage(path, ["thor", "just", "test"]);
+    incrementUsage(path, ["dev", "lint", "diff"]);
+    incrementUsage(path, ["dev", "lint", "file", "src/pgx-lower/example.cpp"]);
 
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ "thor just": 2 });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ "dev lint": 2 });
     rmSync(dir, { recursive: true, force: true });
   });
 });

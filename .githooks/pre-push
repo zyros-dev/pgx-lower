@@ -1,2 +1,2 @@
-#!/usr/bin/env bash
-exec just lint-diff
+#!/usr/bin/env sh
+exec pgx-cli dev gate review
