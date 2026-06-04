@@ -1,6 +1,8 @@
 # pgx-cli
 
-Small TypeScript CLI for using the CLion MCP server without hand-writing MCP calls.
+TypeScript CLI for pgx-lower development workflows. It wraps CLion MCP, thor,
+Mutagen, queued build/check commands, setup diagnostics, and workflow migration
+checks from the pgx-lower checkout.
 
 Default workflow: CLion runs through JetBrains Gateway on thor, so the useful MCP server is on thor's loopback interface. `pgx-cli` defaults to a local SSH tunnel:
 
@@ -115,6 +117,50 @@ pgx-cli config set-ssh-host comfy
 ```
 
 `projectPath` is added automatically to tool calls unless the JSON arguments already include it.
+
+## Dev workflow
+
+Use `pgx-cli dev ...` for normal pgx-lower agent workflows:
+
+```sh
+pgx-cli dev status
+pgx-cli dev lint diff
+pgx-cli dev lint file src/pgx-lower/runtime/tuple_access.cpp
+pgx-cli dev test unit type_mapping
+pgx-cli dev gate batch
+pgx-cli dev gate review
+pgx-cli dev logs latest
+```
+
+`dev gate batch` is the fast handoff gate. `dev gate review` is the final PR
+gate and runs the full lint/compile/unit/regression sequence.
+
+## CMake profiles
+
+Build profiles live in the pgx-lower root `pgx-cli.yaml`.
+
+```sh
+pgx-cli config validate
+pgx-cli config show --profile debug
+pgx-cli config show --sources
+pgx-cli dev build explain --profile latency
+pgx-cli dev build configure --profile debug
+pgx-cli dev build compile --profile debug
+pgx-cli dev build install --profile debug
+```
+
+Use `dev build explain` before expensive work when changing profiles. The command
+prints the resolved inherited profile without running CMake.
+
+## Migration ledger
+
+```sh
+pgx-cli migrate inventory
+pgx-cli migrate check
+```
+
+The ledger validates the cleanup from historical shell/Python/just entry points
+to pgx-cli commands. It must be clean before the final justfile-retirement plan.
 
 ## Development
 

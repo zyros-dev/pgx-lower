@@ -360,6 +360,8 @@ export function helpText(): string {
     "  pgx-cli dev build explain --profile <name>",
     "  pgx-cli dev logs latest",
     "  pgx-cli dev logs <job-id>",
+    "  pgx-cli migrate inventory",
+    "  pgx-cli migrate check",
     "  tunnel",
     "  sync status",
     "  sync flush",

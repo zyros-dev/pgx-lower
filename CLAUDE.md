@@ -44,6 +44,30 @@ Edits sync to thor via a single **mutagen** session named `pgx-lower`, between `
 
 Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md`).
 
+## pgx-cli workflow
+
+Prefer `pgx-cli` for agent-facing pgx-lower workflows.
+
+- The source package lives at `pgx-cli/`.
+- Run `pgx-cli setup doctor` when onboarding or diagnosing the local/thor setup.
+- Run `pgx-cli setup install` after the in-repo CLI changes or when the global
+  command resolves outside this checkout.
+- Use `pgx-cli dev lint diff`, `pgx-cli dev test focused`,
+  `pgx-cli dev test tpch`, `pgx-cli dev build compile --profile debug`, and
+  `pgx-cli queue status` before reaching for raw `just`, `ssh comfy`,
+  `mutagen`, or `tsp`.
+- The `justfile` still exists as the implementation substrate for this slice.
+  Do not delete it until the final retirement migration replaces the remaining
+  behavior.
+
+## Workflow migration ledger
+
+Use `pgx-cli migrate inventory` and `pgx-cli migrate check` before removing old
+workflow scripts or recipes. Every old entry point must be classified in
+`pgx-cli-migration-ledger.yaml` as `wrap`, `move`, `keep-internal`, or `delete`.
+Do not delete helpers used by CMake, CTest, Docker, or pg_regress unless their
+callers have been migrated.
+
 ## How we work: spec-first, human-in-the-loop
 
 Specs are **curated artifacts**, authored with the user, that live in the wiki and outlive any one PR. The user shapes them until they're ready, then triggers implementation. Nothing is autonomous — the user is in the loop for every spec.
