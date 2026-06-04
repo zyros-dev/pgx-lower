@@ -45,7 +45,7 @@ bool g_extension_after_load = false;
 class StderrToLogRedirector {
    private:
     int saved_stderr{-1};
-    int pipe_fds[2];
+    int pipe_fds[2]{};
     std::thread reader_thread;
     std::atomic<bool> should_stop{false};
 

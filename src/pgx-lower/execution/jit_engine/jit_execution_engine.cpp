@@ -449,7 +449,7 @@ bool JITEngine::compile_to_shared_library(const std::string& obj_path, const std
         return false;
     }
 
-    std::array<char, 256> buffer;
+    std::array<char, 256> buffer{};
     std::string result;
     while (std::feof(pipe) == 0) {
         const auto bytes = std::fread(buffer.data(), 1, buffer.size(), pipe);

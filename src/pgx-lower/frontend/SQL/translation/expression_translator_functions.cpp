@@ -439,9 +439,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         struct CorrelationInfo {
             std::string table_scope;
             std::string column_name;
-            bool nullable;
-            Oid type_oid;
-            int32 typmod;
+            bool nullable = false;
+            Oid type_oid = InvalidOid;
+            int32 typmod = -1;
         };
         std::unordered_map<int, CorrelationInfo> correlation_mapping;
         if (subplan->parParam && subplan->args) {

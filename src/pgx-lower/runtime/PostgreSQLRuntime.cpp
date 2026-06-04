@@ -11,7 +11,14 @@
 #include "lingodb/runtime/DataSourceIteration.h"
 #include "lingodb/runtime/RuntimeSpecifications.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-literal-operator"
+#endif
 #include <json.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #include "lingodb/runtime/helpers.h"
 #include "pgx-lower/runtime/tuple_access.h"
 #include "pgx-lower/runtime/runtime_templates.h"
@@ -60,6 +67,7 @@ void* rt_get_execution_context() {
 }
 
 enum class ColumnType {
+    UNKNOWN,
     SMALLINT, // INT2OID (16-bit)
     INTEGER, // INT4OID (32-bit)
     BIGINT, // INT8OID (64-bit)
@@ -77,7 +85,7 @@ enum class ColumnType {
 
 struct ColumnSpec {
     std::string name;
-    ColumnType type;
+    ColumnType type = ColumnType::UNKNOWN;
 };
 
 // Per-column decode metadata cached at iterator-start time so the per-row hot
@@ -116,23 +124,23 @@ struct BatchStorage {
 };
 
 struct DataSourceIterator {
-    void* context;
-    void* table_handle;
+    void* context = nullptr;
+    void* table_handle = nullptr;
 
     std::string table_name;
     std::vector<ColumnSpec> columns;
     std::vector<int32_t> column_positions;
     std::vector<ColumnDecodeMeta> column_decode_meta;
 
-    BatchStorage* batch;
-    size_t current_row_in_batch;
+    BatchStorage* batch = nullptr;
+    size_t current_row_in_batch = 0;
 
-    int32_t current_id;
-    bool current_id_is_null;
-    int32_t current_col2;
-    bool current_col2_is_null;
-    int32_t current_value;
-    bool current_is_null;
+    int32_t current_id = 0;
+    bool current_id_is_null = false;
+    int32_t current_col2 = 0;
+    bool current_col2_is_null = false;
+    int32_t current_value = 0;
+    bool current_is_null = false;
 };
 
 static DataSourceIterator* g_current_iterator = nullptr;
@@ -800,7 +808,9 @@ bool DataSourceIteration::isValid() {
     const TupleDesc tupleDesc = get_table_handle_tupledesc(iter->table_handle);
 
     prepare_new_batch(iter, tupleDesc);
-    read_and_fill_batch(iter, tupleDesc);
+    if (!read_and_fill_batch(iter, tupleDesc)) {
+        return false;
+    }
     return finalize_batch(iter);
 }
 

@@ -24,6 +24,7 @@ Checks: >
   cppcoreguidelines-explicit-virtual-functions,
   cppcoreguidelines-interfaces-abstract,
   cppcoreguidelines-pro-type-dynamic-cast,
+  cppcoreguidelines-pro-type-member-init,
 
   google-explicit-constructor,
 
