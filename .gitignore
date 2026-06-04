@@ -84,6 +84,7 @@ __pycache__/
 __pycache__
 Testing
 .vscode
+.claude/commands/
 *.tmp
 *.diffs
 
@@ -91,6 +92,7 @@ Testing
 tools/lingodb-debug/lingodb_debug.log
 
 query_outputs
+benchmark/
 benchmark/output/
 compareresources/data/
 benchmark_results/
@@ -122,4 +124,5 @@ pgx-cli.local.yaml
 pgx-cli/node_modules/
 pgx-cli/dist/
 pgx-cli/bin/
+pgx-cli/lib/
 pgx-cli/share/
