@@ -7,6 +7,7 @@
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
 #include "postgres.h"
+#include "catalog/pg_collation.h"
 #include "nodes/plannodes.h"
 #include "nodes/execnodes.h"
 #include "nodes/primnodes.h"
@@ -210,192 +211,253 @@ auto QueryCapabilities::getDescription() const -> std::string {
 
 #ifdef POSTGRESQL_EXTENSION
 
-auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> QueryCapabilities {
-    auto caps = QueryCapabilities{};
-
-    if (!stmt || !stmt->planTree) {
-        const auto error = ErrorManager::queryAnalysisError("No plan tree to analyze");
-        ErrorManager::reportError(error);
-        return caps;
+static auto mergeAnalyzerResult(AnalyzerResult& into, const AnalyzerResult& from) -> void {
+    if (from.isSupported()) {
+        return;
     }
-
-    try {
-        caps.isSelectStatement = checkCommandType(stmt);
-        if (!caps.isSelectStatement) {
-            return caps;
-        }
-
-        caps = analyzeNode(stmt->planTree);
-        caps.isSelectStatement = true; // Preserve the SELECT check
-        analyzeTypes(stmt->planTree, caps);
-
-        return caps;
-    } catch (const std::exception& e) {
-        const auto error = ErrorManager::queryAnalysisError("Exception during plan analysis: " + std::string(e.what()));
-        ErrorManager::reportError(error);
-        return caps;
+    for (const auto& reason : from.reasons()) {
+        into.addUnsupportedReason(reason.kind, reason.message, reason.location);
     }
 }
 
-auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
-    auto caps = QueryCapabilities{};
+static auto supportedOrUnsupported(const AnalyzerResult& result) -> AnalyzerResult {
+    if (result.reasons().empty()) {
+        return AnalyzerResult::supported();
+    }
+    return result;
+}
 
-    if (!plan) {
-        return caps;
+auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> AnalyzerResult {
+    if (!stmt) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::invalid, "planned statement is null", "PlannedStmt");
+    }
+    if (!stmt->planTree) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::invalid, "plan tree is null", "PlannedStmt.planTree");
+    }
+    if (!checkCommandType(stmt)) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_plan_node,
+                                           "only SELECT statements are supported",
+                                           "PlannedStmt.commandType");
     }
 
+    auto result = analyzeNode(stmt->planTree, "Plan");
+    mergeAnalyzerResult(result, analyzePlanTargetTypes(stmt->planTree, "Plan.targetlist"));
+    return supportedOrUnsupported(result);
+}
+
+auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> AnalyzerResult {
+    if (!plan) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
+                                           "plan node is null",
+                                           std::move(location));
+    }
+
+    auto result = AnalyzerResult::supported();
+
     switch (nodeTag(plan)) {
-    case T_SeqScan: analyzeSeqScan(reinterpret_cast<const SeqScan*>(plan), caps); break;
-
-    case T_IndexScan:
-    case T_IndexOnlyScan:
-    case T_BitmapHeapScan: caps.requiresSeqScan = true; break;
-
+    case T_SeqScan:
     case T_NestLoop:
-    case T_MergeJoin:
-    case T_HashJoin: caps.requiresJoin = true; break;
-
+    case T_MergeJoin: 
+    case T_HashJoin:
     case T_Sort:
-        // TODO: NV: This permits sort nodes with expressions in them. It isn't supposed to, and they just crash.
-        //           They should be disabled here because lingodb doesn't support them either.
-        caps.requiresSort = true;
-        break;
-
-    case T_Limit: caps.requiresLimit = true; break;
-
-    case T_Agg: caps.requiresAggregation = true; break;
-
-    case T_SubqueryScan:
-        {
-            const auto* subqueryScan = reinterpret_cast<const SubqueryScan*>(plan);
-            if (subqueryScan->subplan) {
-                const auto subCaps = analyzeNode(subqueryScan->subplan);
-                caps.requiresSeqScan |= subCaps.requiresSeqScan;
-                caps.requiresFilter |= subCaps.requiresFilter;
-                caps.requiresProjection |= subCaps.requiresProjection;
-                caps.requiresAggregation |= subCaps.requiresAggregation;
-                caps.requiresJoin |= subCaps.requiresJoin;
-                caps.requiresSort |= subCaps.requiresSort;
-                caps.requiresLimit |= subCaps.requiresLimit;
-                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan propagating capabilities from subplan");
-            }
-        }
-        break;
-
+    case T_Limit:
+    case T_Agg:
     case T_Result:
     case T_Material:
     case T_Hash:
     case T_Unique:
     case T_SetOp:
-    case T_Group: PGX_LOG(AST_TRANSLATE, DEBUG, "Accepting node type %d for MLIR compilation", nodeTag(plan)); break;
-
-    default:
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown node type %d - accepting for MLIR compilation", nodeTag(plan));
+    case T_Group:
+        break;
+    case T_SubqueryScan: {
+        const auto* subqueryScan = reinterpret_cast<const SubqueryScan*>(plan);
+        mergeAnalyzerResult(result, analyzeNode(subqueryScan->subplan, location + ".subplan"));
         break;
     }
 
-    analyzeFilter(plan, caps);
-    analyzeProjection(plan, caps);
+    default:
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                    "unsupported plan node tag " + std::to_string(nodeTag(plan)),
+                                    location);
+        return result;
+    }
+
+    mergeAnalyzerResult(result, analyzeExprList(plan->qual, location + ".qual"));
+    mergeAnalyzerResult(result, analyzeTargetList(plan->targetlist, location + ".targetlist"));
+
     if (plan->lefttree) {
-        const auto leftCaps = analyzeNode(plan->lefttree);
-        caps.requiresSeqScan |= leftCaps.requiresSeqScan;
-        caps.requiresFilter |= leftCaps.requiresFilter;
-        caps.requiresProjection |= leftCaps.requiresProjection;
-        caps.requiresAggregation |= leftCaps.requiresAggregation;
-        caps.requiresJoin |= leftCaps.requiresJoin;
-        caps.requiresSort |= leftCaps.requiresSort;
-        caps.requiresLimit |= leftCaps.requiresLimit;
+        mergeAnalyzerResult(result, analyzeNode(plan->lefttree, location + ".lefttree"));
     }
-
     if (plan->righttree) {
-        const auto rightCaps = analyzeNode(plan->righttree);
-        caps.requiresSeqScan |= rightCaps.requiresSeqScan;
-        caps.requiresFilter |= rightCaps.requiresFilter;
-        caps.requiresProjection |= rightCaps.requiresProjection;
-        caps.requiresAggregation |= rightCaps.requiresAggregation;
-        caps.requiresJoin |= rightCaps.requiresJoin;
-        caps.requiresSort |= rightCaps.requiresSort;
-        caps.requiresLimit |= rightCaps.requiresLimit;
+        mergeAnalyzerResult(result, analyzeNode(plan->righttree, location + ".righttree"));
     }
 
-    return caps;
+    return supportedOrUnsupported(result);
 }
 
-auto QueryAnalyzer::analyzeSeqScan(const SeqScan*, QueryCapabilities& caps) -> void {
-    caps.requiresSeqScan = true;
-}
-
-auto QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) -> void {
-    if (plan->qual) {
-        caps.requiresFilter = true;
-    }
-}
-
-auto QueryAnalyzer::analyzeProjection(const Plan*, QueryCapabilities&) -> void {}
-
-auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> void {
-    if (!plan || !plan->targetlist) {
-        caps.hasCompatibleTypes = false;
-        PGX_ERROR("don't pass in a nullable plan thanks");
-        throw std::runtime_error("don't pass in a nullable plan thanks");
+auto QueryAnalyzer::analyzeTargetList(const List* targetList, std::string location) -> AnalyzerResult {
+    auto result = AnalyzerResult::supported();
+    if (!targetList) {
+        return result;
     }
 
-    auto columnTypes = std::vector<Oid>{};
     ListCell* lc = nullptr;
-
-    // Extract types from plan's target list
-    foreach (lc, plan->targetlist) {
-        const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (tle && !tle->resjunk && tle->expr) {
-            // Check if this is a computed expression (not just a simple Var)
-            if (nodeTag(tle->expr) != T_Var) {
-                caps.hasExpressions = true;
-            }
-
-            // Later we can add more sophisticated filtering
-            if (IsA(tle->expr, FuncExpr)) {
-                const auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
-                char* funcName = get_func_name(funcExpr->funcid);
-                if (funcName) {
-                    std::string func(funcName);
-                    pfree(funcName);
-                    if (func == "upper" || func == "lower" || func == "substring" || func == "varchar" || func == "text"
-                        || func == "char" || func == "bpchar" || func == "int4" || func == "int8" || func == "numeric"
-                        || func == "float4" || func == "float8")
-                    {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Supported function in targetlist: %s", func.c_str());
-                    } else {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %s", func.c_str());
-                        caps.hasCompatibleTypes = false;
-                        return;
-                    }
-                } else {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown function in targetlist: %d", funcExpr->funcid);
-                    caps.hasCompatibleTypes = false;
-                    return;
-                }
-            }
-
-            Oid columnType = exprType(reinterpret_cast<Node*>(tle->expr));
-            columnTypes.push_back(columnType);
+    auto index = 0;
+    foreach (lc, targetList) {
+        const auto* tle = static_cast<const TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk || !tle->expr) {
+            ++index;
+            continue;
         }
+        const auto exprLocation = location + "[" + std::to_string(index) + "]";
+        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(tle->expr), exprLocation + ".expr"));
+        mergeAnalyzerResult(result, analyzeExprType(reinterpret_cast<const Node*>(tle->expr), exprLocation + ".type"));
+        ++index;
+    }
+    return supportedOrUnsupported(result);
+}
+
+auto QueryAnalyzer::analyzeExprList(const List* expressions, std::string location) -> AnalyzerResult {
+    auto result = AnalyzerResult::supported();
+    if (!expressions) {
+        return result;
     }
 
-    if (columnTypes.empty()) {
-        caps.hasCompatibleTypes = false;
-        return;
+    ListCell* lc = nullptr;
+    auto index = 0;
+    foreach (lc, expressions) {
+        const auto* expr = static_cast<const Node*>(lfirst(lc));
+        mergeAnalyzerResult(result, analyzeExpr(expr, location + "[" + std::to_string(index) + "]"));
+        ++index;
+    }
+    return supportedOrUnsupported(result);
+}
+
+auto QueryAnalyzer::analyzePlanTargetTypes(const Plan* plan, std::string location) -> AnalyzerResult {
+    if (!plan) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "plan is null", std::move(location));
+    }
+    return analyzeTargetList(plan->targetlist, std::move(location));
+}
+
+auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> AnalyzerResult {
+    if (!expr) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
+                                           "expression is null",
+                                           std::move(location));
     }
 
-    auto [supportedCount, unsupportedCount] = analyzeTypeCompatibility(columnTypes);
-    caps.hasCompatibleTypes = (unsupportedCount == 0);
+    const auto typeOid = exprType(const_cast<Node*>(expr));
+    if (typeOid == InvalidOid) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
+                                           "expression type OID is invalid",
+                                           std::move(location));
+    }
+    if (!isTypeSupportedByMLIR(typeOid)) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type,
+                                           "unsupported PostgreSQL type OID " + std::to_string(typeOid),
+                                           std::move(location));
+    }
+    return AnalyzerResult::supported();
+}
+
+auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> AnalyzerResult {
+    if (!expr) {
+        return AnalyzerResult::supported();
+    }
+
+    auto result = AnalyzerResult::supported();
+
+    switch (nodeTag(expr)) {
+    case T_Var:
+    case T_Const:
+    case T_Param:
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+
+    case T_FuncExpr: {
+        const auto* func = reinterpret_cast<const FuncExpr*>(expr);
+        if (!isFunctionSupported(func->funcid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
+                                        "unsupported function OID " + std::to_string(func->funcid),
+                                        location);
+        }
+        if (!isCollationSupported(func->inputcollid) || !isCollationSupported(func->funccollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                        "unsupported function collation",
+                                        location);
+        }
+        mergeAnalyzerResult(result, analyzeExprList(func->args, location + ".args"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_OpExpr: {
+        const auto* op = reinterpret_cast<const OpExpr*>(expr);
+        if (!isOperatorSupported(op->opno)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
+                                        "unsupported operator OID " + std::to_string(op->opno),
+                                        location);
+        }
+        if (!isCollationSupported(op->inputcollid) || !isCollationSupported(op->opcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                        "unsupported operator collation",
+                                        location);
+        }
+        mergeAnalyzerResult(result, analyzeExprList(op->args, location + ".args"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_BoolExpr: {
+        const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
+        mergeAnalyzerResult(result, analyzeExprList(boolExpr->args, location + ".args"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_RelabelType: {
+        const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
+        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), location + ".arg"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_Aggref: {
+        const auto* agg = reinterpret_cast<const Aggref*>(expr);
+        if (!isFunctionSupported(agg->aggfnoid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
+                                        "unsupported aggregate function OID " + std::to_string(agg->aggfnoid),
+                                        location);
+        }
+        mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_NullTest: {
+        const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
+        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(nullTest->arg), location + ".arg"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_BooleanTest: {
+        const auto* booleanTest = reinterpret_cast<const BooleanTest*>(expr);
+        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(booleanTest->arg), location + ".arg"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    default:
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_expr_node,
+                                           "unsupported expression node tag " + std::to_string(nodeTag(expr)),
+                                           location);
+    }
 }
 
 auto QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) -> bool {
-    if (!stmt) {
-        PGX_ERROR("don't pass in a nullable stmt thanks");
-        throw std::runtime_error("don't pass in a nullable stmt thanks");
-    }
-    return (stmt->commandType == CMD_SELECT);
+    return stmt && stmt->commandType == CMD_SELECT;
 }
 
 auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
@@ -418,19 +480,77 @@ auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
     }
 }
 
-auto QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) -> std::pair<int, int> {
-    auto supportedCount = 0;
-    auto unsupportedCount = 0;
-
-    for (const auto type : types) {
-        if (isTypeSupportedByMLIR(type)) {
-            supportedCount++;
-        } else {
-            unsupportedCount++;
-        }
+auto QueryAnalyzer::isFunctionSupported(const Oid functionOid) -> bool {
+    if (functionOid == InvalidOid) {
+        return false;
     }
+    const char* name = get_func_name(functionOid);
+    if (!name) {
+        return false;
+    }
+    const auto functionName = std::string(name);
+    pfree(const_cast<char*>(name));
+    return functionName == "count" ||
+           functionName == "sum" ||
+           functionName == "avg" ||
+           functionName == "min" ||
+           functionName == "max" ||
+           functionName == "upper" ||
+           functionName == "lower" ||
+           functionName == "substring" ||
+           functionName == "varchar" ||
+           functionName == "text" ||
+           functionName == "char" ||
+           functionName == "bpchar" ||
+           functionName == "int2" ||
+           functionName == "int4" ||
+           functionName == "int8" ||
+           functionName == "numeric" ||
+           functionName == "float4" ||
+           functionName == "float8" ||
+           functionName == "date" ||
+           functionName == "timestamp" ||
+           functionName == "interval";
+}
 
-    return {supportedCount, unsupportedCount};
+auto QueryAnalyzer::isOperatorSupported(const Oid operatorOid) -> bool {
+    if (operatorOid == InvalidOid) {
+        return false;
+    }
+    const char* name = get_opname(operatorOid);
+    if (!name) {
+        return false;
+    }
+    const auto operatorName = std::string(name);
+    pfree(const_cast<char*>(name));
+    return operatorName == "=" ||
+           operatorName == "<>" ||
+           operatorName == "!=" ||
+           operatorName == "<" ||
+           operatorName == "<=" ||
+           operatorName == ">" ||
+           operatorName == ">=" ||
+           operatorName == "+" ||
+           operatorName == "-" ||
+           operatorName == "*" ||
+           operatorName == "/" ||
+           operatorName == "~~" ||
+           operatorName == "!~~";
+}
+
+auto QueryAnalyzer::isCollationSupported(const Oid collationOid) -> bool {
+    return collationOid == InvalidOid ||
+           collationOid == DEFAULT_COLLATION_OID ||
+           collationOid == C_COLLATION_OID ||
+           collationOid == POSIX_COLLATION_OID;
+}
+
+auto QueryAnalyzer::analyzeNodeForTesting(const Plan* plan) -> AnalyzerResult {
+    return analyzeNode(plan, "Plan");
+}
+
+auto QueryAnalyzer::analyzeExprForTesting(const Node* expr) -> AnalyzerResult {
+    return analyzeExpr(expr, "Expr");
 }
 
 auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {

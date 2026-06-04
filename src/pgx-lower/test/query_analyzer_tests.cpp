@@ -1,6 +1,8 @@
 extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
+#include "nodes/plannodes.h"
+#include "nodes/primnodes.h"
 }
 
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
@@ -48,5 +50,25 @@ PGX_TEST_FN(query_analyzer_unsupported_result_reports_first_reason) {
     REQUIRE(result.primaryReasonKindName() == std::string("unsupported_function"));
     REQUIRE(result.humanSummary() == std::string(
         "unsupported_function: unsupported function generate_series() at Plan.Result.targetlist[0]"));
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unknown_plan_node) {
+    auto plan = Plan{};
+    plan.type = T_Invalid;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(&plan);
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unknown_expr_node) {
+    auto expr = Node{};
+    expr.type = T_Invalid;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(&expr);
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
     PG_RETURN_VOID();
 }

@@ -78,8 +78,11 @@ struct QueryCapabilities {
 class QueryAnalyzer {
    public:
 #ifdef POSTGRESQL_EXTENSION
-    static QueryCapabilities analyzePlan(const PlannedStmt* stmt);
-    static QueryCapabilities analyzeNode(const Plan* plan);
+    static AnalyzerResult analyzePlan(const PlannedStmt* stmt);
+    static AnalyzerResult analyzeNode(const Plan* plan, std::string location = "Plan");
+    static AnalyzerResult analyzeExpr(const Node* expr, std::string location);
+    static AnalyzerResult analyzeNodeForTesting(const Plan* plan);
+    static AnalyzerResult analyzeExprForTesting(const Node* expr);
     
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
@@ -89,13 +92,15 @@ class QueryAnalyzer {
 
    private:
 #ifdef POSTGRESQL_EXTENSION
-    static void analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps);
-    static void analyzeFilter(const Plan* plan, QueryCapabilities& caps);
-    static void analyzeProjection(const Plan* plan, QueryCapabilities& caps);
-    static void analyzeTypes(const Plan* plan, QueryCapabilities& caps);
+    static AnalyzerResult analyzeTargetList(const List* targetList, std::string location);
+    static AnalyzerResult analyzeExprList(const List* expressions, std::string location);
+    static AnalyzerResult analyzePlanTargetTypes(const Plan* plan, std::string location);
+    static AnalyzerResult analyzeExprType(const Node* expr, std::string location);
     static bool checkCommandType(const PlannedStmt* stmt);
     static bool isTypeSupportedByMLIR(Oid postgresType);
-    static std::pair<int, int> analyzeTypeCompatibility(const std::vector<Oid>& types);
+    static bool isFunctionSupported(Oid functionOid);
+    static bool isOperatorSupported(Oid operatorOid);
+    static bool isCollationSupported(Oid collationOid);
 #endif
 };
 

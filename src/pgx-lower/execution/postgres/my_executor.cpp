@@ -380,18 +380,22 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 
     const auto* stmt = plan->plannedstmt;
 #ifdef POSTGRESQL_EXTENSION
-    const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
+    const auto analysis = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
     PGX_LOG(GENERAL, DEBUG, "FORCING tree logging for all queries in comprehensive collection mode");
     pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
+    if (!analysis.isSupported()) {
+        PGX_LOG(GENERAL, DEBUG, "Query rejected by analyzer: %s", analysis.humanSummary().c_str());
+        return false;
+    }
 #else
     auto capabilities = pgx_lower::QueryAnalyzer::analyzeForTesting("test query");
-#endif
 
     if (!capabilities.isMLIRCompatible()) {
         PGX_LOG(GENERAL, DEBUG, "Query requires features not yet supported by MLIR");
         return false;
     }
+#endif
 
     elog(NOTICE, "[PGX-LOWER] Routing through PGX_LOWER compilation");
     bool mlir_success = run_mlir_with_ast_translation(plan);
