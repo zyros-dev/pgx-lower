@@ -6,6 +6,7 @@ import { helpText, runCli } from "./cli.js";
 import { NodeCommandRunner } from "./commands.js";
 import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
+import { runDockerCommand } from "./docker.js";
 import { connectMcp } from "./mcp.js";
 import {
   runQueueCommand,
@@ -85,6 +86,18 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "docker") {
+    process.exitCode = await runDockerCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      dockerContainer: config.dockerContainer
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);

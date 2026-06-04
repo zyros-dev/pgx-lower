@@ -49,6 +49,9 @@ pgx-cli dev gate batch
 pgx-cli dev gate review
 pgx-cli dev build explain --profile debug
 pgx-cli dev build compile --profile debug
+pgx-cli docker status
+pgx-cli docker build ptest
+pgx-cli docker build release
 pgx-cli queue status
 pgx-cli queue tail <id>
 pgx-cli queue cancel <id>
@@ -72,6 +75,7 @@ The `call` command supports every tool the CLion MCP server advertises. The conv
 
 `pgx-cli dev ...` commands are the normal pgx-lower development workflow. They
 flush Mutagen and run the needed local/thor/Docker/task-spooler steps directly.
+`pgx-cli docker ...` commands wrap explicit thor-side Docker maintenance flows.
 `pgx-cli thor shell ...` is reserved for explicit remote shell work and requires
 `--dangerous`. `pgx-cli queue ...` is for diagnostics and recovery.
 
@@ -131,6 +135,9 @@ pgx-cli dev test unit type_mapping
 pgx-cli dev gate batch
 pgx-cli dev gate review
 pgx-cli dev logs latest
+pgx-cli docker status
+pgx-cli docker build ptest
+pgx-cli docker build release
 ```
 
 `dev gate batch` is the fast handoff gate. `dev gate review` is the final PR
