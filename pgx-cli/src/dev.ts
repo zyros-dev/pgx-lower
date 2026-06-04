@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { CommandRunner } from "./commands.js";
+import { fullLintShellCommand, targetedLintShellCommand } from "./lint.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 
 export type WorkflowStep = {
@@ -198,12 +199,7 @@ async function runLintFiles(
 ): Promise<number> {
   const flush = await flushMutagen(runner, output, config.mutagenSession);
   if (flush !== 0) return flush;
-  const command = dockerBashCommand(
-    config,
-    `cd /workspace && LINT_SKIP_BUILD=1 bash /workspace/scripts/run_lint.sh /workspace check ${files
-      .map(quoteShell)
-      .join(" ")}`
-  );
+  const command = dockerBashCommand(config, targetedLintShellCommand("/workspace", files));
   return runRemoteShell(runner, output, config, command);
 }
 
@@ -214,7 +210,7 @@ async function runFullLint(runner: CommandRunner, output: OperationOutput, confi
     runner,
     output,
     config,
-    queuedDockerCommand(config, config.buildQueue, "bash /workspace/scripts/run_lint.sh /workspace check")
+    queuedDockerCommand(config, config.buildQueue, fullLintShellCommand("/workspace"))
   );
 }
 
