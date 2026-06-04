@@ -194,6 +194,10 @@ describe("runCli", () => {
     expect(io.stdout).toContain("config set-project <project-path>");
     expect(io.stdout).toContain("setup install");
     expect(io.stdout).toContain("setup doctor");
+    expect(io.stdout).toContain("pgx-cli dev status");
+    expect(io.stdout).toContain("pgx-cli dev lint diff");
+    expect(io.stdout).toContain("pgx-cli dev gate batch");
+    expect(io.stdout).toContain("pgx-cli dev gate review");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");

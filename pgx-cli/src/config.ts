@@ -12,6 +12,8 @@ export const DEFAULT_LOCAL_PROJECT_PATH = "/Users/nickvandermerwe/repos/pgx-lowe
 export const DEFAULT_REMOTE_PROJECT_PATH = "/home/zel/repos/pgx-lower";
 export const DEFAULT_MUTAGEN_SESSION = "pgx-lower";
 export const DEFAULT_DOCKER_CONTAINER = "pgx-lower-dev";
+export const DEFAULT_BUILD_QUEUE = "pgx-build";
+export const DEFAULT_CHECK_QUEUE = "pgx-check";
 export const DEFAULT_CONFIG_PATH = join(homedir(), ".config", "pgx-cli", "config.json");
 
 export type Config = {
@@ -23,6 +25,8 @@ export type Config = {
   remoteProjectPath: string;
   mutagenSession: string;
   dockerContainer: string;
+  buildQueue: string;
+  checkQueue: string;
 };
 
 type LoadConfigInput = {
@@ -44,6 +48,7 @@ export function loadConfig(input: LoadConfigInput): Config {
   const fileConfig = input.readConfigFile?.() ?? readDefaultConfigFile();
   const projectConfig = input.readProjectConfig?.() ?? loadProjectConfig();
   const projectRemote = projectConfig?.remote;
+  const projectQueues = projectConfig?.queues;
 
   return {
     url: input.argvUrl ?? fileConfig?.url ?? input.env.CLION_MCP_URL ?? DEFAULT_URL,
@@ -57,7 +62,9 @@ export function loadConfig(input: LoadConfigInput): Config {
     mutagenSession:
       fileConfig?.mutagenSession ?? input.env.PGX_MUTAGEN_SESSION ?? projectRemote?.mutagen_session ?? DEFAULT_MUTAGEN_SESSION,
     dockerContainer:
-      fileConfig?.dockerContainer ?? input.env.PGX_DOCKER_CONTAINER ?? projectRemote?.docker_container ?? DEFAULT_DOCKER_CONTAINER
+      fileConfig?.dockerContainer ?? input.env.PGX_DOCKER_CONTAINER ?? projectRemote?.docker_container ?? DEFAULT_DOCKER_CONTAINER,
+    buildQueue: fileConfig?.buildQueue ?? input.env.PGX_BUILD_QUEUE ?? projectQueues?.build ?? DEFAULT_BUILD_QUEUE,
+    checkQueue: fileConfig?.checkQueue ?? input.env.PGX_CHECK_QUEUE ?? projectQueues?.check ?? DEFAULT_CHECK_QUEUE
   };
 }
 
