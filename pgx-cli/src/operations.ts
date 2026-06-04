@@ -11,6 +11,11 @@ export type OperationConfig = {
   remoteProjectPath: string;
 };
 
+export type SetupConfig = OperationConfig & {
+  packageDir: string;
+  dockerContainer: string;
+};
+
 export async function runSyncCommand(
   args: string[],
   runner: CommandRunner,
@@ -77,6 +82,80 @@ export async function runThorCommand(
   }
 
   output.stderr += "Usage: thor <just|shell>\n";
+  return 1;
+}
+
+export async function runSetupCommand(
+  args: string[],
+  runner: CommandRunner,
+  output: OperationOutput,
+  config: SetupConfig
+): Promise<number> {
+  const [command] = args;
+
+  if (command === "install") {
+    const existing = await runner.run("sh", ["-lc", "command -v pgx-cli || true"]);
+    const existingPath = existing.stdout.trim();
+    output.stdout += existingPath ? `Existing pgx-cli: ${existingPath}\n` : "Existing pgx-cli: not found\n";
+
+    for (const npmArgs of [
+      ["--prefix", config.packageDir, "install"],
+      ["--prefix", config.packageDir, "run", "build"],
+      ["--prefix", config.packageDir, "link"]
+    ]) {
+      const result = await runner.run("npm", npmArgs);
+      output.stdout += result.stdout;
+      output.stderr += result.stderr;
+      if (result.exitCode !== 0) {
+        return result.exitCode;
+      }
+    }
+
+    output.stdout += "setup install: linked in-repo pgx-cli\n";
+    return 0;
+  }
+
+  if (command === "doctor") {
+    type SetupCheckResult = { stdout: string; stderr: string; exitCode: number };
+    const checks: Array<{
+      label: string;
+      command: string;
+      args: string[];
+      accept?: (result: SetupCheckResult) => boolean;
+    }> = [
+      {
+        label: "global pgx-cli",
+        command: "sh",
+        args: ["-lc", "command -v pgx-cli || true"],
+        accept: (result) => result.stdout.trim().length > 0
+      },
+      { label: "mutagen session", command: "mutagen", args: ["sync", "list", config.mutagenSession] },
+      { label: "ssh host", command: "ssh", args: [config.sshHost, "true"] },
+      { label: "remote checkout", command: "ssh", args: [config.sshHost, "test", "-d", config.remoteProjectPath] },
+      { label: "task-spooler", command: "ssh", args: [config.sshHost, "command", "-v", "tsp"] },
+      {
+        label: "docker container",
+        command: "ssh",
+        args: [config.sshHost, "docker", "ps", "--format", "{{.Names}}"],
+        accept: (result) => result.stdout.split("\n").includes(config.dockerContainer)
+      }
+    ];
+
+    let failed = false;
+    for (const check of checks) {
+      const result = await runner.run(check.command, check.args);
+      output.stdout += result.stdout;
+      output.stderr += result.stderr;
+      const ok = result.exitCode === 0 && (check.accept ? check.accept(result) : true);
+      output.stdout += `${ok ? "ok" : "fail"} ${check.label}\n`;
+      failed ||= !ok;
+    }
+
+    output.stdout += failed ? "setup doctor: failed\n" : "setup doctor: ok\n";
+    return failed ? 1 : 0;
+  }
+
+  output.stderr += "Usage: setup <install|doctor>\n";
   return 1;
 }
 

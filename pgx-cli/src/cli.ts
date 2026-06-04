@@ -343,6 +343,8 @@ export function helpText(): string {
     "  config set-url <mcp-url>",
     "  config set-project <project-path>",
     "  config set-ssh-host <ssh-host>",
+    "  setup install",
+    "  setup doctor",
     "  tunnel",
     "  sync status",
     "  sync flush",

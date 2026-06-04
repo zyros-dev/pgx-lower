@@ -8,16 +8,20 @@ import {
   runBuildCommand,
   runCheckCommand,
   runQueueCommand,
+  runSetupCommand,
   runSyncCommand,
   runThorCommand
 } from "./operations.js";
 import { DEFAULT_REQUEST_DIR, writeRequest } from "./requests.js";
 import { DEFAULT_USAGE_PATH, incrementUsage } from "./usage.js";
 import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const { url, argv } = parseGlobalArgs(process.argv.slice(2));
 const config = loadConfig({ env: process.env, argvUrl: url });
 incrementUsage(DEFAULT_USAGE_PATH, argv);
+const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const io = { stdout: "", stderr: "" };
 
@@ -41,6 +45,19 @@ try {
   }
 
   const runner = new NodeCommandRunner();
+  if (argv[0] === "setup") {
+    process.exitCode = await runSetupCommand(argv.slice(1), runner, io, {
+      packageDir,
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      dockerContainer: config.dockerContainer
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
   if (argv[0] === "sync") {
     process.exitCode = await runSyncCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession

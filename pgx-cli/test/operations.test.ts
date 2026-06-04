@@ -4,6 +4,7 @@ import {
   runBuildCommand,
   runCheckCommand,
   runQueueCommand,
+  runSetupCommand,
   runSyncCommand,
   runThorCommand
 } from "../src/operations.js";
@@ -25,6 +26,12 @@ const thorConfig = {
   remoteProjectPath: "/home/zel/repos/pgx-lower"
 };
 
+const setupConfig = {
+  ...thorConfig,
+  packageDir: "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli",
+  dockerContainer: "pgx-lower-dev"
+};
+
 describe("operations", () => {
   test("node command runner can be constructed", () => {
     expect(new NodeCommandRunner()).toBeInstanceOf(NodeCommandRunner);
@@ -36,6 +43,52 @@ describe("operations", () => {
     expect(runner.calls).toEqual([
       { command: "mutagen", args: ["sync", "list", "pgx-lower"] }
     ]);
+  });
+
+  test("setup install builds and links the in-repo package", async () => {
+    const runner = new FakeRunner();
+    runner.results = [
+      { exitCode: 0, stdout: "/usr/local/bin/pgx-cli\n", stderr: "" },
+      { exitCode: 0, stdout: "", stderr: "" },
+      { exitCode: 0, stdout: "", stderr: "" },
+      { exitCode: 0, stdout: "", stderr: "" }
+    ];
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runSetupCommand(["install"], runner, output, setupConfig);
+
+    expect(exitCode).toBe(0);
+    expect(runner.calls).toEqual([
+      { command: "sh", args: ["-lc", "command -v pgx-cli || true"] },
+      { command: "npm", args: ["--prefix", "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli", "install"] },
+      { command: "npm", args: ["--prefix", "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli", "run", "build"] },
+      { command: "npm", args: ["--prefix", "/Users/nickvandermerwe/repos/pgx-lower/pgx-cli", "link"] }
+    ]);
+    expect(output.stdout).toContain("Existing pgx-cli: /usr/local/bin/pgx-cli");
+  });
+
+  test("setup doctor checks the host workflow dependencies", async () => {
+    const runner = new FakeRunner();
+    runner.results = [
+      { exitCode: 0, stdout: "/usr/local/bin/pgx-cli\n", stderr: "" },
+      { exitCode: 0, stdout: "Session: pgx-lower\n", stderr: "" },
+      { exitCode: 0, stdout: "", stderr: "" },
+      { exitCode: 0, stdout: "", stderr: "" },
+      { exitCode: 0, stdout: "/usr/bin/tsp\n", stderr: "" },
+      { exitCode: 0, stdout: "pgx-lower-dev\n", stderr: "" }
+    ];
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runSetupCommand(["doctor"], runner, output, setupConfig);
+
+    expect(exitCode).toBe(0);
+    expect(runner.calls).toEqual([
+      { command: "sh", args: ["-lc", "command -v pgx-cli || true"] },
+      { command: "mutagen", args: ["sync", "list", "pgx-lower"] },
+      { command: "ssh", args: ["comfy", "true"] },
+      { command: "ssh", args: ["comfy", "test", "-d", "/home/zel/repos/pgx-lower"] },
+      { command: "ssh", args: ["comfy", "command", "-v", "tsp"] },
+      { command: "ssh", args: ["comfy", "docker", "ps", "--format", "{{.Names}}"] }
+    ]);
+    expect(output.stdout).toContain("setup doctor: ok");
   });
 
   test("sync status lists the configured mutagen session", async () => {
