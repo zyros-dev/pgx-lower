@@ -60,6 +60,15 @@ Print resolved CMake/runtime profile settings without running CMake.
 .B dev build compile --profile \fINAME\fR
 Run a profile-selected CMake build command on thor.
 .TP
+.B docker status
+Check whether the configured pgx-lower dev container is running on thor.
+.TP
+.B docker build ptest
+Run the ptest CMake build and ctest flow inside the configured dev container on thor.
+.TP
+.B docker build release
+Run the RelWithDebInfo extension build inside the configured dev container on thor.
+.TP
 .B queue status
 Show pgx-lower build/check queue status.
 .TP
@@ -150,6 +159,9 @@ pgx-cli dev status
 pgx-cli dev lint diff
 pgx-cli dev gate batch
 pgx-cli dev build explain --profile debug
+pgx-cli docker status
+pgx-cli docker build ptest
+pgx-cli docker build release
 pgx-cli queue status
 pgx-cli thor shell --dangerous -- git status --short
 pgx-cli request feature make compile output easier to inspect
