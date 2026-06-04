@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { loadConfig } from "./config.js";
 import { DEFAULT_CONFIG_PATH, writeConfig } from "./config.js";
+import { renderBuildExplain } from "./build-profile.js";
 import { helpText, runCli } from "./cli.js";
 import { NodeCommandRunner } from "./commands.js";
+import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { connectMcp } from "./mcp.js";
 import {
@@ -13,6 +15,7 @@ import {
   runSyncCommand,
   runThorCommand
 } from "./operations.js";
+import { loadProjectConfig, resolveProfile } from "./project-config.js";
 import { DEFAULT_REQUEST_DIR, writeRequest } from "./requests.js";
 import { DEFAULT_USAGE_PATH, incrementUsage } from "./usage.js";
 import { spawnSync } from "node:child_process";
@@ -112,6 +115,24 @@ try {
     process.exit();
   }
 
+  if (argv[0] === "dev" && argv[1] === "build") {
+    const devBuildArgs = argv.slice(2);
+    const profileName = profileNameFromArgs(devBuildArgs);
+    const projectConfig = profileName ? loadProjectConfig() : undefined;
+    const profile = projectConfig && profileName ? resolveProfile(projectConfig, profileName) : undefined;
+    process.exitCode = await runDevBuildCommand(devBuildArgs, runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      profileName,
+      profile,
+      dockerContainer: config.dockerContainer
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
   if (argv[0] === "dev") {
     process.exitCode = await runDevCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession,
@@ -185,8 +206,43 @@ function handleConfigCommand(argv: string[], currentUrl: string): number | undef
     return undefined;
   }
 
+  if (argv[1] === "validate") {
+    const projectConfig = loadProjectConfig();
+    if (!projectConfig) {
+      process.stderr.write("No pgx-cli.yaml found\n");
+      return 1;
+    }
+    process.stdout.write(`Config valid: ${projectConfig.configPath}\n`);
+    return 0;
+  }
+
   if (argv[1] === "path") {
     process.stdout.write(`${DEFAULT_CONFIG_PATH}\n`);
+    return 0;
+  }
+
+  if (argv[1] === "show" && argv.includes("--profile")) {
+    const profileName = argv[argv.indexOf("--profile") + 1];
+    if (!profileName) {
+      process.stderr.write("Usage: pgx-cli config show --profile <name>\n");
+      return 1;
+    }
+    const projectConfig = loadProjectConfig();
+    if (!projectConfig) {
+      process.stderr.write("No pgx-cli.yaml found\n");
+      return 1;
+    }
+    process.stdout.write(renderBuildExplain(profileName, resolveProfile(projectConfig, profileName)));
+    return 0;
+  }
+
+  if (argv[1] === "show" && argv.includes("--sources")) {
+    const projectConfig = loadProjectConfig();
+    process.stdout.write(`${JSON.stringify({
+      personalConfig: DEFAULT_CONFIG_PATH,
+      projectConfig: projectConfig?.configPath,
+      localProjectConfig: projectConfig?.localConfigPath
+    }, null, 2)}\n`);
     return 0;
   }
 
@@ -233,6 +289,11 @@ function handleConfigCommand(argv: string[], currentUrl: string): number | undef
 
   process.stderr.write("Usage: pgx-cli config <path|show|set-url|set-project|set-ssh-host>\n");
   return 1;
+}
+
+function profileNameFromArgs(args: string[]): string | undefined {
+  const index = args.indexOf("--profile");
+  return index === -1 ? undefined : args[index + 1];
 }
 
 async function handleTunnelCommand(
