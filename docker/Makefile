@@ -22,7 +22,7 @@ status:
 	docker compose ps
 
 build-ptest:
-	@./dev/build-ptest.sh
+	@cd .. && pgx-cli docker build ptest
 
 logs:
 	docker logs -f pgx-lower-dev
@@ -94,7 +94,7 @@ all: down
 rebuild: clean
 	docker compose build dev --no-cache
 	docker compose up -d dev
-	@./dev/build-ptest.sh
+	@cd .. && pgx-cli docker build ptest
 
 build-debug:
 	@echo "Building Debug configuration in dev container..."
@@ -377,7 +377,7 @@ profile-container: build-postgres-debug build-release
 build-benchmark:
 	@echo "Building pgx-lower benchmark container..."
 	@echo "Step 1: Building release extension in dev container"
-	@./dev/build-release.sh
+	@cd .. && pgx-cli docker build release
 	@echo "Step 2: Removing old benchmark volume to ensure fresh .so"
 	docker compose down benchmark
 	docker volume rm docker_benchmark-data 2>/dev/null || true
