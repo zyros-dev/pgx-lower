@@ -1,0 +1,2 @@
+# PostgreSQL regression baseline for pgx-lower extension-auto burn-down.
+# Record with `pgx-cli test psql-regression-burndown --record` after reviewing the first run.

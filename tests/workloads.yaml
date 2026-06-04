@@ -23,6 +23,15 @@ workloads:
     sql: tests/regress-unit/sql
     generated: true
 
+  psql-regression:
+    kind: upstream-psql-regression
+    sql: tests/psql-regression/sql
+    expected: tests/psql-regression/expected
+    schedule: tests/psql-regression/parallel_schedule
+    baseline: tests/psql-regression/baselines/current.txt
+    default_auto_should_route_to: not_asserted
+    require_route_directives: false
+
 tests:
   pgx-regression-correctness:
     workload: pgx-regression
@@ -39,6 +48,14 @@ tests:
     compare_output: true
     default_auto_should_route_to: lower
     require_route_directives: true
+
+  psql-regression-burndown:
+    workload: psql-regression
+    profile: debug
+    execution_mode: extension-auto
+    compare_output: true
+    default_auto_should_route_to: not_asserted
+    baseline: allow-known-fails
 
 benchmarks:
   tpch-throughput:
