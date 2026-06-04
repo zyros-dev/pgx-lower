@@ -88,8 +88,8 @@ describe("dev commands", () => {
 
   test.each([
     [["lint", "diff"], "sh", "clang-tidy-diff-20"],
-    [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "scripts/run_lint.sh"],
-    [["lint", "files", "a.cpp", "b.cpp"], "ssh", "scripts/run_lint.sh"],
+    [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "clang-tidy-20"],
+    [["lint", "files", "a.cpp", "b.cpp"], "ssh", "clang-tidy-20"],
     [["test", "unit", "type_mapping"], "ssh", "type_mapping.sql"],
     [["test", "tpch"], "ssh", "pg_regress"],
     [["test", "focused"], "ssh", "UTEST-PG_OK"]
@@ -99,8 +99,10 @@ describe("dev commands", () => {
     const exitCode = await runDevCommand(args, runner, output, devConfig);
 
     expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(runner.calls.some((call) => call.command === command && call.args.join(" ").includes(marker))).toBe(true);
-    expect(runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n")).not.toContain("just");
+    expect(commands).not.toContain("scripts/run_lint.sh");
+    expect(commands).not.toContain("just");
   });
 
   test("dev gate batch runs diff-scoped checks", async () => {
@@ -125,7 +127,8 @@ describe("dev commands", () => {
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(commands).toContain("clang-format-diff-20");
-    expect(commands).toContain("scripts/run_lint.sh");
+    expect(commands).toContain("clang-tidy-20");
+    expect(commands).not.toContain("scripts/run_lint.sh");
     expect(commands).toContain("pgx-compile.out");
     expect(commands).toContain("UTEST-PG_OK");
     expect(commands).toContain("ctest -V");
