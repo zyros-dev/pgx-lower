@@ -7,7 +7,7 @@
 namespace mlir_runner {
 auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest)
     -> bool;
-}
+} // namespace mlir_runner
 
 #include "pgx-lower/runtime/tuple_access.h"
 
@@ -84,7 +84,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
             auto* targetList = stmt->planTree->targetlist;
 
             int numSelectedColumns = 0;
-            ListCell* lc;
+            ListCell* lc = nullptr;
             foreach (lc, targetList) {
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
                 if (tle && !tle->resjunk) {
@@ -111,10 +111,10 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
 
 TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns) {
     const int numResultColumns = selectedColumns.size();
-    const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
+    auto* const resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
 
     for (int i = 0; i < numResultColumns; i++) {
-        const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
+        auto* const resultAttr = TupleDescAttr(resultTupleDesc, i);
 
         Oid columnType = INT4OID;
         int typeLen = sizeof(int32);
@@ -122,7 +122,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
         char typeAlign = TYPALIGN_INT;
 
         if (stmt->planTree && stmt->planTree->targetlist && i < list_length(stmt->planTree->targetlist)) {
-            ListCell* lc;
+            ListCell* lc = nullptr;
             int colIdx = 0;
             foreach (lc, stmt->planTree->targetlist) {
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
@@ -149,9 +149,9 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
 
                             PGX_LOG(GENERAL, DEBUG, "Column %d: exprType returned OID=%u", i, columnType);
 
-                            int16 typLen;
-                            bool typByVal;
-                            char typAlign;
+                            int16 typLen = 0;
+                            bool typByVal = false;
+                            char typAlign = 0;
                             get_typlenbyvalalign(columnType, &typLen, &typByVal, &typAlign);
 
                             typeLen = typLen;
@@ -184,7 +184,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
 bool handleMLIRResults(bool mlir_success) {
     if (mlir_success) {
         PGX_LOG(JIT, DEBUG, "JIT returned successfully, checking results...");
-        extern bool g_jit_results_ready;
+
         PGX_LOG(JIT, DEBUG, "g_jit_results_ready = %s", g_jit_results_ready ? "true" : "false");
         if (g_jit_results_ready) {
             PGX_LOG(JIT, DEBUG, "JIT execution successful - results already streamed by JIT");
@@ -223,7 +223,7 @@ setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, TupleTableSlo
     TupleDesc resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
 
     for (auto i = 0; i < resultTupleDesc->natts; i++) {
-        const auto attr = TupleDescAttr(resultTupleDesc, i);
+        auto* const attr = TupleDescAttr(resultTupleDesc, i);
         if (i < g_computed_results.numComputedColumns) {
             g_computed_results.computedTypes[i] = attr->atttypid;
             PGX_LOG(GENERAL, DEBUG, "Initialized computed result column %d with type OID %d", i, attr->atttypid);

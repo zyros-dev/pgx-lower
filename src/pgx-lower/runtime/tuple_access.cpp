@@ -1,6 +1,7 @@
 #include "pgx-lower/runtime/tuple_access.h"
 #include "pgx-lower/runtime/runtime_templates.h"
 #include "pgx-lower/runtime/PostgreSQLRuntime.h" // For runtime::TableBuilder
+#include <algorithm>
 #include <vector>
 #include "pgx-lower/runtime/PostgreSQLDataSource.h"
 #include "pgx-lower/utility/error_handling.h"
@@ -103,12 +104,13 @@ T extract_field(int32_t field_index, bool* is_null) {
         return T{};
     }
 
-    bool isnull;
+    bool isnull = false;
     const auto value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
                                     g_current_tuple_passthrough.tupleDesc, &isnull);
     *is_null = isnull;
-    if (isnull)
+    if (isnull) {
         return T{};
+    }
 
     const Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
     return fromDatum<T>(value, typeOid);
@@ -162,7 +164,7 @@ void table_builder_add(void* builder, bool is_valid, T value) {
         // Either way, this also works with the usual boolean values so... it's probably okay? I dunno.
         T normalized_value = value;
         if constexpr (std::is_same_v<T, bool>) {
-            const unsigned char byte_value = static_cast<unsigned char>(value);
+            const auto byte_value = static_cast<unsigned char>(value);
             // Any non-zero value except 254 (CmpIOp false) is true
             // 0 = false, 1 = true, 254 = false, 255 = true, others = true
             normalized_value = (byte_value != 0) && (byte_value != 254);
@@ -180,9 +182,7 @@ void table_builder_add(void* builder, bool is_valid, T value) {
         const Datum datum = is_null ? static_cast<Datum>(0) : toDatum<T>(normalized_value);
         g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
-        if (tb->current_column_index > tb->total_columns) {
-            tb->total_columns = tb->current_column_index;
-        }
+        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
     } else {
         PGX_LOG(RUNTIME, DEBUG, "table_builder_add: null builder, using fallback column 0");
         // Use normalized is_null value
@@ -227,9 +227,7 @@ void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runt
 
         tb->current_column_index++;
 
-        if (tb->current_column_index > tb->total_columns) {
-            tb->total_columns = tb->current_column_index;
-        }
+        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
     }
 }
 
@@ -248,9 +246,7 @@ void table_builder_add_numeric(void* builder, bool is_null, Numeric value) {
 
         g_computed_results.setResult(tb->current_column_index, datum, is_null, NUMERICOID);
         tb->current_column_index++;
-        if (tb->current_column_index > tb->total_columns) {
-            tb->total_columns = tb->current_column_index;
-        }
+        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
     } else {
         const auto datum = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
         g_computed_results.setResult(0, datum, is_null, NUMERICOID);
@@ -275,7 +271,7 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
             return -1;
         }
 
-        const auto tupdesc = RelationGetDescr(rel);
+        auto* const tupdesc = RelationGetDescr(rel);
         int32_t attnum = -1;
 
         for (int i = 0; i < tupdesc->natts; i++) {
@@ -392,7 +388,7 @@ extern "C" void* open_postgres_table(const char* tableName) {
 
         CommandCounterIncrement();
 
-        if (const auto currentSnapshot = GetActiveSnapshot()) {
+        if (auto* const currentSnapshot = GetActiveSnapshot()) {
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Updating scan with fresh snapshot xmin=%u, xmax=%u",
                     currentSnapshot->xmin, currentSnapshot->xmax);
             handle->scanDesc->rs_snapshot = currentSnapshot;
@@ -594,9 +590,9 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
                 PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: TYPE MISMATCH attr[%d]: expected=%u actual=%u - FIXING",
                         i, expectedType, actualType);
 
-                int16 typLen;
-                bool typByVal;
-                char typAlign;
+                int16 typLen = 0;
+                bool typByVal = false;
+                char typAlign = 0;
                 get_typlenbyvalalign(actualType, &typLen, &typByVal, &typAlign);
 
                 attr->atttypid = actualType;
@@ -688,7 +684,7 @@ static bool process_computed_results_for_streaming() {
         return false;
     }
 
-    const auto slot = g_tuple_streamer.slot;
+    auto* const slot = g_tuple_streamer.slot;
     const MemoryContext oldContext = CurrentMemoryContext;
 
     const MemoryContext destContext = setup_processing_memory_context(slot);
@@ -738,7 +734,7 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
 // Field Access Functions
 //==============================================================================
 
-extern "C" bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" bool get_bool_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     return pgx_lower::runtime::extract_field<bool>(field_index, is_null);
 }
 
@@ -767,7 +763,7 @@ extern "C" int32_t get_field_typmod(int32_t field_index) {
 }
 
 extern "C" const char*
-get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid) {
+get_string_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid) {
     PGX_IO(RUNTIME);
 #ifdef POSTGRESQL_EXTENSION
     if (!pgx_lower::runtime::check_memory_context_safety()) {
@@ -790,7 +786,7 @@ get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t
         return nullptr;
     }
 
-    bool isnull;
+    bool isnull = false;
     const Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
                                g_current_tuple_passthrough.tupleDesc, &isnull);
     *is_null = isnull;
@@ -803,17 +799,17 @@ get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t
     // This avoids redundant TupleDesc access since caller already has the type OID
     switch (type_oid) {
     case TEXTOID: {
-        const auto pg_text = DatumGetTextPP(value);
+        auto* const pg_text = DatumGetTextPP(value);
         *length = VARSIZE_ANY_EXHDR(pg_text);
         return VARDATA_ANY(pg_text);
     }
     case VARCHAROID: {
-        const auto pg_varchar = DatumGetVarCharPP(value);
+        auto* const pg_varchar = DatumGetVarCharPP(value);
         *length = VARSIZE_ANY_EXHDR(pg_varchar);
         return VARDATA_ANY(pg_varchar);
     }
     case BPCHAROID: {
-        const auto pg_bpchar = DatumGetBpCharPP(value);
+        auto* const pg_bpchar = DatumGetBpCharPP(value);
         *length = VARSIZE_ANY_EXHDR(pg_bpchar);
         return VARDATA_ANY(pg_bpchar);
     }
@@ -838,7 +834,7 @@ get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t
 #endif
 }
 
-extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
+extern "C" int64_t get_text_field(void* /*tuple_handle*/, const int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
@@ -851,7 +847,7 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
         return 0;
     }
 
-    bool isnull;
+    bool isnull = false;
     const auto value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
                                     g_current_tuple_passthrough.tupleDesc, &isnull);
 
@@ -908,37 +904,37 @@ extern "C" void mark_results_ready_for_streaming() {
 // Template-Based Field Extraction Functions
 //==============================================================================
 
-extern "C" Numeric get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" Numeric get_numeric_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<Numeric>(field_index, is_null);
 }
 
-extern "C" int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int16_t get_int16_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int16_t>(field_index, is_null);
 }
 
-extern "C" int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int32_t get_int32_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
 }
 
-extern "C" int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int64_t get_int64_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int64_t>(field_index, is_null);
 }
 
-extern "C" float get_float32_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" float get_float32_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<float>(field_index, is_null);
 }
 
-extern "C" double get_float64_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" double get_float64_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<double>(field_index, is_null);
 }
 
-extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int32_t get_int_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) {
     PGX_IO(RUNTIME);
     return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
 }
@@ -964,27 +960,27 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
 // MLIR Wrapper Functions
 //==============================================================================
 
-extern "C" int32_t get_int32_field_mlir(int64_t iteration_signal, int32_t field_index) {
+extern "C" int32_t get_int32_field_mlir(int64_t /*iteration_signal*/, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null;
+    bool is_null = false;
     return pgx_lower::runtime::extract_field<int32_t>(field_index, &is_null);
 }
 
-extern "C" int64_t get_int64_field_mlir(int64_t iteration_signal, int32_t field_index) {
+extern "C" int64_t get_int64_field_mlir(int64_t /*iteration_signal*/, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null;
+    bool is_null = false;
     return pgx_lower::runtime::extract_field<int64_t>(field_index, &is_null);
 }
 
-extern "C" float get_float32_field_mlir(int64_t iteration_signal, int32_t field_index) {
+extern "C" float get_float32_field_mlir(int64_t /*iteration_signal*/, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null;
+    bool is_null = false;
     return pgx_lower::runtime::extract_field<float>(field_index, &is_null);
 }
 
-extern "C" double get_float64_field_mlir(int64_t iteration_signal, int32_t field_index) {
+extern "C" double get_float64_field_mlir(int64_t /*iteration_signal*/, int32_t field_index) {
     PGX_IO(RUNTIME);
-    bool is_null;
+    bool is_null = false;
     return pgx_lower::runtime::extract_field<double>(field_index, &is_null);
 }
 

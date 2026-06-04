@@ -23,7 +23,7 @@ static inline int64_t postgresTimestampToNanos(Timestamp ts) {
     return micros * 1000;
 }
 
-int64_t runtime::DateRuntime::subtractMonths(int64_t date, int64_t months) {
+int64_t runtime::DateRuntime::subtractMonths(int64_t /*date*/, int64_t /*months*/) {
     ereport(ERROR,
             (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
              errmsg("date interval month arithmetic not yet implemented"),
@@ -31,7 +31,7 @@ int64_t runtime::DateRuntime::subtractMonths(int64_t date, int64_t months) {
     return 0;
 }
 
-int64_t runtime::DateRuntime::addMonths(int64_t date, int64_t months) {
+int64_t runtime::DateRuntime::addMonths(int64_t /*date*/, int64_t /*months*/) {
     ereport(ERROR,
             (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
              errmsg("date interval month arithmetic not yet implemented"),
@@ -48,7 +48,9 @@ int64_t runtime::DateRuntime::extractYear(int64_t nanos) {
     int jd = pg_date + POSTGRES_EPOCH_JDATE;
     PGX_LOG(RUNTIME, DEBUG, "julian date=%d", jd);
 
-    int year, month, day;
+    int year;
+    int month;
+    int day;
     j2date(jd, &year, &month, &day);
 
     PGX_LOG(RUNTIME, DEBUG, "extracted year=%d", year);
@@ -60,7 +62,9 @@ int64_t runtime::DateRuntime::extractMonth(int64_t nanos) {
     DateADT pg_date = nanosToPostgresDate(nanos);
 
     int jd = pg_date + POSTGRES_EPOCH_JDATE;
-    int year, month, day;
+    int year;
+    int month;
+    int day;
     j2date(jd, &year, &month, &day);
 
     return month;
@@ -70,7 +74,9 @@ int64_t runtime::DateRuntime::extractDay(int64_t nanos) {
     DateADT pg_date = nanosToPostgresDate(nanos);
 
     int jd = pg_date + POSTGRES_EPOCH_JDATE;
-    int year, month, day;
+    int year;
+    int month;
+    int day;
     j2date(jd, &year, &month, &day);
 
     return day;
@@ -85,7 +91,8 @@ int64_t runtime::DateRuntime::ExtractFromDate(VarLen32 field, int64_t date) {
 
     if (len == 4 && strncmp(data, "year", 4) == 0) {
         return extractYear(date);
-    } else if (len == 5 && strncmp(data, "month", 5) == 0) {
+    }
+    if (len == 5 && strncmp(data, "month", 5) == 0) {
         return extractMonth(date);
     } else if (len == 3 && strncmp(data, "day", 3) == 0) {
         return extractDay(date);

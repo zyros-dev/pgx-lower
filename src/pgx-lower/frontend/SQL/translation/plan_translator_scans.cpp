@@ -536,7 +536,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
         std::vector<TranslationResult::ColumnSchema> subplan_columns = result.columns;
         result.columns.clear();
 
-        ListCell* lc;
+        ListCell* lc = nullptr;
         int output_attno = 1;
 
         foreach (lc, targetlist) {
@@ -654,7 +654,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
     std::vector<TranslationResult::ColumnSchema> newColumns;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-    ListCell* lc;
+    ListCell* lc = nullptr;
     int output_attno = 1;
 
     foreach (lc, targetlist) {

@@ -52,11 +52,12 @@ using namespace pgx_lower::frontend::sql::constants;
 
 static List* combine_join_clauses(List* specialized_clauses, List* join_quals, const char* clause_type_name) {
     if (specialized_clauses && join_quals) {
-        const auto combined = list_concat(list_copy(specialized_clauses), list_copy(join_quals));
+        auto* const combined = list_concat(list_copy(specialized_clauses), list_copy(join_quals));
         PGX_LOG(AST_TRANSLATE, DEBUG, "Combined %d %s with %d joinquals = %d total clauses",
                 list_length(specialized_clauses), clause_type_name, list_length(join_quals), list_length(combined));
         return combined;
-    } else if (specialized_clauses) {
+    }
+    if (specialized_clauses) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Using %d %s only", list_length(specialized_clauses), clause_type_name);
         return specialized_clauses;
     } else if (join_quals) {
@@ -87,14 +88,14 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
             rightPlan->type);
 
     const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto leftOp = leftTranslation.op;
+    auto* const leftOp = leftTranslation.op;
     if (!leftOp) {
         PGX_ERROR("Failed to translate left child of MergeJoin");
         throw std::runtime_error("Failed to translate left child of MergeJoin");
     }
 
     auto rightTranslation = translate_plan_node(ctx, rightPlan);
-    auto rightOp = rightTranslation.op;
+    auto* rightOp = rightTranslation.op;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of MergeJoin");
         throw std::runtime_error("Failed to translate right child of MergeJoin");
@@ -149,14 +150,14 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
             rightPlan->type);
 
     const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto leftOp = leftTranslation.op;
+    auto* const leftOp = leftTranslation.op;
     if (!leftOp) {
         PGX_ERROR("Failed to translate left child of HashJoin");
         throw std::runtime_error("Failed to translate left child of HashJoin");
     }
 
     auto rightTranslation = translate_plan_node(ctx, rightPlan);
-    auto rightOp = rightTranslation.op;
+    auto* rightOp = rightTranslation.op;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of HashJoin");
         throw std::runtime_error("Failed to translate right child of HashJoin");
@@ -235,7 +236,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
             rightPlan->type);
 
     const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto leftOp = leftTranslation.op;
+    auto* const leftOp = leftTranslation.op;
     if (!leftOp) {
         PGX_ERROR("Failed to translate left child of NestLoop");
         throw std::runtime_error("Failed to translate left child of NestLoop");
@@ -251,7 +252,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
                 nestLoop->nestParams->length);
 
-        ListCell* lc;
+        ListCell* lc = nullptr;
         foreach (lc, nestLoop->nestParams) {
             auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
             if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
@@ -311,7 +312,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     }
     // -----------------------------------------------------------------------------------------------------------------
     auto rightTranslation = translate_plan_node(rightCtx, rightPlan);
-    auto rightOp = rightTranslation.op;
+    auto* rightOp = rightTranslation.op;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of NestLoop");
         throw std::runtime_error("Failed to translate right child of NestLoop");
@@ -390,10 +391,10 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
         const auto basePredicateCtx = QueryCtxT::createChildContext(queryCtx, predicateBuilder, tupleArg);
         auto conditions = std::vector<mlir::Value>();
-        ListCell* lc;
+        ListCell* lc = nullptr;
         int clauseIdx = 0;
         foreach (lc, clauses) {
-            const auto clause = static_cast<Expr*>(lfirst(lc));
+            auto* const clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Processing clause %d of type %d", ++clauseIdx,
                     clause ? clause->type : -1);
 
@@ -441,8 +442,9 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             predicateRegion = &antiJoin.getPredicate();
         }
 
-        if (!predicateRegion)
+        if (!predicateRegion) {
             return;
+        }
 
         auto* predicateBlock = new mlir::Block;
         predicateRegion->push_back(predicateBlock);
@@ -485,7 +487,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
                                       ->getColumnManager();
             auto mappingAttrs = std::vector<mlir::Attribute>();
 
-            const auto outerJoinScope = "oj" + std::to_string(queryCtx.outer_join_counter++);
+            const auto outerJoinScope = "oj" + std::to_string(QueryCtxT::outer_join_counter++);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Creating outer join with scope: @%s", outerJoinScope.c_str());
 
             for (const auto& col : outerTranslation.columns) {
@@ -548,12 +550,12 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing %d correlation clauses", join_clauses_->length);
 
-        const auto basePredicateCtx = predicateCtx;
+        const auto& basePredicateCtx = predicateCtx;
         auto conditions = std::vector<mlir::Value>();
-        ListCell* lc;
+        ListCell* lc = nullptr;
         int clauseIdx = 0;
         foreach (lc, join_clauses_) {
-            const auto clause = static_cast<Expr*>(lfirst(lc));
+            auto* const clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing clause %d", ++clauseIdx);
 
             if (auto conditionValue = translateExpressionFn(basePredicateCtx, clause, &leftTrans, &rightTrans)) {
@@ -663,8 +665,8 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     case JOIN_SEMI: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating JOIN_SEMI as EXISTS pattern");
 
-        const auto selectionOp = buildExistsSubquerySelection(left_value, right_value, join_clauses, false,
-                                                              left_translation, right_translation, ctx);
+        auto* const selectionOp = buildExistsSubquerySelection(left_value, right_value, join_clauses, false,
+                                                               left_translation, right_translation, ctx);
         result.op = selectionOp;
         result.columns = left_translation.columns;
         break;
@@ -673,8 +675,8 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     case JOIN_ANTI: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating JOIN_ANTI as NOT EXISTS pattern");
 
-        const auto selectionOp = buildExistsSubquerySelection(left_value, right_value, join_clauses, true,
-                                                              left_translation, right_translation, ctx);
+        auto* const selectionOp = buildExistsSubquerySelection(left_value, right_value, join_clauses, true,
+                                                               left_translation, right_translation, ctx);
 
         result.op = selectionOp;
         result.columns = left_translation.columns;
@@ -684,8 +686,8 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     case JOIN_RIGHT_ANTI: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating JOIN_RIGHT_ANTI as NOT EXISTS pattern (right-side filtering)");
 
-        const auto selectionOp = buildExistsSubquerySelection(right_value, left_value, join_clauses, true,
-                                                              right_translation, left_translation, ctx);
+        auto* const selectionOp = buildExistsSubquerySelection(right_value, left_value, join_clauses, true,
+                                                               right_translation, left_translation, ctx);
 
         result.op = selectionOp;
         result.columns = right_translation.columns;

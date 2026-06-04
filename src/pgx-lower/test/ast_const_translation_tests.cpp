@@ -18,7 +18,7 @@ extern "C" {
 
 namespace postgresql_ast {
 auto translate_const(Const* const_node, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value;
-}
+} // namespace postgresql_ast
 
 #define REQUIRE(cond) \
     do { if (!(cond)) elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond); } while (0)

@@ -124,8 +124,9 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
 
-    std::string tableName, colName;
-    bool nullable;
+    std::string tableName;
+    std::string colName;
+    bool nullable = false;
     bool resolved_from_mapping = false;
 
     std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
@@ -142,8 +143,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     if (!resolved_from_mapping && var->varno == OUTER_VAR) {
-        auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
-                                               : throw std::runtime_error("OUTER_VAR without outer_result");
+        const auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+                                                     : throw std::runtime_error("OUTER_VAR without outer_result");
 
         if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
             PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns)", var->varattno,
@@ -230,7 +231,8 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_aggref: Looking for Aggref with function %s (OID %u, aggno=%d, aggtype=%d)",
             funcName.c_str(), aggref->aggfnoid, aggref->aggno, aggref->aggtype);
 
-    std::string scopeName, columnName;
+    std::string scopeName;
+    std::string columnName;
 
     bool found = false;
     if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iomanip>
 #include <fstream>
+#include <utility>
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -46,14 +47,16 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
         int totalValues = 0;
 
         module.walk([&](::mlir::Operation* op) {
-            if (!op)
+            if (!op) {
                 return;
+            }
 
             totalOperations++;
 
             std::string dialectName = op->getName().getDialectNamespace().str();
-            if (dialectName.empty())
+            if (dialectName.empty()) {
                 dialectName = "builtin";
+            }
             dialectCounts[dialectName]++;
 
             std::string opName = op->getName().getStringRef().str();
@@ -179,17 +182,14 @@ private:
     ::pgx_lower::log::Category phaseCategory;
 
 public:
-    ModuleDumpPass(const std::string& name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL)
-        : phaseName(name), phaseCategory(category) {}
+ explicit ModuleDumpPass(std::string name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL)
+ : phaseName(std::move(name))
+ , phaseCategory(category) {}
 
-    void runOnOperation() override {
-        dumpModuleWithStats(getOperation(), phaseName, phaseCategory);
-    }
+ void runOnOperation() override { dumpModuleWithStats(getOperation(), phaseName, phaseCategory); }
 
-    llvm::StringRef getArgument() const override { return "module-dump"; }
-    llvm::StringRef getDescription() const override {
-        return "Dump MLIR module for debugging";
-    }
+ [[nodiscard]] llvm::StringRef getArgument() const override { return "module-dump"; }
+ [[nodiscard]] llvm::StringRef getDescription() const override { return "Dump MLIR module for debugging"; }
 };
 
 std::unique_ptr<mlir::Pass> createModuleDumpPass(const std::string& phaseName, ::pgx_lower::log::Category category) {

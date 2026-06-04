@@ -70,13 +70,15 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
     const Oid opOid = op_expr->opno;
 
     {
-        if (auto result = translate_arithmetic_op(ctx, op_expr, lhs, rhs))
+        if (auto result = translate_arithmetic_op(ctx, op_expr, lhs, rhs)) {
             return result;
+        }
     }
 
     {
-        if (auto result = translate_comparison_op(ctx, opOid, lhs, rhs))
+        if (auto result = translate_comparison_op(ctx, opOid, lhs, rhs)) {
             return result;
+        }
     }
 
     if (auto* oprname = get_opname(opOid)) {
@@ -112,7 +114,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
                                                                  mlir::ValueRange{convertedLhs, convertedRhs});
 
             return op2.getRes();
-        } else if (op == "!~~") {
+        }
+        if (op == "!~~") {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NOT LIKE operator to negated db.runtime_call");
             auto convertedLhs = lhs;
             auto convertedRhs = rhs;
@@ -186,7 +189,7 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
 
     for (int argIndex = 0; argIndex < op_expr->args->length && argIndex < 2; argIndex++) {
         const ListCell* lc = &op_expr->args->elements[argIndex];
-        if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+        if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
             if (const mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                 if (argIndex == 0) {
                     lhs = argValue;
@@ -334,16 +337,21 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
             result_type = mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
         }
 
-        if (op == "+")
+        if (op == "+") {
             return ctx.builder.create<mlir::db::AddOp>(loc, result_type, convertedLhs, convertedRhs);
-        if (op == "-")
+        }
+        if (op == "-") {
             return ctx.builder.create<mlir::db::SubOp>(loc, result_type, convertedLhs, convertedRhs);
-        if (op == "*")
+        }
+        if (op == "*") {
             return ctx.builder.create<mlir::db::MulOp>(loc, result_type, convertedLhs, convertedRhs);
-        if (op == "/")
+        }
+        if (op == "/") {
             return ctx.builder.create<mlir::db::DivOp>(loc, result_type, convertedLhs, convertedRhs);
-        if (op == "%")
+        }
+        if (op == "%") {
             return ctx.builder.create<mlir::db::ModOp>(loc, result_type, convertedLhs, convertedRhs);
+        }
     } else {
         mlir::SmallVector<mlir::Type, 1> inferredTypes;
 
@@ -420,8 +428,9 @@ struct SQLTypeInference {
     static mlir::db::DecimalType getHigherDecimalType(mlir::Type left, mlir::Type right) {
         const auto a = dyn_cast_or_null<mlir::db::DecimalType>(left);
         if (const auto b = dyn_cast_or_null<mlir::db::DecimalType>(right)) {
-            if (!a)
+            if (!a) {
                 return b;
+            }
             const int hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
             const int maxs = std::max(a.getS(), b.getS());
             return mlir::db::DecimalType::get(a.getContext(), std::min(hidig + maxs, MAX_NUMERIC_PRECISION),
@@ -459,9 +468,8 @@ struct SQLTypeInference {
         if (onlyTargetIsNullable) {
             mlir::Value casted = builder.create<mlir::db::CastOp>(builder.getUnknownLoc(), getBaseType(t), v);
             return builder.create<mlir::db::AsNullableOp>(builder.getUnknownLoc(), t, casted);
-        } else {
-            return builder.create<mlir::db::CastOp>(builder.getUnknownLoc(), t, v);
         }
+        return builder.create<mlir::db::CastOp>(builder.getUnknownLoc(), t, v);
     }
     static mlir::Type getCommonBaseType(mlir::Type left, mlir::Type right) {
         left = getBaseType(left);
@@ -473,10 +481,12 @@ struct SQLTypeInference {
         const bool rightIsTimestamp = isa<mlir::db::TimestampType>(right);
 
         if ((leftIsDate || leftIsTimestamp) && (rightIsDate || rightIsTimestamp)) {
-            if (leftIsTimestamp)
+            if (leftIsTimestamp) {
                 return left;
-            if (rightIsTimestamp)
+            }
+            if (rightIsTimestamp) {
                 return right;
+            }
             return left;
         }
 
@@ -484,14 +494,18 @@ struct SQLTypeInference {
         const bool intPresent = isa<mlir::IntegerType>(left) || isa<mlir::IntegerType>(right);
         const bool floatPresent = isa<mlir::FloatType>(left) || isa<mlir::FloatType>(right);
         const bool decimalPresent = isa<mlir::db::DecimalType>(left) || isa<mlir::db::DecimalType>(right);
-        if (stringPresent)
+        if (stringPresent) {
             return mlir::db::StringType::get(left.getContext());
-        if (decimalPresent)
+        }
+        if (decimalPresent) {
             return getHigherDecimalType(left, right);
-        if (floatPresent)
+        }
+        if (floatPresent) {
             return static_cast<mlir::Type>(getHigherFloatType(left, right));
-        if (intPresent)
+        }
+        if (intPresent) {
             return getHigherIntType(left, right);
+        }
         return left;
     }
     static mlir::Type getCommonType(const mlir::Type left, const mlir::Type right) {
@@ -499,9 +513,8 @@ struct SQLTypeInference {
         const auto commonBaseType = getCommonBaseType(left, right);
         if (isNullable) {
             return mlir::db::NullableType::get(left.getContext(), commonBaseType);
-        } else {
-            return commonBaseType;
         }
+        return commonBaseType;
     }
     static mlir::Type getCommonBaseType(const mlir::TypeRange types) {
         mlir::Type commonType = types.front();
