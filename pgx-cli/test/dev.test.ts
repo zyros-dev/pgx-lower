@@ -142,7 +142,7 @@ describe("dev commands", () => {
 
     expect(extensionCmake).toContain("pgx_lower_regress_routes");
     expect(extensionCmake).toContain("pgx_lower_tpch_routes");
-    expect(extensionCmake).toContain("pgx_lower_unit_tests");
+    expect(extensionCmake).toContain("pgx_lower_regress_unit");
     expect(extensionCmake).toContain("route-check");
     expect(extensionCmake).toContain("tests/unit-tests/sql");
   });

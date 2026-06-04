@@ -135,7 +135,7 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/unit-tests/sql)
     file(CHMOD ${CMAKE_SOURCE_DIR}/tests/unit-tests/sql PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE GROUP_EXECUTE WORLD_READ WORLD_WRITE WORLD_EXECUTE)
     add_test(
-        NAME pgx_lower_unit_tests
+        NAME pgx_lower_regress_unit
         COMMAND bash
                 -lc
                 "set -euo pipefail; cd '${CMAKE_SOURCE_DIR}'; rm -f '${CMAKE_SOURCE_DIR}'/tests/unit-tests/sql/*.sql; node --input-type=module -e 'import { writeUnitSqlFiles } from \"./pgx-cli/dist/unit-sql.js\"; for (const line of writeUnitSqlFiles(\"${CMAKE_SOURCE_DIR}\")) console.log(line);'; /usr/local/pgsql/bin/dropdb --if-exists regression_unit; /usr/local/pgsql/bin/createdb regression_unit; fail=0; for sql in '${CMAKE_SOURCE_DIR}'/tests/unit-tests/sql/*.sql; do echo \"--- $(basename \"$sql\") ---\"; /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \"$sql\" || { fail=1; echo FAIL: \"$sql\"; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi"
