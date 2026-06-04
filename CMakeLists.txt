@@ -141,8 +141,8 @@ endif()
 add_custom_target(build_includes)
 set(runtime_funcs_ptr_libs "")
 
-# Add tools for runtime header generation
-add_subdirectory(tools/build-tools)
+# Add the runtime header generation tool.
+add_subdirectory(pgx-cli/cmake-tools)
 
 
 add_library(runtime_funcs_ptr INTERFACE)
@@ -166,7 +166,3 @@ FetchContent_Declare(
 )
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
-
-if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
-    add_subdirectory(tools)
-endif()
