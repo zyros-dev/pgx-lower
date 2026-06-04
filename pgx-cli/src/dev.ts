@@ -1,7 +1,7 @@
-import { join } from "node:path";
 import type { CommandRunner } from "./commands.js";
 import { fullLintShellCommand, targetedLintShellCommand } from "./lint.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
+import { writeUnitSqlFiles } from "./unit-sql.js";
 
 export type WorkflowStep = {
   name: string;
@@ -220,10 +220,8 @@ async function runPostgresUnitTests(
   config: DevConfig,
   suite?: string
 ): Promise<number> {
-  const generated = await runner.run("python3", [join(config.localProjectPath, "scripts/gen_unit_test_sql.py")]);
-  output.stdout += generated.stdout;
-  output.stderr += generated.stderr;
-  if (generated.exitCode !== 0) return generated.exitCode;
+  const generated = writeUnitSqlFiles(config.localProjectPath);
+  if (generated.length > 0) output.stdout += `${generated.join("\n")}\n`;
 
   const flush = await flushMutagen(runner, output, config.mutagenSession);
   if (flush !== 0) return flush;
