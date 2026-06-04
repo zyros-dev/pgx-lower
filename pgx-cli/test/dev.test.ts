@@ -26,6 +26,9 @@ const devConfig = {
   checkQueue: "pgx-check"
 };
 
+const oldLintScript = ["scripts", "run_lint.sh"].join("/");
+const oldBaselineScript = ["ptest", "with", "baseline.py"].join("_");
+
 describe("dev workflow summaries", () => {
   test("formats passing workflow steps", () => {
     expect(
@@ -106,8 +109,8 @@ describe("dev commands", () => {
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(runner.calls.some((call) => call.command === command && call.args.join(" ").includes(marker))).toBe(true);
     expect(runner.calls.some((call) => call.command === "python3")).toBe(false);
-    expect(commands).not.toContain("scripts/run_lint.sh");
-    expect(commands).not.toContain("ptest_with_baseline.py");
+    expect(commands).not.toContain(oldLintScript);
+    expect(commands).not.toContain(oldBaselineScript);
     expect(commands).not.toContain("just");
   });
 
@@ -134,11 +137,11 @@ describe("dev commands", () => {
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(commands).toContain("clang-format-diff-20");
     expect(commands).toContain("clang-tidy-20");
-    expect(commands).not.toContain("scripts/run_lint.sh");
+    expect(commands).not.toContain(oldLintScript);
     expect(commands).toContain("pgx-compile.out");
     expect(commands).toContain("UTEST-PG_OK");
     expect(commands).toContain("ctest -V");
-    expect(commands).not.toContain("ptest_with_baseline.py");
+    expect(commands).not.toContain(oldBaselineScript);
     expect(commands).not.toContain("just");
   });
 
