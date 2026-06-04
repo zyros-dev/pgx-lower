@@ -21,8 +21,8 @@ extern "C" {
 
 namespace pgx_lower::execution {
 
-static auto mergeVerificationResult(AcceptedPlanVerificationResult& into,
-                                    const AcceptedPlanVerificationResult& from) -> void {
+static auto mergeVerificationResult(AcceptedPlanVerificationResult& into, const AcceptedPlanVerificationResult& from)
+    -> void {
     for (const auto& failure : from.failures()) {
         into.addFailure(failure.phase, failure.message, failure.location);
     }
@@ -40,10 +40,8 @@ auto AcceptedPlanVerificationResult::success() -> AcceptedPlanVerificationResult
     return {};
 }
 
-auto AcceptedPlanVerificationResult::failure(AcceptedPlanVerificationPhase phase,
-                                             std::string message,
-                                             std::string location)
-    -> AcceptedPlanVerificationResult {
+auto AcceptedPlanVerificationResult::failure(AcceptedPlanVerificationPhase phase, std::string message,
+                                             std::string location) -> AcceptedPlanVerificationResult {
     AcceptedPlanVerificationResult result;
     result.addFailure(phase, std::move(message), std::move(location));
     return result;
@@ -70,17 +68,14 @@ auto AcceptedPlanVerificationResult::summary() const -> std::string {
     return text;
 }
 
-auto AcceptedPlanVerificationResult::addFailure(AcceptedPlanVerificationPhase phase,
-                                                std::string message,
+auto AcceptedPlanVerificationResult::addFailure(AcceptedPlanVerificationPhase phase, std::string message,
                                                 std::string location) -> void {
     failures_.push_back({phase, std::move(message), std::move(location)});
 }
 
 #ifdef POSTGRESQL_EXTENSION
-static auto verifyTargetListMetadata(const List* targetList,
-                                     const AcceptedPlanVerificationPhase phase,
-                                     const std::string& location)
-    -> AcceptedPlanVerificationResult {
+static auto verifyTargetListMetadata(const List* targetList, const AcceptedPlanVerificationPhase phase,
+                                     const std::string& location) -> AcceptedPlanVerificationResult {
     auto result = AcceptedPlanVerificationResult::success();
     if (!targetList) {
         result.addFailure(phase, "target list is null", location);
@@ -127,8 +122,8 @@ auto verifyAcceptedPlanMetadata(const PlannedStmt* stmt, const AcceptedPlanVerif
     mergeVerificationResult(result, verifyTargetListMetadata(stmt->planTree->targetlist, phase, "Plan.targetlist"));
     return result;
 #else
-    (void) stmt;
-    (void) phase;
+    (void)stmt;
+    (void)phase;
     return AcceptedPlanVerificationResult::success();
 #endif
 }
@@ -154,8 +149,7 @@ static auto verifyModuleEntryPoint(mlir::ModuleOp module, const AcceptedPlanVeri
     return AcceptedPlanVerificationResult::success();
 }
 
-static auto verifyNoHighLevelDialectsAfterLowering(mlir::ModuleOp module,
-                                                   const AcceptedPlanVerificationPhase phase)
+static auto verifyNoHighLevelDialectsAfterLowering(mlir::ModuleOp module, const AcceptedPlanVerificationPhase phase)
     -> AcceptedPlanVerificationResult {
     auto result = AcceptedPlanVerificationResult::success();
     if (phase != AcceptedPlanVerificationPhase::after_lowering || !module) {
@@ -170,18 +164,15 @@ static auto verifyNoHighLevelDialectsAfterLowering(mlir::ModuleOp module,
 
         const auto ns = dialect->getNamespace();
         if (ns == "relalg" || ns == "db" || ns == "dsa" || ns == "util") {
-            result.addFailure(phase,
-                              "high-level dialect operation remains after lowering: "
-                                  + op->getName().getStringRef().str(),
-                              "mlir.module");
+            result.addFailure(
+                phase, "high-level dialect operation remains after lowering: " + op->getName().getStringRef().str(),
+                "mlir.module");
         }
     });
     return result;
 }
 
-auto verifyAcceptedPlanModule(const PlannedStmt* stmt,
-                              mlir::ModuleOp module,
-                              const AcceptedPlanVerificationPhase phase)
+auto verifyAcceptedPlanModule(const PlannedStmt* stmt, mlir::ModuleOp module, const AcceptedPlanVerificationPhase phase)
     -> AcceptedPlanVerificationResult {
     auto result = verifyAcceptedPlanMetadata(stmt, phase);
     if (phase == AcceptedPlanVerificationPhase::after_lowering) {
@@ -193,9 +184,8 @@ auto verifyAcceptedPlanModule(const PlannedStmt* stmt,
     return result;
 }
 
-auto verifyAcceptedPlanOrThrow(const PlannedStmt* stmt,
-                               mlir::ModuleOp module,
-                               const AcceptedPlanVerificationPhase phase) -> void {
+auto verifyAcceptedPlanOrThrow(const PlannedStmt* stmt, mlir::ModuleOp module, const AcceptedPlanVerificationPhase phase)
+    -> void {
     const auto result = verifyAcceptedPlanModule(stmt, module, phase);
     if (result.ok()) {
         return;

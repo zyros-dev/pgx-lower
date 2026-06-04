@@ -94,8 +94,7 @@ auto AnalyzerResult::humanSummary() const -> std::string {
     return summary;
 }
 
-auto AnalyzerResult::addUnsupportedReason(UnsupportedReasonKind kind, std::string message, std::string location)
-    -> void {
+auto AnalyzerResult::addUnsupportedReason(UnsupportedReasonKind kind, std::string message, std::string location) -> void {
     supported_ = false;
     reasons_.push_back({kind, std::move(message), std::move(location)});
 }
@@ -249,8 +248,7 @@ auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> AnalyzerResult {
     }
     if (!checkCommandType(stmt)) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_plan_node,
-                                           "only SELECT statements are supported",
-                                           "PlannedStmt.commandType");
+                                           "only SELECT statements are supported", "PlannedStmt.commandType");
     }
 
     auto result = analyzeNode(stmt->planTree, "Plan");
@@ -260,8 +258,7 @@ auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> AnalyzerResult {
 
 auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> AnalyzerResult {
     if (!plan) {
-        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
-                                           "plan node is null",
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "plan node is null",
                                            std::move(location));
     }
 
@@ -270,21 +267,19 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     switch (nodeTag(plan)) {
     case T_SeqScan:
     case T_NestLoop:
-    case T_MergeJoin: 
+    case T_MergeJoin:
     case T_HashJoin:
     case T_Sort:
     case T_Limit:
     case T_Agg:
     case T_Material:
-    case T_Hash:
-        break;
+    case T_Hash: break;
     case T_ProjectSet:
         mergeAnalyzerResult(result, analyzeExprList(plan->qual, location + ".qual"));
         mergeAnalyzerResult(result, analyzeTargetList(plan->targetlist, location + ".targetlist"));
         if (result.isSupported()) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
-                                        "unsupported plan node tag " + std::to_string(nodeTag(plan)),
-                                        location);
+                                        "unsupported plan node tag " + std::to_string(nodeTag(plan)), location);
         }
         return supportedOrUnsupported(result);
     case T_SubqueryScan: {
@@ -295,8 +290,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
 
     default:
         result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
-                                    "unsupported plan node tag " + std::to_string(nodeTag(plan)),
-                                    location);
+                                    "unsupported plan node tag " + std::to_string(nodeTag(plan)), location);
         return result;
     }
 
@@ -360,15 +354,13 @@ auto QueryAnalyzer::analyzePlanTargetTypes(const Plan* plan, std::string locatio
 
 auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> AnalyzerResult {
     if (!expr) {
-        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
-                                           "expression is null",
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "expression is null",
                                            std::move(location));
     }
 
     const auto typeOid = exprType(const_cast<Node*>(expr));
     if (typeOid == InvalidOid) {
-        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
-                                           "expression type OID is invalid",
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "expression type OID is invalid",
                                            std::move(location));
     }
     if (!isTypeSupportedByMLIR(typeOid)) {
@@ -398,14 +390,12 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> Analy
         if (!isFunctionSupported(func->funcid)) {
             const auto functionName = postgresFunctionName(func->funcid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
-                                        functionName.empty()
-                                            ? "unsupported function OID " + std::to_string(func->funcid)
-                                            : "unsupported function " + functionName + "()",
+                                        functionName.empty() ? "unsupported function OID " + std::to_string(func->funcid)
+                                                             : "unsupported function " + functionName + "()",
                                         location);
         }
         if (!isCollationSupported(func->inputcollid) || !isCollationSupported(func->funccollid)) {
-            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
-                                        "unsupported function collation",
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported function collation",
                                         location);
         }
         mergeAnalyzerResult(result, analyzeExprList(func->args, location + ".args"));
@@ -417,12 +407,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> Analy
         const auto* op = reinterpret_cast<const OpExpr*>(expr);
         if (!isOperatorSupported(op->opno)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
-                                        "unsupported operator OID " + std::to_string(op->opno),
-                                        location);
+                                        "unsupported operator OID " + std::to_string(op->opno), location);
         }
         if (!isCollationSupported(op->inputcollid) || !isCollationSupported(op->opcollid)) {
-            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
-                                        "unsupported operator collation",
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported operator collation",
                                         location);
         }
         mergeAnalyzerResult(result, analyzeExprList(op->args, location + ".args"));
@@ -475,8 +463,7 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> Analy
 
     default:
         return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_expr_node,
-                                           "unsupported expression node tag " + std::to_string(nodeTag(expr)),
-                                           location);
+                                           "unsupported expression node tag " + std::to_string(nodeTag(expr)), location);
     }
 }
 
@@ -509,27 +496,12 @@ auto QueryAnalyzer::isFunctionSupported(const Oid functionOid) -> bool {
     if (functionName.empty()) {
         return false;
     }
-    return functionName == "count" ||
-           functionName == "sum" ||
-           functionName == "avg" ||
-           functionName == "min" ||
-           functionName == "max" ||
-           functionName == "upper" ||
-           functionName == "lower" ||
-           functionName == "substring" ||
-           functionName == "varchar" ||
-           functionName == "text" ||
-           functionName == "char" ||
-           functionName == "bpchar" ||
-           functionName == "int2" ||
-           functionName == "int4" ||
-           functionName == "int8" ||
-           functionName == "numeric" ||
-           functionName == "float4" ||
-           functionName == "float8" ||
-           functionName == "date" ||
-           functionName == "timestamp" ||
-           functionName == "interval";
+    return functionName == "count" || functionName == "sum" || functionName == "avg" || functionName == "min"
+           || functionName == "max" || functionName == "upper" || functionName == "lower" || functionName == "substring"
+           || functionName == "varchar" || functionName == "text" || functionName == "char" || functionName == "bpchar"
+           || functionName == "int2" || functionName == "int4" || functionName == "int8" || functionName == "numeric"
+           || functionName == "float4" || functionName == "float8" || functionName == "date"
+           || functionName == "timestamp" || functionName == "interval";
 }
 
 auto QueryAnalyzer::isOperatorSupported(const Oid operatorOid) -> bool {
@@ -542,26 +514,15 @@ auto QueryAnalyzer::isOperatorSupported(const Oid operatorOid) -> bool {
     }
     const auto operatorName = std::string(name);
     pfree(const_cast<char*>(name));
-    return operatorName == "=" ||
-           operatorName == "<>" ||
-           operatorName == "!=" ||
-           operatorName == "<" ||
-           operatorName == "<=" ||
-           operatorName == ">" ||
-           operatorName == ">=" ||
-           operatorName == "+" ||
-           operatorName == "-" ||
-           operatorName == "*" ||
-           operatorName == "/" ||
-           operatorName == "~~" ||
-           operatorName == "!~~";
+    return operatorName == "=" || operatorName == "<>" || operatorName == "!=" || operatorName == "<"
+           || operatorName == "<=" || operatorName == ">" || operatorName == ">=" || operatorName == "+"
+           || operatorName == "-" || operatorName == "*" || operatorName == "/" || operatorName == "~~"
+           || operatorName == "!~~";
 }
 
 auto QueryAnalyzer::isCollationSupported(const Oid collationOid) -> bool {
-    return collationOid == InvalidOid ||
-           collationOid == DEFAULT_COLLATION_OID ||
-           collationOid == C_COLLATION_OID ||
-           collationOid == POSIX_COLLATION_OID;
+    return collationOid == InvalidOid || collationOid == DEFAULT_COLLATION_OID || collationOid == C_COLLATION_OID
+           || collationOid == POSIX_COLLATION_OID;
 }
 
 auto QueryAnalyzer::analyzeNodeForTesting(const Plan* plan) -> AnalyzerResult {
@@ -599,7 +560,7 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
 
         int i = 1;
         ListCell* lc = nullptr;
-        foreach(lc, stmt->subplans) {
+        foreach (lc, stmt->subplans) {
             Plan* subplan = (Plan*)lfirst(lc);
             PGX_LOG(AST_TRANSLATE, DEBUG, "\n--- SubPlan %d ---", i);
 

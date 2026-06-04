@@ -112,7 +112,8 @@ const char* level_name(Level level) {
 
 bool should_log(const Category cat, const Level level) {
     initialize_if_needed();
-    if (cat == Category::PROBLEM) return true;
+    if (cat == Category::PROBLEM)
+        return true;
 
     if (!log_enable) {
         return false;
@@ -165,7 +166,7 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
     va_end(args_size);
 
     auto message = std::vector<char>(size_needed * 2);
-    
+
     va_list args;
     va_start(args, fmt);
     vsnprintf(message.data(), size_needed, fmt, args);
@@ -196,11 +197,7 @@ void route_fallback_notice(const char* reason_kind, const char* message, const c
     }
 #else
     if (location && location[0]) {
-        fprintf(stderr,
-                "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s\n",
-                safe_kind,
-                safe_message,
-                location);
+        fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s\n", safe_kind, safe_message, location);
     } else {
         fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s\n", safe_kind, safe_message);
     }
@@ -211,12 +208,11 @@ static thread_local int scope_logger_depth{};
 static constexpr int MAX_SCOPE_LOGGER_DEPTH = 3000;
 
 ScopeLogger::ScopeLogger(Category cat, const char* file, int line, const char* function_name)
-    : category_(cat)
-    , file_(file)
-    , line_(line)
-    , function_name_(function_name)
-    , should_log_(false) {
-
+: category_(cat)
+, file_(file)
+, line_(line)
+, function_name_(function_name)
+, should_log_(false) {
     if (scope_logger_depth >= MAX_SCOPE_LOGGER_DEPTH) {
         return;
     }

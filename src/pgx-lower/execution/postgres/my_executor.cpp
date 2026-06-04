@@ -70,8 +70,7 @@ void logQueryDebugInfo(const PlannedStmt* stmt) {
         PGX_LOG(GENERAL, DEBUG, "planTree->targetlist ptr: %p", stmt->planTree->targetlist);
         if (stmt->planTree->targetlist) {
             PGX_LOG(GENERAL, DEBUG, "targetlist length: %d", list_length(stmt->planTree->targetlist));
-        }
-        else {
+        } else {
             PGX_LOG(GENERAL, DEBUG, "targetlist is NULL!");
         }
     }
@@ -99,12 +98,10 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
                 selectedColumns.push_back(-1);
             }
             PGX_LOG(GENERAL, DEBUG, "Configured for %d result columns", numSelectedColumns);
-        }
-        else {
+        } else {
             selectedColumns = {0};
         }
-    }
-    else {
+    } else {
         selectedColumns = {0};
     }
 
@@ -133,15 +130,14 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                         if (tle->resname) {
                             strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
                             PGX_LOG(GENERAL, DEBUG, "Setting column %d name to: %s", i, tle->resname);
-                        }
-                        else {
+                        } else {
                             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
                             PGX_LOG(GENERAL, DEBUG, "Setting column %d name to: col%d", i, i);
                         }
 
                         if (tle->expr) {
-                            PGX_LOG(GENERAL, DEBUG, "Column %d: Examining tle->expr nodeTag=%d resname=%s",
-                                    i, nodeTag(tle->expr), tle->resname ? tle->resname : "NULL");
+                            PGX_LOG(GENERAL, DEBUG, "Column %d: Examining tle->expr nodeTag=%d resname=%s", i,
+                                    nodeTag(tle->expr), tle->resname ? tle->resname : "NULL");
                             columnType = exprType((Node*)tle->expr);
 
                             if (columnType == InvalidOid) {
@@ -160,15 +156,15 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             typeByVal = typByVal;
                             typeAlign = typAlign;
 
-                            PGX_LOG(GENERAL, DEBUG, "Column %d type OID: %d (expr type: %d)", i, columnType, nodeTag(tle->expr));
+                            PGX_LOG(GENERAL, DEBUG, "Column %d type OID: %d (expr type: %d)", i, columnType,
+                                    nodeTag(tle->expr));
                         }
                         break;
                     }
                     colIdx++;
                 }
             }
-        }
-        else {
+        } else {
             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
         }
 
@@ -235,8 +231,8 @@ setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, TupleTableSlo
     }
 
     *slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
-    PGX_LOG(GENERAL, DEBUG, "Created slot=%p with tupleDesc=%p, tts_nvalid=%d",
-            *slot, (*slot)->tts_tupleDescriptor, (*slot)->tts_nvalid);
+    PGX_LOG(GENERAL, DEBUG, "Created slot=%p with tupleDesc=%p, tts_nvalid=%d", *slot, (*slot)->tts_tupleDescriptor,
+            (*slot)->tts_nvalid);
     dest->rStartup(dest, operation, resultTupleDesc);
 
     g_tuple_streamer.initialize(dest, *slot);
@@ -246,12 +242,8 @@ setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, TupleTableSlo
     return resultTupleDesc;
 }
 
-static void cleanupExecutionResources(EState* estate,
-                                      ExprContext* econtext,
-                                      TupleTableSlot* slot,
-                                      TupleDesc resultTupleDesc,
-                                      DestReceiver* dest,
-                                      MemoryContext old_context) {
+static void cleanupExecutionResources(EState* estate, ExprContext* econtext, TupleTableSlot* slot,
+                                      TupleDesc resultTupleDesc, DestReceiver* dest, MemoryContext old_context) {
     g_tuple_streamer.shutdown();
 
     if (g_current_tuple_passthrough.originalTuple) {
@@ -335,10 +327,8 @@ static auto currentExecutionMode() -> ExecutionMode {
 
 static auto emitAnalyzerFallbackNotice(const pgx_lower::AnalyzerResult& analysis) -> void {
     const auto& reason = analysis.primaryReason();
-    pgx_lower::log::route_fallback_notice(
-        pgx_lower::unsupportedReasonKindName(reason.kind),
-        reason.message.c_str(),
-        reason.location.c_str());
+    pgx_lower::log::route_fallback_notice(pgx_lower::unsupportedReasonKindName(reason.kind), reason.message.c_str(),
+                                          reason.location.c_str());
 }
 
 static bool setupExecution(ExecutionContext& ctx, const PlannedStmt* stmt, DestReceiver* dest, CmdType operation) {
@@ -412,8 +402,7 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     const auto mode = currentExecutionMode();
 
     if (mode == ExecutionMode::force_fallback) {
-        pgx_lower::log::route_fallback_notice("force_fallback",
-                                              "execution mode forced stock PostgreSQL",
+        pgx_lower::log::route_fallback_notice("force_fallback", "execution mode forced stock PostgreSQL",
                                               "pgx_lower.execution_mode");
         return false;
     }

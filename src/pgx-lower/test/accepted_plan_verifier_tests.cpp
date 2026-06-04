@@ -20,11 +20,11 @@ extern "C" {
 #include <stdexcept>
 #include <string>
 
-#define REQUIRE(cond) \
-    do { \
-        if (!(cond)) { \
-            elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond); \
-        } \
+#define REQUIRE(cond)                                                                                                  \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond);                                        \
+        }                                                                                                              \
     } while (0)
 
 namespace {
@@ -66,8 +66,7 @@ PGX_TEST_FN(accepted_plan_verifier_success_has_no_failures) {
 
 PGX_TEST_FN(accepted_plan_verifier_failure_summary_names_phase) {
     auto result = pgx_lower::execution::AcceptedPlanVerificationResult::failure(
-        pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation,
-        "missing main function",
+        pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation, "missing main function",
         "mlir.module");
     REQUIRE(!result.ok());
     REQUIRE(result.failures().size() == 1);
@@ -77,8 +76,7 @@ PGX_TEST_FN(accepted_plan_verifier_failure_summary_names_phase) {
 
 PGX_TEST_FN(accepted_plan_verifier_rejects_null_planned_stmt) {
     const auto result = pgx_lower::execution::verifyAcceptedPlanMetadata(
-        nullptr,
-        pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
+        nullptr, pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
     REQUIRE(!result.ok());
     REQUIRE(result.summary() == std::string("after_ast_translation: planned statement is null at PlannedStmt"));
     PG_RETURN_VOID();
@@ -88,8 +86,7 @@ PGX_TEST_FN(accepted_plan_verifier_rejects_missing_plan_tree) {
     auto stmt = PlannedStmt{};
     stmt.planTree = nullptr;
     const auto result = pgx_lower::execution::verifyAcceptedPlanMetadata(
-        &stmt,
-        pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
+        &stmt, pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
     REQUIRE(!result.ok());
     REQUIRE(result.summary() == std::string("after_ast_translation: plan tree is null at PlannedStmt.planTree"));
     PG_RETURN_VOID();
@@ -101,9 +98,7 @@ PGX_TEST_FN(accepted_plan_verifier_rejects_missing_main_function) {
     const auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
 
     const auto result = pgx_lower::execution::verifyAcceptedPlanModule(
-        &fixture.stmt,
-        module,
-        pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
+        &fixture.stmt, module, pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
     REQUIRE(!result.ok());
     REQUIRE(result.summary() == std::string("after_ast_translation: missing main function at mlir.module"));
     PG_RETURN_VOID();
@@ -125,9 +120,7 @@ PGX_TEST_FN(accepted_plan_verifier_rejects_high_level_op_after_lowering) {
     REQUIRE(tester->loadRelAlgModule(relAlgMLIR));
 
     const auto result = pgx_lower::execution::verifyAcceptedPlanModule(
-        &fixture.stmt,
-        tester->getModule(),
-        pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
+        &fixture.stmt, tester->getModule(), pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
     REQUIRE(!result.ok());
     REQUIRE(result.summary().find("after_lowering: high-level dialect operation remains after lowering:") == 0);
     PG_RETURN_VOID();
@@ -145,9 +138,7 @@ PGX_TEST_FN(accepted_plan_verifier_accepts_llvm_main_after_lowering) {
     builder.create<mlir::LLVM::LLVMFuncOp>(loc, "main", functionType);
 
     const auto result = pgx_lower::execution::verifyAcceptedPlanModule(
-        &fixture.stmt,
-        module,
-        pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
+        &fixture.stmt, module, pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
     REQUIRE(result.ok());
     PG_RETURN_VOID();
 }
@@ -156,9 +147,7 @@ PGX_TEST_FN(accepted_plan_verifier_throw_names_internal_verifier) {
     auto stmt = PlannedStmt{};
     try {
         pgx_lower::execution::verifyAcceptedPlanOrThrow(
-            &stmt,
-            mlir::ModuleOp{},
-            pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
+            &stmt, mlir::ModuleOp{}, pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
     } catch (const std::runtime_error& error) {
         REQUIRE(std::string(error.what()).find("Accepted plan verifier failed:") != std::string::npos);
         PG_RETURN_VOID();

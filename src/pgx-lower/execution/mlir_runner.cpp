@@ -10,7 +10,6 @@
 // AST Translation
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 
-
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
 #include "postgres.h"
@@ -82,11 +81,10 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
 
         // Verify the generated module
-        pgx_lower::log::verify_module_or_throw(*module, "AST Translation", "PostgreSQL AST to RelAlg MLIR verification failed");
+        pgx_lower::log::verify_module_or_throw(*module, "AST Translation",
+                                               "PostgreSQL AST to RelAlg MLIR verification failed");
         pgx_lower::execution::verifyAcceptedPlanOrThrow(
-            plannedStmt,
-            *module,
-            pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
+            plannedStmt, *module, pgx_lower::execution::AcceptedPlanVerificationPhase::after_ast_translation);
 
         if (!module) {
             PGX_ERROR("Module is null after AST translation");
@@ -105,8 +103,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
             } catch (const std::exception& e) {
                 PGX_ERROR("MLIR pipeline exception: %s", e.what());
 #ifndef BUILDING_UNIT_TESTS
-                ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), 
-                               errmsg("MLIR lowering pipeline failed: %s", e.what())));
+                ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("MLIR lowering pipeline failed: %s", e.what())));
 #endif
                 pipelineSuccess = false;
             }
@@ -126,9 +123,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
 
         pgx_lower::execution::verifyAcceptedPlanOrThrow(
-            plannedStmt,
-            *module,
-            pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
+            plannedStmt, *module, pgx_lower::execution::AcceptedPlanVerificationPhase::after_lowering);
 
         // Phase 4: JIT execution
         return executeJITWithDestReceiver(*module, estate, dest);

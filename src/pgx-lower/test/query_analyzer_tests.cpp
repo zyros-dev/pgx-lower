@@ -10,11 +10,11 @@ extern "C" {
 
 #include <string>
 
-#define REQUIRE(cond) \
-    do { \
-        if (!(cond)) { \
-            elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond); \
-        } \
+#define REQUIRE(cond)                                                                                                  \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond);                                        \
+        }                                                                                                              \
     } while (0)
 
 PGX_TEST_FN(query_analyzer_default_result_is_invalid) {
@@ -35,21 +35,19 @@ PGX_TEST_FN(query_analyzer_supported_result_has_no_reasons) {
 }
 
 PGX_TEST_FN(query_analyzer_unsupported_result_reports_first_reason) {
-    auto result = pgx_lower::AnalyzerResult::unsupported(
-        pgx_lower::UnsupportedReasonKind::unsupported_function,
-        "unsupported function generate_series()",
-        "Plan.Result.targetlist[0]");
-    result.addUnsupportedReason(
-        pgx_lower::UnsupportedReasonKind::unsupported_type,
-        "unsupported type jsonb",
-        "Plan.Result.targetlist[1]");
+    auto result = pgx_lower::AnalyzerResult::unsupported(pgx_lower::UnsupportedReasonKind::unsupported_function,
+                                                         "unsupported function generate_series()",
+                                                         "Plan.Result.targetlist[0]");
+    result.addUnsupportedReason(pgx_lower::UnsupportedReasonKind::unsupported_type, "unsupported type jsonb",
+                                "Plan.Result.targetlist[1]");
 
     REQUIRE(!result.isSupported());
     REQUIRE(result.reasons().size() == 2);
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
     REQUIRE(result.primaryReasonKindName() == std::string("unsupported_function"));
-    REQUIRE(result.humanSummary() == std::string(
-        "unsupported_function: unsupported function generate_series() at Plan.Result.targetlist[0]"));
+    REQUIRE(result.humanSummary()
+            == std::string("unsupported_function: unsupported function generate_series() at "
+                           "Plan.Result.targetlist[0]"));
     PG_RETURN_VOID();
 }
 
