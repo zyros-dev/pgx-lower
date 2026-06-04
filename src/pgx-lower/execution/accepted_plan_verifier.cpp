@@ -1,5 +1,12 @@
 #include "pgx-lower/execution/accepted_plan_verifier.h"
 
+#include "pgx-lower/utility/logging.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Operation.h"
+
+#include <stdexcept>
 #include <utility>
 
 #ifdef POSTGRESQL_EXTENSION
@@ -123,6 +130,64 @@ auto verifyAcceptedPlanMetadata(const PlannedStmt* stmt, const AcceptedPlanVerif
     (void) phase;
     return AcceptedPlanVerificationResult::success();
 #endif
+}
+
+static auto verifyModuleEntryPoint(mlir::ModuleOp module, const AcceptedPlanVerificationPhase phase)
+    -> AcceptedPlanVerificationResult {
+    if (!module) {
+        return AcceptedPlanVerificationResult::failure(phase, "MLIR module is null", "mlir.module");
+    }
+    if (!module.lookupSymbol<mlir::func::FuncOp>("main")) {
+        return AcceptedPlanVerificationResult::failure(phase, "missing main function", "mlir.module");
+    }
+    return AcceptedPlanVerificationResult::success();
+}
+
+static auto verifyNoHighLevelDialectsAfterLowering(mlir::ModuleOp module,
+                                                   const AcceptedPlanVerificationPhase phase)
+    -> AcceptedPlanVerificationResult {
+    auto result = AcceptedPlanVerificationResult::success();
+    if (phase != AcceptedPlanVerificationPhase::after_lowering || !module) {
+        return result;
+    }
+
+    module->walk([&](mlir::Operation* op) {
+        const auto* dialect = op->getDialect();
+        if (!dialect) {
+            return;
+        }
+
+        const auto ns = dialect->getNamespace();
+        if (ns == "relalg" || ns == "db" || ns == "dsa" || ns == "util") {
+            result.addFailure(phase,
+                              "high-level dialect operation remains after lowering: "
+                                  + op->getName().getStringRef().str(),
+                              "mlir.module");
+        }
+    });
+    return result;
+}
+
+auto verifyAcceptedPlanModule(const PlannedStmt* stmt,
+                              mlir::ModuleOp module,
+                              const AcceptedPlanVerificationPhase phase)
+    -> AcceptedPlanVerificationResult {
+    auto result = verifyAcceptedPlanMetadata(stmt, phase);
+    mergeVerificationResult(result, verifyModuleEntryPoint(module, phase));
+    mergeVerificationResult(result, verifyNoHighLevelDialectsAfterLowering(module, phase));
+    return result;
+}
+
+auto verifyAcceptedPlanOrThrow(const PlannedStmt* stmt,
+                               mlir::ModuleOp module,
+                               const AcceptedPlanVerificationPhase phase) -> void {
+    const auto result = verifyAcceptedPlanModule(stmt, module, phase);
+    if (result.ok()) {
+        return;
+    }
+
+    PGX_ERROR("Accepted plan verifier failed: %s", result.summary().c_str());
+    throw std::runtime_error("Accepted plan verifier failed: " + result.summary());
 }
 
 } // namespace pgx_lower::execution
