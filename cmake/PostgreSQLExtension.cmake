@@ -20,7 +20,7 @@ include(AddMLIR)
 
 function(add_postgresql_mixed_extension NAME)
     set(_optional)
-    set(_single VERSION)
+    set(_single VERSION REGRESS_INPUTDIR REGRESS_OUTPUTDIR)
     set(_multi C_SOURCES CPP_SOURCES SCRIPTS REGRESS)
     cmake_parse_arguments(_ext "${_optional}" "${_single}" "${_multi}" ${ARGN})
 
@@ -114,13 +114,25 @@ module_pathname = '$libdir/$<TARGET_FILE_NAME:${NAME}>'
     )
 
     if(_ext_REGRESS)
+        if(_ext_REGRESS_INPUTDIR)
+            set(_pgx_regress_inputdir ${_ext_REGRESS_INPUTDIR})
+        else()
+            set(_pgx_regress_inputdir ${CMAKE_SOURCE_DIR}/tests)
+        endif()
+
+        if(_ext_REGRESS_OUTPUTDIR)
+            set(_pgx_regress_outputdir ${_ext_REGRESS_OUTPUTDIR})
+        else()
+            set(_pgx_regress_outputdir ${CMAKE_CURRENT_BINARY_DIR})
+        endif()
+
         add_test(
             NAME ${NAME}_regress
             COMMAND ${PG_REGRESS}
                     --bindir=${_pg_bindir}
                     --dlpath=${PostgreSQL_PACKAGE_LIBRARY_DIR}
-                    --inputdir=${CMAKE_SOURCE_DIR}/tests
-                    --outputdir=${CMAKE_CURRENT_BINARY_DIR}
+                    --inputdir=${_pgx_regress_inputdir}
+                    --outputdir=${_pgx_regress_outputdir}
                     --load-extension=${NAME}
                     ${_ext_REGRESS}
         )

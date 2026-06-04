@@ -49,6 +49,9 @@ pgx-cli dev gate batch
 pgx-cli dev gate review
 pgx-cli dev build explain --profile debug
 pgx-cli dev build compile --profile debug
+pgx-cli test route-check --help
+pgx-cli test unit-sql --root .
+pgx-cli test psql-regression-burndown --help
 pgx-cli docker status
 pgx-cli docker build ptest
 pgx-cli docker build release
@@ -76,6 +79,12 @@ The `call` command supports every tool the CLion MCP server advertises. The conv
 
 `pgx-cli dev ...` commands are the normal pgx-lower development workflow. They
 flush Mutagen and run the needed local/thor/Docker/task-spooler steps directly.
+`pgx-cli test route-check` validates pg_regress route notices against SQL
+directives and writes a route summary without contacting CLion MCP.
+`pgx-cli test unit-sql` generates pg_regress SQL wrappers for PGX_TEST_FN C++
+unit tests.
+`pgx-cli test psql-regression-burndown` runs the opt-in upstream PostgreSQL
+regression burn-down ledger and compares failures against a reviewed baseline.
 `pgx-cli docker ...` commands wrap explicit thor-side Docker maintenance flows.
 `pgx-cli repo audit-tools` enforces that workflow entrypoints stay in pgx-cli
 instead of drifting back into loose shell or Python helper scripts.
@@ -164,6 +173,44 @@ pgx-cli dev build install --profile debug
 
 Use `dev build explain` before expensive work when changing profiles. The command
 prints the resolved inherited profile without running CMake.
+
+## Route Checks
+
+```sh
+pgx-cli test route-check \
+  --run-name pgx-regression-correctness \
+  --profile debug \
+  --execution-mode extension-auto \
+  --sql-dir tests/pgx-regression/sql \
+  --output-dir build-artifacts/make/ptest/extension/pgx-regression/results \
+  --summary build-artifacts/test-runs/pgx-regression-correctness/summary.md \
+  --default-auto-should-route-to lower \
+  --require-route-directives
+```
+
+Use `--pg-regress -- <pg_regress command...>` to run pg_regress before checking
+route notices.
+
+## PostgreSQL Regression Burndown
+
+```sh
+pgx-cli test psql-regression-burndown \
+  --source tests/psql-regression \
+  --baseline tests/psql-regression/baselines/current.txt \
+  --output-dir tests/psql-regression/results \
+  --summary build-artifacts/test-runs/psql-regression-burndown/summary.md \
+  --route-summary build-artifacts/test-runs/psql-regression-burndown/route-summary.md \
+  --pg-regress /usr/local/pgsql/lib/pgxs/src/test/regress/pg_regress \
+  --bindir /usr/local/pgsql/bin \
+  --dlpath /usr/local/pgsql/lib \
+  --schedule parallel_schedule \
+  --load-extension pgx_lower
+```
+
+Use `--record` only after reviewing the run; it replaces the baseline with the
+current failing upstream PostgreSQL test names.
+The default `--pg-regress` path matches the pgx-lower dev container; pass an
+explicit path when using a different PostgreSQL installation.
 
 ## Development
 

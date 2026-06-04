@@ -66,6 +66,7 @@ enum class Category {
     RUNTIME,
     JIT,
     GENERAL,
+    ROUTE,
     PROBLEM
 };
 
@@ -86,6 +87,7 @@ extern bool log_trace;
 extern std::set<Category> enabled_categories;
 
 void log(Category cat, Level level, const char* file, int line, const char* fmt, ...);
+void route_fallback_notice(const char* reason_kind, const char* message, const char* location);
 
 const char* category_name(Category cat);
 const char* level_name(Level level);
@@ -235,4 +237,3 @@ private:
 #else
 #define PGX_HOT_LOG(category, level, fmt, ...) PGX_LOG(category, level, fmt, ##__VA_ARGS__)
 #endif
-

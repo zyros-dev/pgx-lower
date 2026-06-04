@@ -12,6 +12,8 @@
 #include "utils/guc_hooks.h"
 #include "utils/tuplestore.h"
 
+#include <string.h>
+
 PG_MODULE_MAGIC;
 
 extern bool g_extension_after_load;
@@ -22,6 +24,7 @@ static bool pgx_lower_log_ir = false;
 static bool pgx_lower_log_io = false;
 static bool pgx_lower_log_trace = false;
 static char *pgx_lower_enabled_categories = NULL;
+static char *pgx_lower_execution_mode = NULL;
 
 extern void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char *categories);
 
@@ -41,8 +44,7 @@ custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint6
     if (!mlir_handled) {
         if (prev_ExecutorRun_hook) {
             prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);
-        }
-        else {
+        } else {
             standard_ExecutorRun(queryDesc, direction, count, execute_once);
         }
     }
@@ -66,6 +68,22 @@ static void register_string_guc(const char *name, const char *desc, char **var) 
     DefineCustomStringVariable(name, desc, NULL, var, "", PGC_USERSET, 0, NULL, update_logging_string, NULL);
 }
 
+const char *pgx_lower_get_execution_mode(void) {
+    return pgx_lower_execution_mode ? pgx_lower_execution_mode : "auto";
+}
+
+static bool check_execution_mode(char **newval, void **extra, GucSource source) {
+    (void)extra;
+    (void)source;
+
+    if (strcmp(*newval, "auto") == 0 || strcmp(*newval, "force_fallback") == 0 || strcmp(*newval, "force_lower") == 0) {
+        return true;
+    }
+
+    GUC_check_errmsg("pgx_lower.execution_mode must be one of: auto, force_fallback, force_lower");
+    return false;
+}
+
 void _PG_init(void) {
     extern void initialize_stderr_redirect(void);
     initialize_stderr_redirect();
@@ -81,8 +99,11 @@ void _PG_init(void) {
     register_bool_guc("pgx_lower.log_ir", "Enable IR (intermediate representation) logging", &pgx_lower_log_ir);
     register_bool_guc("pgx_lower.log_io", "Enable I/O boundary logging", &pgx_lower_log_io);
     register_bool_guc("pgx_lower.log_trace", "Enable trace logging", &pgx_lower_log_trace);
-    register_string_guc("pgx_lower.enabled_categories", "Comma-separated list of enabled log categories", 
-                       &pgx_lower_enabled_categories);
+    register_string_guc("pgx_lower.enabled_categories", "Comma-separated list of enabled log categories",
+                        &pgx_lower_enabled_categories);
+    DefineCustomStringVariable("pgx_lower.execution_mode",
+                               "Controls pgx-lower routing: auto, force_fallback, or force_lower", NULL,
+                               &pgx_lower_execution_mode, "auto", PGC_USERSET, 0, check_execution_mode, NULL, NULL);
 
     PGX_NOTICE_C("Initializing MLIR pass registration...");
     extern void initialize_mlir_passes(void);
@@ -94,35 +115,31 @@ void _PG_fini(void) {
     ExecutorRun_hook = NULL;
 }
 
-extern bool execute_mlir_text(const char* mlir_text, void* dest_receiver);
+extern bool execute_mlir_text(const char *mlir_text, void *dest_receiver);
 extern int get_computed_results_num_columns(void);
 extern int get_computed_results_num_rows(void);
-extern void get_computed_result(int row, int col, void** value_out, bool* is_null_out);
+extern void get_computed_result(int row, int col, void **value_out, bool *is_null_out);
 
 struct TupleStreamer;
 extern struct TupleStreamer g_tuple_streamer;
-extern void tuple_streamer_initialize(struct TupleStreamer* streamer, void* dest, void* slot);
-extern void tuple_streamer_shutdown(struct TupleStreamer* streamer);
+extern void tuple_streamer_initialize(struct TupleStreamer *streamer, void *dest, void *slot);
+extern void tuple_streamer_shutdown(struct TupleStreamer *streamer);
 
 PG_FUNCTION_INFO_V1(pgx_lower_test_relalg);
 
-Datum
-pgx_lower_test_relalg(PG_FUNCTION_ARGS)
-{
-    ReturnSetInfo* rsinfo = (ReturnSetInfo*) fcinfo->resultinfo;
+Datum pgx_lower_test_relalg(PG_FUNCTION_ARGS) {
+    ReturnSetInfo *rsinfo = (ReturnSetInfo *)fcinfo->resultinfo;
 
     if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
-        ereport(ERROR,
-                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                 errmsg("set-valued function called in context that cannot accept a set")));
+        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("set-valued function called in context that "
+                                                                       "cannot accept a set")));
 
     if (!(rsinfo->allowedModes & SFRM_Materialize))
-        ereport(ERROR,
-                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                 errmsg("materialize mode required, but it is not allowed in this context")));
+        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("materialize mode required, but it is not "
+                                                                       "allowed in this context")));
 
-    const text * mlir_input = PG_GETARG_TEXT_PP(0);
-    const char * mlir_text = text_to_cstring(mlir_input);
+    const text *mlir_input = PG_GETARG_TEXT_PP(0);
+    const char *mlir_text = text_to_cstring(mlir_input);
 
     const MemoryContext per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
     const MemoryContext oldcontext = MemoryContextSwitchTo(per_query_ctx);
@@ -147,9 +164,7 @@ pgx_lower_test_relalg(PG_FUNCTION_ARGS)
     ExecDropSingleTupleTableSlot(slot);
 
     if (!success) {
-        ereport(ERROR,
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("MLIR execution failed")));
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("MLIR execution failed")));
     }
 
     rsinfo->returnMode = SFRM_Materialize;

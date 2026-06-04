@@ -184,13 +184,13 @@ async function runWorkflow(
 }
 
 async function runCheckDiff(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   return runLocalShell(runner, output, checkDiffScript(config));
 }
 
 async function runLintDiff(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   return runLocalShell(runner, output, lintDiffScript(config));
 }
@@ -201,14 +201,14 @@ async function runLintFiles(
   config: DevConfig,
   files: string[]
 ): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   const command = dockerBashCommand(config, targetedLintShellCommand("/workspace", files));
   return runRemoteShell(runner, output, config, command);
 }
 
 async function runFullLint(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   return runRemoteShell(
     runner,
@@ -227,27 +227,27 @@ async function runPostgresUnitTests(
   const generated = writeUnitSqlFiles(config.localProjectPath);
   if (generated.length > 0) output.stdout += `${generated.join("\n")}\n`;
 
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
 
   const testSelector = suite
-    ? `test -f /workspace/tests/regress-unit/sql/${quoteShell(`${suite}.sql`)} && `
+    ? `test -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)} && `
     : "";
   const testRunner = suite
-    ? `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f /workspace/tests/regress-unit/sql/${quoteShell(`${suite}.sql`)}"`
-    : `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit" && fail=0; for sql in /workspace/tests/regress-unit/sql/*.sql; do echo "--- $(basename "$sql") ---"; su postgres -c "/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f $sql" || { fail=1; echo FAIL: $sql; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi`;
+    ? `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)}"`
+    : `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit" && fail=0; for sql in /workspace/tests/unit-tests/sql/*.sql; do echo "--- $(basename "$sql") ---"; su postgres -c "/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f $sql" || { fail=1; echo FAIL: $sql; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi`;
   const command = [
     "export PATH=/usr/local/pgsql/bin:$PATH",
     testSelector + buildAndInstallCommand(),
     "chmod o+x /workspace/.worktrees 2>/dev/null || true",
-    "chmod -R o+rX /workspace/tests/regress-unit",
+    "chmod -R o+rX /workspace/tests/unit-tests",
     testRunner
   ].join(" && ");
   return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
 }
 
 async function runTpchTests(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   const command = [
     "set -euo pipefail",
@@ -263,20 +263,20 @@ async function runTpchTests(runner: CommandRunner, output: OperationOutput, conf
     "chmod -R o+rX /workspace",
     "chown -R postgres:postgres /workspace/build-artifacts/ptest",
     "pg_regress_bin=\"$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress\"",
-    "(su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests --outputdir=/workspace/build-artifacts/ptest/extension --load-extension=pgx_lower 36_tpch_minimal 37_tpch_minimal_2 38_tpch_minimal_3 39_tpch_minimal 40_tpch_not_lowered init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out; true)"
+    "(su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests/tpch --outputdir=/workspace/build-artifacts/ptest/extension/tpch --load-extension=pgx_lower init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out; true)"
   ].join(" && ");
   const result = await runRemoteShellResult(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
   return evaluateRemotePgRegressResult(result, output, config);
 }
 
 async function runCompile(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   return runLocalShell(runner, output, compileScript(config));
 }
 
 async function runFullTests(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  const flush = await flushMutagen(runner, output, config);
   if (flush !== 0) return flush;
   const command = [
     buildAndInstallCommand(),
@@ -292,15 +292,19 @@ async function runFullTests(runner: CommandRunner, output: OperationOutput, conf
   return evaluateRemotePgRegressResult(result, output, config);
 }
 
-async function flushMutagen(runner: CommandRunner, output: OperationOutput, session: string): Promise<number> {
-  const result = await runner.run("mutagen", ["sync", "flush", session]);
+async function flushMutagen(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  if (config.runningOnRemote) {
+    output.stdout += "mutagen: skipped (already on thor)\n";
+    return 0;
+  }
+  const result = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
 }
 
 async function runLocalShell(runner: CommandRunner, output: OperationOutput, shellCommand: string): Promise<number> {
-  const result = await runner.run("sh", ["-lc", shellCommand]);
+  const result = await runner.run("bash", ["-lc", shellCommand]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
@@ -322,7 +326,9 @@ async function runRemoteShellResult(
   config: DevConfig,
   shellCommand: string
 ): Promise<RunResult> {
-  const result = await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(shellCommand)]);
+  const result = config.runningOnRemote
+    ? await runner.run("bash", ["-lc", `cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`])
+    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(shellCommand)]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result;
@@ -344,37 +350,43 @@ function readBaselineText(config: DevConfig): string {
 }
 
 function checkDiffScript(config: DevConfig): string {
+  const dockerPipe = dockerPipeCommand(config, "cd /workspace && clang-format-diff-20 -p1 -style=file");
   return [
     "set -eo pipefail",
     "git fetch origin main --quiet",
     "base=$(git merge-base origin/main HEAD)",
-    "diff=$(git diff -U0 \"$base\" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/*.c' 'tests/*.cc' 'tests/*.cpp' 'tests/*.h' 'tests/*.hpp' 'extension/*.c' 'extension/*.h' 2>/dev/null || true)",
-    "if [ -z \"$diff\" ]; then echo \"No C/C++ hunks changed vs origin/main - nothing to check.\"; exit 0; fi",
-    "echo \"Checking hunks changed vs origin/main...\"",
-    `printf '%s\\n' "$diff" | ssh ${quoteShell(config.sshHost)} ${quoteShell(
-      `docker exec -i ${quoteShell(config.dockerContainer)} bash -c 'cd /workspace && clang-format-diff-20 -p1 -style=file'`
-    )} > /tmp/check-diff.out || true`,
-    "if [ ! -s /tmp/check-diff.out ]; then echo \"check-diff: clean (your hunks match the project style)\"; exit 0; fi",
+    `diff=$(git diff -U0 "$base" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/*.c' 'tests/*.cc' 'tests/*.cpp' 'tests/*.h' 'tests/*.hpp' 'extension/*.c' 'extension/*.h' 2>/dev/null || true)`,
+    `if [ -z "$diff" ]; then echo "No C/C++ hunks changed vs origin/main - nothing to check."; exit 0; fi`,
+    `echo "Checking hunks changed vs origin/main..."`,
+    `printf '%s\n' "$diff" | ${dockerPipe} > /tmp/check-diff.out || true`,
+    `if [ ! -s /tmp/check-diff.out ]; then echo "check-diff: clean (your hunks match the project style)"; exit 0; fi`,
     "cat /tmp/check-diff.out",
     "echo",
-    "echo \"check-diff: your hunks need reformatting. Hand-edit the specific lines above.\"",
+    `echo "check-diff: your hunks need reformatting. Hand-edit the specific lines above."`,
     "exit 1"
   ].join("\n");
 }
 
 function lintDiffScript(config: DevConfig): string {
+  const dockerPipe = dockerPipeCommand(
+    config,
+    'cd /workspace && clang-tidy-diff-20 -p1 -path build-docker-lint -clang-tidy-binary clang-tidy-20 -warnings-as-errors="*"'
+  );
   return [
     "set -eo pipefail",
     "git fetch origin main --quiet",
     "base=$(git merge-base origin/main HEAD)",
-    "diff=$(git diff -U0 \"$base\" -- 'src/pgx-lower/*.cpp' 'src/pgx-lower/*.h' 2>/dev/null || true)",
-    "if [ -z \"$diff\" ]; then echo \"No src/pgx-lower hunks changed vs origin/main.\"; exit 0; fi",
-    `printf '%s\\n' "$diff" | ssh ${quoteShell(config.sshHost)} ${quoteShell(
-      `docker exec -i ${quoteShell(config.dockerContainer)} bash -c 'cd /workspace && clang-tidy-diff-20 -p1 -path build-docker-lint -clang-tidy-binary clang-tidy-20 -warnings-as-errors="*"'`
-    )} > /tmp/lint-diff.out 2>&1 || true`,
-    "if grep -qE 'warning:|error:' /tmp/lint-diff.out; then cat /tmp/lint-diff.out; echo \"lint-diff: your hunks have clang-tidy violations (above).\"; exit 1; fi",
-    "echo \"lint-diff: clean (your src/pgx-lower hunks pass clang-tidy).\""
+    `diff=$(git diff -U0 "$base" -- 'src/pgx-lower/*.cpp' 'src/pgx-lower/*.h' 2>/dev/null || true)`,
+    `if [ -z "$diff" ]; then echo "No src/pgx-lower hunks changed vs origin/main."; exit 0; fi`,
+    `printf '%s\n' "$diff" | ${dockerPipe} > /tmp/lint-diff.out 2>&1 || true`,
+    `if grep -qE 'warning:|error:' /tmp/lint-diff.out; then cat /tmp/lint-diff.out; echo "lint-diff: your hunks have clang-tidy violations (above)."; exit 1; fi`,
+    `echo "lint-diff: clean (your src/pgx-lower hunks pass clang-tidy)."`
   ].join("\n");
+}
+
+function dockerPipeCommand(config: DevConfig, command: string): string {
+  const dockerCommand = `docker exec -i ${quoteShell(config.dockerContainer)} bash -c ${quoteShell(command)}`;
+  return config.runningOnRemote ? dockerCommand : `ssh ${quoteShell(config.sshHost)} ${quoteShell(dockerCommand)}`;
 }
 
 function compileScript(config: DevConfig): string {

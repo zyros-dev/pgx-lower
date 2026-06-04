@@ -1,0 +1,81 @@
+profiles:
+  debug:
+    build_type: Debug
+    execution_mode: extension-auto
+  release:
+    build_type: Release
+    execution_mode: extension-auto
+
+workloads:
+  pgx-regression:
+    kind: pg-regress
+    sql: tests/pgx-regression/sql
+    expected: tests/pgx-regression/expected
+
+  tpch:
+    kind: pg-regress
+    sql: tests/tpch/sql
+    expected: tests/tpch/expected
+    setup: tests/tpch/sql/init_tpch.sql
+
+  unit-tests:
+    kind: pg-unit-tests
+    sql: tests/unit-tests/sql
+    generated: true
+
+  psql-regression:
+    kind: upstream-psql-regression
+    sql: tests/psql-regression/sql
+    expected: tests/psql-regression/expected
+    data: tests/psql-regression/data
+    schedule: tests/psql-regression/parallel_schedule
+    resultmap: tests/psql-regression/resultmap
+    baseline: tests/psql-regression/baselines/current.txt
+    default_auto_should_route_to: not_asserted
+    require_route_directives: false
+
+tests:
+  pgx-regression-correctness:
+    workload: pgx-regression
+    profile: debug
+    execution_mode: extension-auto
+    compare_output: true
+    default_auto_should_route_to: lower
+    require_route_directives: true
+
+  tpch-correctness:
+    workload: tpch
+    profile: debug
+    execution_mode: extension-auto
+    compare_output: true
+    default_auto_should_route_to: lower
+    require_route_directives: true
+
+  psql-regression-burndown:
+    workload: psql-regression
+    profile: debug
+    execution_mode: extension-auto
+    compare_output: true
+    default_auto_should_route_to: not_asserted
+    baseline: allow-known-fails
+
+benchmarks:
+  tpch-throughput:
+    workload: tpch
+    profile: release
+    execution_mode: extension-auto
+    default_auto_should_route_to: lower
+    warmup_runs: 1
+    measured_runs: 5
+    logging: off
+
+measurements:
+  tpch-profile:
+    workload: tpch
+    profile: debug
+    execution_mode: extension-auto
+    default_auto_should_route_to: lower
+    measured_runs: 20
+    capture:
+      compile_time: true
+      execution_time: true

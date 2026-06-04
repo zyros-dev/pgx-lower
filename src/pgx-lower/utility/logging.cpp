@@ -74,6 +74,8 @@ static void initialize_if_needed() {
                 enabled_categories.insert(Category::JIT);
             } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+            } else if (cat == "route") {
+                enabled_categories.insert(Category::ROUTE);
             }
         }
     }
@@ -90,6 +92,7 @@ const char* category_name(Category cat) {
     case Category::RUNTIME: return "RUNTIME";
     case Category::JIT: return "JIT";
     case Category::GENERAL: return "GENERAL";
+    case Category::ROUTE: return "ROUTE";
     case Category::PROBLEM: return "PROBLEM";
     }
     return "UNKNOWN";
@@ -109,7 +112,9 @@ const char* level_name(Level level) {
 
 bool should_log(const Category cat, const Level level) {
     initialize_if_needed();
-    if (cat == Category::PROBLEM) return true;
+    if (cat == Category::PROBLEM) {
+        return true;
+    }
 
     if (!log_enable) {
         return false;
@@ -162,7 +167,7 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
     va_end(args_size);
 
     auto message = std::vector<char>(size_needed * 2);
-    
+
     va_list args;
     va_start(args, fmt);
     vsnprintf(message.data(), size_needed, fmt, args);
@@ -181,16 +186,34 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 #endif
 }
 
+void route_fallback_notice(const char* reason_kind, const char* message, const char* location) {
+    const auto* safe_kind = reason_kind != nullptr && reason_kind[0] != '\0' ? reason_kind : "invalid";
+    const auto* safe_message = message != nullptr && message[0] != '\0' ? message : "fallback route selected";
+
+#ifdef POSTGRESQL_EXTENSION
+    if (location != nullptr && location[0] != '\0') {
+        elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s", safe_kind, safe_message, location);
+    } else {
+        elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s", safe_kind, safe_message);
+    }
+#else
+    if (location != nullptr && location[0] != '\0') {
+        fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s\n", safe_kind, safe_message, location);
+    } else {
+        fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s\n", safe_kind, safe_message);
+    }
+#endif
+}
+
 static thread_local int scope_logger_depth{};
 static constexpr int MAX_SCOPE_LOGGER_DEPTH = 3000;
 
 ScopeLogger::ScopeLogger(Category cat, const char* file, int line, const char* function_name)
-    : category_(cat)
-    , file_(file)
-    , line_(line)
-    , function_name_(function_name)
-    , should_log_(false) {
-
+: category_(cat)
+, file_(file)
+, line_(line)
+, function_name_(function_name)
+, should_log_(false) {
     if (scope_logger_depth >= MAX_SCOPE_LOGGER_DEPTH) {
         return;
     }
@@ -247,6 +270,8 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
                 enabled_categories.insert(Category::JIT);
             } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+            } else if (cat == "route") {
+                enabled_categories.insert(Category::ROUTE);
             }
         }
     }

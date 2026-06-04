@@ -55,6 +55,7 @@ set(CMAKE_C_FLAGS_RELWITHDEBINFO "-g -O2")
 
 # Coverage support
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
+option(PGX_LOWER_ENABLE_POSTGRES_REGRESS "Enable slow upstream PostgreSQL regression burndown target" OFF)
 if(ENABLE_COVERAGE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # Clang coverage

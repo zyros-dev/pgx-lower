@@ -9,7 +9,14 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/ast_const_translation_tests.cpp
             ../src/pgx-lower/test/standalone_mlir_runner.cpp
             ../src/pgx-lower/test/pipeline_phases_tests.cpp
+            ../src/pgx-lower/test/query_analyzer_tests.cpp
+            ../src/pgx-lower/test/accepted_plan_verifier_tests.cpp
         )
+    endif()
+
+    find_program(PGX_CLI_EXECUTABLE pgx-cli)
+    if(NOT PGX_CLI_EXECUTABLE)
+        set(PGX_CLI_EXECUTABLE pgx-cli)
     endif()
 
     add_postgresql_mixed_extension(
@@ -21,6 +28,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ${_pgx_lower_test_sources}
         ../src/pgx-lower/execution/postgres/my_executor.cpp
         ../src/pgx-lower/execution/postgres/executor_c.cpp
+        ../src/pgx-lower/execution/accepted_plan_verifier.cpp
         ../src/pgx-lower/execution/mlir_runner.cpp
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_phases.cpp
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_passes.cpp
@@ -49,6 +57,10 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/runtime/DateRuntime.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql
+        REGRESS_INPUTDIR
+            ${CMAKE_SOURCE_DIR}/tests/pgx-regression
+        REGRESS_OUTPUTDIR
+            ${CMAKE_CURRENT_BINARY_DIR}/pgx-regression
         REGRESS
             1_one_tuple
             2_two_tuples
@@ -94,10 +106,99 @@ if(NOT BUILDING_UNIT_TESTS)
             42_test_relalg_function
             43_decode_at_scan
             44_numeric_correctness
-            init_tpch
-            tpch_no_lower
-            tpch
+            45_route_notices
 )
+
+
+if(PG_REGRESS)
+    add_test(
+        NAME pgx_lower_regress_routes
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                ${PGX_CLI_EXECUTABLE}
+                test
+                route-check
+                --run-name pgx-regression-correctness
+                --profile debug
+                --execution-mode extension-auto
+                --sql-dir ${CMAKE_SOURCE_DIR}/tests/pgx-regression/sql
+                --output-dir ${CMAKE_CURRENT_BINARY_DIR}/pgx-regression/results
+                --summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/pgx-regression-correctness/summary.md
+                --default-auto-should-route-to lower
+                --require-route-directives
+    )
+    set_tests_properties(pgx_lower_regress_routes PROPERTIES DEPENDS pgx_lower_regress)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/unit-tests/sql)
+    file(CHMOD ${CMAKE_SOURCE_DIR}/tests/unit-tests/sql PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE GROUP_EXECUTE WORLD_READ WORLD_WRITE WORLD_EXECUTE)
+    add_test(
+        NAME pgx_lower_regress_unit
+        COMMAND bash
+                -lc
+                "set -euo pipefail; cd '${CMAKE_SOURCE_DIR}'; rm -f '${CMAKE_SOURCE_DIR}'/tests/unit-tests/sql/*.sql; '${PGX_CLI_EXECUTABLE}' test unit-sql --root '${CMAKE_SOURCE_DIR}'; /usr/local/pgsql/bin/dropdb --if-exists regression_unit; /usr/local/pgsql/bin/createdb regression_unit; fail=0; for sql in '${CMAKE_SOURCE_DIR}'/tests/unit-tests/sql/*.sql; do echo \"--- $(basename \"$sql\") ---\"; /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \"$sql\" || { fail=1; echo FAIL: \"$sql\"; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi"
+    )
+endif()
+
+if(PG_REGRESS)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tpch)
+    add_test(
+        NAME pgx_lower_tpch_regress
+        COMMAND ${PG_REGRESS}
+                --bindir=${_pg_bindir}
+                --dlpath=${PostgreSQL_PACKAGE_LIBRARY_DIR}
+                --inputdir=${CMAKE_SOURCE_DIR}/tests/tpch
+                --outputdir=${CMAKE_CURRENT_BINARY_DIR}/tpch
+                --load-extension=pgx_lower
+                init_tpch
+                tpch_no_lower
+                tpch
+    )
+
+    add_test(
+        NAME pgx_lower_tpch_routes
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                ${PGX_CLI_EXECUTABLE}
+                test
+                route-check
+                --run-name tpch-correctness
+                --profile debug
+                --execution-mode extension-auto
+                --sql-dir ${CMAKE_SOURCE_DIR}/tests/tpch/sql
+                --output-dir ${CMAKE_CURRENT_BINARY_DIR}/tpch/results
+                --summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/tpch-correctness/summary.md
+                --default-auto-should-route-to lower
+                --require-route-directives
+    )
+    set_tests_properties(pgx_lower_tpch_routes PROPERTIES DEPENDS pgx_lower_tpch_regress)
+endif()
+
+if(PGX_LOWER_ENABLE_POSTGRES_REGRESS)
+    if(NOT PG_REGRESS)
+        message(FATAL_ERROR "PGX_LOWER_ENABLE_POSTGRES_REGRESS requires pg_regress")
+    endif()
+    add_test(
+        NAME pgx_lower_psql_regression_burndown
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                ${PGX_CLI_EXECUTABLE}
+                test
+                psql-regression-burndown
+                --source ${CMAKE_SOURCE_DIR}/tests/psql-regression
+                --baseline ${CMAKE_SOURCE_DIR}/tests/psql-regression/baselines/current.txt
+                --output-dir ${CMAKE_SOURCE_DIR}/tests/psql-regression/results
+                --summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/psql-regression-burndown/summary.md
+                --route-summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/psql-regression-burndown/route-summary.md
+                --pg-regress ${PG_REGRESS}
+                --bindir ${_pg_bindir}
+                --dlpath ${PostgreSQL_PACKAGE_LIBRARY_DIR}
+    )
+endif()
 
 target_link_libraries(pgx_lower PRIVATE
     -Wl,--no-as-needed

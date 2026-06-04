@@ -31,7 +31,7 @@ export async function runDevBuildCommand(
       return 1;
     }
     const command = buildProfileCommand(action, config.profile, config.dockerContainer);
-    const flush = await flushMutagen(runner, output, config.mutagenSession);
+    const flush = await flushMutagen(runner, output, config);
     if (flush !== 0) return flush;
     return runRemoteShell(runner, output, config, command, `dev build ${action} --profile ${config.profileName ?? "unknown"}`);
   }
@@ -40,8 +40,12 @@ export async function runDevBuildCommand(
   return 1;
 }
 
-async function flushMutagen(runner: CommandRunner, output: OperationOutput, session: string): Promise<number> {
-  const result = await runner.run("mutagen", ["sync", "flush", session]);
+async function flushMutagen(runner: CommandRunner, output: OperationOutput, config: OperationConfig): Promise<number> {
+  if (config.runningOnRemote) {
+    output.stdout += "mutagen: skipped (already on thor)\n";
+    return 0;
+  }
+  const result = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
@@ -54,12 +58,10 @@ async function runRemoteShell(
   command: string,
   summary: string
 ): Promise<number> {
-  const result = await runner.run("ssh", [
-    config.sshHost,
-    "bash",
-    "-lc",
-    quoteShell(`cd ${config.remoteProjectPath} && ${command}`)
-  ]);
+  const remoteShell = `cd ${quoteShell(config.remoteProjectPath)} && ${command}`;
+  const result = config.runningOnRemote
+    ? await runner.run("bash", ["-lc", remoteShell])
+    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   output.stdout += `${summary}: exit ${result.exitCode}\n`;

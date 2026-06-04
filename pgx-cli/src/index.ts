@@ -8,6 +8,9 @@ import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
 import { connectMcp } from "./mcp.js";
+import { runRouteCheckCommand } from "./pg-regress-routes.js";
+import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
+import { runUnitSqlCommand } from "./unit-sql.js";
 import {
   runQueueCommand,
   runSetupCommand,
@@ -55,7 +58,8 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
-      dockerContainer: config.dockerContainer
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -75,7 +79,8 @@ try {
     process.exitCode = await runThorCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
-      remoteProjectPath: config.remoteProjectPath
+      remoteProjectPath: config.remoteProjectPath,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -86,7 +91,8 @@ try {
     process.exitCode = await runQueueCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
-      remoteProjectPath: config.remoteProjectPath
+      remoteProjectPath: config.remoteProjectPath,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -98,7 +104,8 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
-      dockerContainer: config.dockerContainer
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -109,6 +116,27 @@ try {
     process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
     });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "route-check") {
+    process.exitCode = await runRouteCheckCommand(argv.slice(2), runner, io);
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
+    process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "unit-sql") {
+    process.exitCode = runUnitSqlCommand(argv.slice(2), io);
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
     process.exit();
@@ -125,7 +153,8 @@ try {
       remoteProjectPath: config.remoteProjectPath,
       profileName,
       profile,
-      dockerContainer: config.dockerContainer
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
@@ -140,7 +169,8 @@ try {
       localProjectPath: config.localProjectPath,
       dockerContainer: config.dockerContainer,
       buildQueue: config.buildQueue,
-      checkQueue: config.checkQueue
+      checkQueue: config.checkQueue,
+      runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);

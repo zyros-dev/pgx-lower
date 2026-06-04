@@ -1,0 +1,35 @@
+LOAD 'pgx_lower.so';
+CREATE TABLE route_notice_smoke(id int4);
+INSERT INTO route_notice_smoke VALUES (1), (2);
+SET pgx_lower.execution_mode = 'force_fallback';
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_45_route_notices_001 */
+SELECT id FROM route_notice_smoke ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback force_fallback: execution mode forced stock PostgreSQL at pgx_lower.execution_mode
+ id 
+----
+  1
+  2
+(2 rows)
+
+SET pgx_lower.execution_mode = 'auto';
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_45_route_notices_002 */
+SELECT id FROM route_notice_smoke ORDER BY id;
+ id 
+----
+  1
+  2
+(2 rows)
+
+SET pgx_lower.execution_mode = 'auto';
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_45_route_notices_003 */
+SELECT generate_series(1, 2);
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function generate_series() at Plan.targetlist[0].expr
+ generate_series 
+-----------------
+               1
+               2
+(2 rows)
+
+SET pgx_lower.execution_mode = 'bogus';
+ERROR:  pgx_lower.execution_mode must be one of: auto, force_fallback, force_lower
+DROP TABLE route_notice_smoke;

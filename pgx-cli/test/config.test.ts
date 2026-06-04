@@ -9,7 +9,8 @@ describe("loadConfig", () => {
     const config = loadConfig({
       env: {},
       argvUrl: undefined,
-      readConfigFile: () => undefined
+      readConfigFile: () => undefined,
+      cwd: "/Users/nickvandermerwe/repos/pgx-lower"
     });
 
     expect(config.url).toBe("http://127.0.0.1:64343/stream");
@@ -110,6 +111,32 @@ describe("loadConfig", () => {
     expect(config.dockerContainer).toBe("pgx-lower-dev");
     expect(config.buildQueue).toBe("project-build");
     expect(config.checkQueue).toBe("project-check");
+  });
+
+  test("detects when pgx-cli is already running from the remote checkout", () => {
+    const config = loadConfig({
+      env: {},
+      argvUrl: undefined,
+      readConfigFile: () => undefined,
+      cwd: "/project/remote/pgx-cli",
+      readProjectConfig: () => ({
+        project: "pgx-lower",
+        remote: {
+          host: "project-thor",
+          path: "/project/remote",
+          mutagen_session: "project-session",
+          docker_container: "pgx-lower-dev"
+        },
+        queues: {
+          build: "project-build",
+          check: "project-check"
+        },
+        profiles: {}
+      })
+    });
+
+    expect(config.runningOnRemote).toBe(true);
+    expect(config.localProjectPath).toBe("/project/remote");
   });
 
   test("keeps personal JSON and environment overrides above project config", () => {

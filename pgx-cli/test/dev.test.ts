@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { CommandRunner, RunResult } from "../src/commands.js";
 import { formatWorkflowSummary, runDevCommand } from "../src/dev.js";
@@ -16,15 +19,23 @@ class FakeRunner implements CommandRunner {
   }
 }
 
-const devConfig = {
+const devConfigBase = {
   mutagenSession: "pgx-lower",
   sshHost: "comfy",
   remoteProjectPath: "/home/zel/repos/pgx-lower",
-  localProjectPath: "/Users/nickvandermerwe/repos/pgx-lower",
   dockerContainer: "pgx-lower-dev",
   buildQueue: "pgx-build",
   checkQueue: "pgx-check"
 };
+
+function makeDevConfig() {
+  const root = mkdtempSync(join(tmpdir(), "pgx-dev-test-"));
+  mkdirSync(join(root, "src/pgx-lower/test"), { recursive: true });
+  mkdirSync(join(root, "tests"), { recursive: true });
+  writeFileSync(join(root, "src/pgx-lower/test/type_mapping_tests.cpp"), "PGX_TEST_FN(type_mapping_smoke) {}\n");
+  writeFileSync(join(root, "tests/pg_regress_baseline.txt"), "");
+  return { ...devConfigBase, localProjectPath: root };
+}
 
 const oldLintScript = ["scripts", "run_lint.sh"].join("/");
 const oldBaselineScript = ["ptest", "with", "baseline.py"].join("_");
@@ -59,7 +70,7 @@ describe("dev commands", () => {
   test("dev status checks sync, branch, and queues", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["status"], runner, output, devConfig);
+    const exitCode = await runDevCommand(["status"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     expect(runner.calls).toEqual([
@@ -74,7 +85,7 @@ describe("dev commands", () => {
   test("dev logs latest tails the build queue", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["logs", "latest"], runner, output, devConfig);
+    const exitCode = await runDevCommand(["logs", "latest"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     expect(runner.calls).toEqual([
@@ -85,7 +96,7 @@ describe("dev commands", () => {
   test("dev logs id tails a specific build queue job", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["logs", "7"], runner, output, devConfig);
+    const exitCode = await runDevCommand(["logs", "7"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     expect(runner.calls).toEqual([
@@ -94,7 +105,7 @@ describe("dev commands", () => {
   });
 
   test.each([
-    [["lint", "diff"], "sh", "clang-tidy-diff-20"],
+    [["lint", "diff"], "bash", "clang-tidy-diff-20"],
     [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "clang-tidy-20"],
     [["lint", "files", "a.cpp", "b.cpp"], "ssh", "clang-tidy-20"],
     [["test", "unit", "type_mapping"], "ssh", "type_mapping.sql"],
@@ -103,7 +114,7 @@ describe("dev commands", () => {
   ])("dev %s runs direct workflow commands", async (args, command, marker) => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(args, runner, output, devConfig);
+    const exitCode = await runDevCommand(args, runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
@@ -114,10 +125,65 @@ describe("dev commands", () => {
     expect(commands).not.toContain("just");
   });
 
+
+  test("dev lint diff runs directly on thor when invoked from the remote checkout", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = { ...makeDevConfig(), localProjectPath: "/home/zel/repos/pgx-lower", runningOnRemote: true };
+    const exitCode = await runDevCommand(["lint", "diff"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("docker exec -i pgx-lower-dev");
+    expect(commands).not.toContain("mutagen sync flush");
+    expect(runner.calls.some((call) => call.command === "ssh")).toBe(false);
+  });
+
+
+  test("dev gate batch runs directly on thor when invoked from the remote checkout", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = { ...makeDevConfig(), runningOnRemote: true };
+    const exitCode = await runDevCommand(["gate", "batch"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("clang-format-diff-20");
+    expect(commands).toContain("clang-tidy-diff-20");
+    expect(commands).toContain("docker exec -i pgx-lower-dev");
+    expect(commands).not.toContain("mutagen sync flush");
+    expect(runner.calls.some((call) => call.command === "ssh")).toBe(false);
+  });
+
+
+  test("dev focused unit tests use generated unit-tests path", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runDevCommand(["test", "focused"], runner, output, makeDevConfig());
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("tests/unit-tests/sql");
+    expect(commands).not.toContain("tests/regress-unit/sql");
+  });
+
+  test("CTest registrations include route assertions and unit SQL", () => {
+    const extensionCmake = readFileSync(new URL("../../extension/CMakeLists.txt", import.meta.url), "utf8");
+
+    expect(extensionCmake).toContain("pgx_lower_regress_routes");
+    expect(extensionCmake).toContain("pgx_lower_tpch_routes");
+    expect(extensionCmake).toContain("pgx_lower_regress_unit");
+    expect(extensionCmake).toContain("route-check");
+    expect(extensionCmake).toContain("tests/unit-tests/sql");
+    expect(extensionCmake).toContain("test unit-sql");
+    expect(extensionCmake).not.toContain("npm --prefix");
+    expect(extensionCmake).not.toContain("dist/unit-sql.js");
+  });
+
   test("dev gate batch runs diff-scoped checks", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["gate", "batch"], runner, output, devConfig);
+    const exitCode = await runDevCommand(["gate", "batch"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
@@ -131,7 +197,7 @@ describe("dev commands", () => {
   test("dev gate review runs full review checks", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["gate", "review"], runner, output, devConfig);
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
@@ -148,7 +214,7 @@ describe("dev commands", () => {
   test("dev gate review no-bench does not run bench", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["gate", "review", "--no-bench"], runner, output, devConfig);
+    const exitCode = await runDevCommand(["gate", "review", "--no-bench"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
     expect(output.stdout).not.toContain("bench");

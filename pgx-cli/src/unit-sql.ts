@@ -1,7 +1,12 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 const pgFnRe = /PGX_TEST_FN\(\s*(\w+)\s*\)/g;
+
+type Io = {
+  stdout: string;
+  stderr: string;
+};
 
 export function collectPgTestFunctions(text: string): string[] {
   return [...text.matchAll(pgFnRe)].map((match) => match[1] ?? "").filter((name) => name.length > 0);
@@ -30,7 +35,7 @@ export function generateUnitSql(sourceBasename: string, names: string[]): string
 
 export function writeUnitSqlFiles(root: string): string[] {
   const srcDir = join(root, "src/pgx-lower/test");
-  const outDir = join(root, "tests/regress-unit/sql");
+  const outDir = join(root, "tests/unit-tests/sql");
   mkdirSync(outDir, { recursive: true });
   const written: string[] = [];
   for (const file of readdirSync(srcDir).filter((entry) => entry.endsWith("_tests.cpp")).sort()) {
@@ -38,8 +43,47 @@ export function writeUnitSqlFiles(root: string): string[] {
     if (names.length === 0) continue;
     const group = basename(file, "_tests.cpp");
     const out = join(outDir, `${group}.sql`);
+    rmSync(out, { force: true });
     writeFileSync(out, generateUnitSql(file, names));
     written.push(`${relative(root, out)} (${names.length} tests)`);
   }
   return written;
+}
+
+export function runUnitSqlCommand(args: readonly string[], io: Io): number {
+  if (args.includes("--help") || args.includes("-h")) {
+    io.stdout += unitSqlHelpText();
+    return 0;
+  }
+
+  let root = process.cwd();
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--root") {
+      const value = args[index + 1];
+      if (!value) {
+        io.stderr += unitSqlHelpText();
+        return 1;
+      }
+      root = value;
+      index += 1;
+      continue;
+    }
+    io.stderr += unitSqlHelpText();
+    return 1;
+  }
+
+  try {
+    for (const line of writeUnitSqlFiles(root)) {
+      io.stdout += `${line}\n`;
+    }
+    return 0;
+  } catch (error) {
+    io.stderr += `${error instanceof Error ? error.message : String(error)}\n`;
+    return 1;
+  }
+}
+
+function unitSqlHelpText(): string {
+  return ["Usage: pgx-cli test unit-sql [--root <repo>]", "", "Generate pg_regress SQL wrappers for PGX_TEST_FN unit tests.", ""].join("\n");
 }
