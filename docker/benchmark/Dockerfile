@@ -1,7 +1,7 @@
 # Slim benchmark container using pre-built release extension
 #
 # Expects: build-artifacts/docker/ptest-release/extension/pgx_lower.so in project root
-#          (Run: cd docker && make build-benchmark)
+#          (Run: pgx-cli docker build release)
 #
 # Build context: Project root (../)
 
