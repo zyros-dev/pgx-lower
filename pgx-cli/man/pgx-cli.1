@@ -1,0 +1,159 @@
+.TH PGX-CLI 1 "June 2026" "pgx-cli" "User Commands"
+.SH NAME
+pgx-cli \- command line wrapper for CLion MCP tools
+.SH SYNOPSIS
+.B pgx-cli
+[\fB--url\fR \fIMCP_URL\fR] \fICOMMAND\fR [\fIARGS\fR]
+.SH DESCRIPTION
+.B pgx-cli
+connects to a CLion MCP streamable HTTP endpoint and exposes stable commands for agents.
+The default setup assumes CLion runs through JetBrains Gateway on thor:
+.IP
+Mac local tunnel URL: http://127.0.0.1:64343/stream
+.IP
+Thor remote MCP URL: http://127.0.0.1:64342/stream
+.IP
+Thor SSH host: comfy
+.IP
+Project path: /home/zel/repos/pgx-lower
+.SH COMMANDS
+.TP
+.B tools [--json]
+List MCP tools exposed by CLion.
+.TP
+.B schema \fITOOL\fR
+Print the input schema for an MCP tool.
+.TP
+.B call \fITOOL\fR [\fIJSON_ARGS\fR]
+Call any MCP tool by exact name. If configured, projectPath is added automatically unless JSON_ARGS already provides it.
+.TP
+.B tunnel
+Start the SSH tunnel configured in the config file.
+.TP
+.B sync status
+Show the configured Mutagen session status.
+.TP
+.B sync flush
+Flush the configured Mutagen session.
+.TP
+.B build compile
+Flush Mutagen, then run the queued pgx-lower compile recipe on thor.
+.TP
+.B build test
+Flush Mutagen, then run the queued pgx-lower regression test recipe on thor.
+.TP
+.B build utest-pg
+Flush Mutagen, then run the queued pgx-lower PostgreSQL unit test recipe on thor.
+.TP
+.B build bench
+Flush Mutagen, then run the queued pgx-lower benchmark recipe on thor.
+.TP
+.B check diff
+Flush Mutagen, then run the queued changed-hunk formatting check on thor.
+.TP
+.B check all
+Flush Mutagen, then run the full formatting check on thor.
+.TP
+.B queue status
+Show pgx-lower build/check queue status.
+.TP
+.B queue flush
+Clear completed pgx-lower build/check queue entries.
+.TP
+.B queue tail \fIID\fR
+Tail a queued build job log by id.
+.TP
+.B queue cancel \fIID\fR
+Cancel and remove a queued build job by id.
+.TP
+.B thor just \fIRECIPE\fR [\fIARGS\fR...]
+Flush Mutagen, then run a just recipe on thor in the configured pgx-lower checkout.
+.TP
+.B thor shell --dangerous -- \fICMD\fR [\fIARGS\fR...]
+Flush Mutagen, then run an explicit shell command on thor in the configured pgx-lower checkout.
+.TP
+.B request feature \fIMESSAGE\fR...
+Write a timestamped feature request Markdown file under ~/.config/pgx-cli/requests.
+.TP
+.B request complaint \fIMESSAGE\fR...
+Write a timestamped complaint Markdown file under ~/.config/pgx-cli/requests.
+.TP
+.B doctor
+Check the configured CLion MCP URL, thor MCP endpoint, project path, advertised tool count, and repository status.
+.TP
+.B clion doctor
+Alias for the CLion MCP portion of doctor.
+.TP
+.B clion tools [--json]
+List MCP tools exposed by CLion.
+.TP
+.B clion schema \fITOOL\fR
+Print the input schema for an MCP tool.
+.TP
+.B clion call \fITOOL\fR [\fIJSON_ARGS\fR]
+Call any MCP tool by exact name under the clion namespace.
+.TP
+.B config path
+Print the config file path.
+.TP
+.B config show
+Print the effective config.
+.TP
+.B config set-url \fIMCP_URL\fR
+Set the local MCP URL.
+.TP
+.B config set-project \fIPROJECT_PATH\fR
+Set the default project path passed to MCP tool calls.
+.TP
+.B config set-ssh-host \fISSH_HOST\fR
+Set the SSH host used by the tunnel command.
+.TP
+.B problems
+Run the diagnostics convenience command if the CLion MCP tool surface supports it.
+.TP
+.B file \fIPATH\fR
+Read a project file through MCP.
+.TP
+.B open \fIPATH\fR
+Open a project file in CLion through MCP.
+.TP
+.B search \fIQUERY\fR
+Search files by name through MCP.
+.TP
+.B run \fICONFIGURATION_NAME\fR
+Run a CLion run configuration through MCP.
+.SH CONFIGURATION
+The config file is:
+.IP
+~/.config/pgx-cli/config.json
+.PP
+Precedence for the MCP URL is:
+.IP
+--url, config file, CLION_MCP_URL, default thor tunnel URL
+.PP
+Other environment variables:
+.IP
+CLION_PROJECT_PATH
+.IP
+CLION_MCP_SSH_HOST
+.IP
+CLION_MCP_REMOTE_URL
+.SH EXAMPLES
+.nf
+pgx-cli tunnel
+pgx-cli sync status
+pgx-cli sync flush
+pgx-cli build compile
+pgx-cli check diff
+pgx-cli queue status
+pgx-cli thor just --list
+pgx-cli thor shell --dangerous -- git status --short
+pgx-cli request feature make compile output easier to inspect
+pgx-cli request complaint thor command output is too noisy
+pgx-cli doctor
+pgx-cli clion doctor
+pgx-cli config show
+pgx-cli tools
+pgx-cli call get_repositories '{}'
+pgx-cli call find_files_by_name_keyword '{"nameKeyword":"CMakeLists","fileCountLimit":5}'
+.fi

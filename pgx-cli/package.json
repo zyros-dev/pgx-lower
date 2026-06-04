@@ -1,0 +1,34 @@
+{
+  "name": "pgx-cli",
+  "version": "1.0.0",
+  "description": "Small CLI wrapper for JetBrains CLion MCP tools.",
+  "type": "module",
+  "bin": {
+    "pgx-cli": "./dist/index.js"
+  },
+  "man": [
+    "./man/pgx-cli.1"
+  ],
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "rm -rf dist && tsc && chmod +x dist/index.js",
+    "test": "vitest run",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [
+    "clion",
+    "mcp"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

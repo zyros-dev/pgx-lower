@@ -1,0 +1,55 @@
+project: pgx-lower
+
+remote:
+  host: comfy
+  path: /home/zel/repos/pgx-lower
+  mutagen_session: pgx-lower
+  docker_container: pgx-lower-dev
+
+queues:
+  build: pgx-build
+  check: pgx-check
+
+profiles:
+  debug:
+    build:
+      build_dir: build-artifacts/ptest
+      cmake:
+        generator: Ninja
+        args:
+          CMAKE_BUILD_TYPE: Debug
+          BUILD_ONLY_EXTENSION: true
+          CMAKE_EXPORT_COMPILE_COMMANDS: true
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    runtime:
+      analyzer: auto
+      fallback: auto
+      logging: info
+      latency_logging: true
+      routing_ledger: true
+
+  latency:
+    inherits: debug
+    build:
+      build_dir: build-artifacts/latency
+      cmake:
+        args:
+          CMAKE_BUILD_TYPE: Release
+          CMAKE_CXX_FLAGS_RELEASE: "-O3"
+    runtime:
+      logging: error
+      latency_logging: false
+      routing_ledger: false
+
+  force-fallback:
+    inherits: debug
+    runtime:
+      fallback: force
+      routing_ledger: true
+
+  force-lower:
+    inherits: debug
+    runtime:
+      fallback: error
+      routing_ledger: true
