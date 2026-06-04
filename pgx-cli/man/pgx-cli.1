@@ -84,6 +84,9 @@ Cancel and remove a queued build job by id.
 .B thor shell --dangerous -- \fICMD\fR [\fIARGS\fR...]
 Flush Mutagen, then run an explicit shell command on thor in the configured pgx-lower checkout.
 .TP
+.B repo audit-tools
+Fail if loose workflow helper scripts appear outside the approved pgx-cli-centered tool surface.
+.TP
 .B request feature \fIMESSAGE\fR...
 Write a timestamped feature request Markdown file under ~/.config/pgx-cli/requests.
 .TP
@@ -162,6 +165,7 @@ pgx-cli dev build explain --profile debug
 pgx-cli docker status
 pgx-cli docker build ptest
 pgx-cli docker build release
+pgx-cli repo audit-tools
 pgx-cli queue status
 pgx-cli thor shell --dangerous -- git status --short
 pgx-cli request feature make compile output easier to inspect

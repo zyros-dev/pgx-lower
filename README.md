@@ -34,8 +34,12 @@ Use `pgx-cli dev ...` and `pgx-cli queue ...` as the normal workflow commands;
 treat raw `ssh comfy`, raw `mutagen`, and raw `tsp` as debugging escape hatches.
 The old recipe layer has been retired.
 
-The inherited `tools/` tree is tracked in `docs/tools-ledger.md`; do not delete
-entries without updating that ledger.
+Workflow entrypoints live in `pgx-cli`. New shell or Python helper scripts need
+a plan-level exception and must pass:
+
+```bash
+pgx-cli repo audit-tools
+```
 
 Cheap PR hygiene checks:
 

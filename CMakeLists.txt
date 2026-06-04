@@ -31,7 +31,7 @@ if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR
         "This project requires Clang due to GCC optimizer bugs at -O3.\n"
         "Detected compiler: ${CMAKE_CXX_COMPILER_ID}\n"
-        "Please clean your build directory and run: CC=clang CXX=clang++ make ptest")
+        "Please clean your build directory and rerun through pgx-cli dev gate review")
 endif()
 
 # Enable position-independent code globally for shared library compatibility

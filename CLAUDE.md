@@ -58,6 +58,8 @@ Use `pgx-cli` for agent-facing pgx-lower workflows.
   `tsp`.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow
   commands outside `pgx-cli` unless a new spec explicitly calls for it.
+- Run `pgx-cli repo audit-tools` after adding or moving workflow files. Loose
+  shell/Python helper entrypoints are not part of the normal repo shape.
 
 ## How we work: spec-first, human-in-the-loop
 
@@ -93,10 +95,9 @@ Default bar for every plan, before its PR opens:
 
 Opt-in, only when the plan's "Done means" turns it on:
 
-- Benchmark plans must declare their own current benchmark command until a
-  dedicated `pgx-cli bench ...` namespace lands. Correctness != benchmark:
-  validate correctness always, benchmark only to prove a speedup the plan
-  promised.
+- Benchmark plans must add or use a `pgx-cli bench ...` command before claiming
+  benchmark support. Correctness != benchmark: validate correctness always,
+  benchmark only to prove a speedup the plan promised.
 
 ## Long-running subagents: run in the background
 
