@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-exec pgx-cli dev gate review
+exec pgx-cli dev gate batch
