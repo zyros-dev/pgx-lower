@@ -8,6 +8,7 @@ import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
 import { connectMcp } from "./mcp.js";
+import { runRouteCheckCommand } from "./pg-regress-routes.js";
 import {
   runQueueCommand,
   runSetupCommand,
@@ -109,6 +110,13 @@ try {
     process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
     });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "route-check") {
+    process.exitCode = await runRouteCheckCommand(argv.slice(2), runner, io);
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
     process.exit();

@@ -49,6 +49,7 @@ pgx-cli dev gate batch
 pgx-cli dev gate review
 pgx-cli dev build explain --profile debug
 pgx-cli dev build compile --profile debug
+pgx-cli test route-check --help
 pgx-cli docker status
 pgx-cli docker build ptest
 pgx-cli docker build release
@@ -76,6 +77,8 @@ The `call` command supports every tool the CLion MCP server advertises. The conv
 
 `pgx-cli dev ...` commands are the normal pgx-lower development workflow. They
 flush Mutagen and run the needed local/thor/Docker/task-spooler steps directly.
+`pgx-cli test route-check` validates pg_regress route notices against SQL
+directives and writes a route summary without contacting CLion MCP.
 `pgx-cli docker ...` commands wrap explicit thor-side Docker maintenance flows.
 `pgx-cli repo audit-tools` enforces that workflow entrypoints stay in pgx-cli
 instead of drifting back into loose shell or Python helper scripts.
@@ -164,6 +167,23 @@ pgx-cli dev build install --profile debug
 
 Use `dev build explain` before expensive work when changing profiles. The command
 prints the resolved inherited profile without running CMake.
+
+## Route Checks
+
+```sh
+pgx-cli test route-check \
+  --run-name pgx-regression-correctness \
+  --profile debug \
+  --execution-mode extension-auto \
+  --sql-dir tests/pgx-regression/sql \
+  --output-dir build-artifacts/make/ptest/extension/pgx-regression/results \
+  --summary build-artifacts/test-runs/pgx-regression-correctness/summary.md \
+  --default-auto-should-route-to lower \
+  --require-route-directives
+```
+
+Use `--pg-regress -- <pg_regress command...>` to run pg_regress before checking
+route notices.
 
 ## Development
 
