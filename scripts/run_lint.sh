@@ -75,7 +75,7 @@ printf '%s\n' "${files[@]}" \
     | xargs -P"$jobs" -I{} clang-tidy-20 "${tidy_args[@]}" {} \
         >"$out" 2>&1 || rc=$?
 
-cat "$out"
+sed '/^[0-9][0-9]* warnings generated\.$/d' "$out"
 
 if [ "$MODE" = "inventory" ]; then
     echo ""
