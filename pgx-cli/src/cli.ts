@@ -371,6 +371,7 @@ export function helpText(): string {
     "  queue tail <id>",
     "  queue cancel <id>",
     "  thor shell --dangerous -- <cmd...>",
+    "  pgx-cli repo audit-tools",
     "  request feature <message...>",
     "  request complaint <message...>",
     "  doctor",

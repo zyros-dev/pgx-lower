@@ -16,6 +16,7 @@ import {
 } from "./operations.js";
 import { loadProjectConfig, resolveProfile } from "./project-config.js";
 import { DEFAULT_REQUEST_DIR, writeRequest } from "./requests.js";
+import { runRepoCommand } from "./repo-audit.js";
 import { DEFAULT_USAGE_PATH, incrementUsage } from "./usage.js";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -98,6 +99,15 @@ try {
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
       dockerContainer: config.dockerContainer
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "repo") {
+    process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
+      localProjectPath: config.localProjectPath
     });
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
