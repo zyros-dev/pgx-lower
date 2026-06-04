@@ -19,6 +19,7 @@ describe("loadConfig", () => {
     expect(config.localProjectPath).toBe("/Users/nickvandermerwe/repos/pgx-lower");
     expect(config.remoteProjectPath).toBe("/home/zel/repos/pgx-lower");
     expect(config.mutagenSession).toBe("pgx-lower");
+    expect(config.dockerContainer).toBe("pgx-lower-dev");
   });
 
   test("uses pgx-cli config directory", () => {
@@ -57,7 +58,8 @@ describe("loadConfig", () => {
       remoteUrl: "http://127.0.0.1:64342/stream",
       localProjectPath: "/Users/nickvandermerwe/repos/pgx-lower",
       remoteProjectPath: "/home/zel/repos/pgx-lower",
-      mutagenSession: "pgx-lower"
+      mutagenSession: "pgx-lower",
+      dockerContainer: "pgx-lower-dev"
     });
 
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
@@ -67,9 +69,67 @@ describe("loadConfig", () => {
       remoteUrl: "http://127.0.0.1:64342/stream",
       localProjectPath: "/Users/nickvandermerwe/repos/pgx-lower",
       remoteProjectPath: "/home/zel/repos/pgx-lower",
-      mutagenSession: "pgx-lower"
+      mutagenSession: "pgx-lower",
+      dockerContainer: "pgx-lower-dev"
     });
 
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("uses project config for pgx-lower operation defaults", () => {
+    const config = loadConfig({
+      env: {},
+      argvUrl: undefined,
+      readConfigFile: () => undefined,
+      readProjectConfig: () => ({
+        project: "pgx-lower",
+        remote: {
+          host: "project-thor",
+          path: "/project/remote",
+          mutagen_session: "project-session",
+          docker_container: "pgx-lower-dev"
+        },
+        queues: {
+          build: "project-build",
+          check: "project-check"
+        },
+        profiles: {}
+      })
+    });
+
+    expect(config.sshHost).toBe("project-thor");
+    expect(config.remoteProjectPath).toBe("/project/remote");
+    expect(config.projectPath).toBe("/project/remote");
+    expect(config.mutagenSession).toBe("project-session");
+    expect(config.dockerContainer).toBe("pgx-lower-dev");
+  });
+
+  test("keeps personal JSON and environment overrides above project config", () => {
+    const config = loadConfig({
+      env: {
+        PGX_REMOTE_PROJECT_PATH: "/env/remote",
+        PGX_MUTAGEN_SESSION: "env-session"
+      },
+      argvUrl: undefined,
+      readConfigFile: () => ({ sshHost: "personal-thor" }),
+      readProjectConfig: () => ({
+        project: "pgx-lower",
+        remote: {
+          host: "project-thor",
+          path: "/project/remote",
+          mutagen_session: "project-session",
+          docker_container: "pgx-lower-dev"
+        },
+        queues: {
+          build: "project-build",
+          check: "project-check"
+        },
+        profiles: {}
+      })
+    });
+
+    expect(config.sshHost).toBe("personal-thor");
+    expect(config.remoteProjectPath).toBe("/env/remote");
+    expect(config.mutagenSession).toBe("env-session");
   });
 });
