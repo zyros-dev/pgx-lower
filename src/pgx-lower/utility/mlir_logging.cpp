@@ -23,7 +23,7 @@ auto verify_and_print(const mlir::Value val) -> void {
 
     PGX_LOG(AST_TRANSLATE, TRACE, "finished verification - now printing.");
     try {
-        std::string valueStr;
+        std::string valueStr{};
         llvm::raw_string_ostream stream(valueStr);
         val.print(stream);
         stream.flush();
@@ -41,7 +41,7 @@ auto verify_and_print(const mlir::Value val) -> void {
 }
 
 auto print_type(const mlir::Type val) -> void {
-    std::string valueStr;
+    std::string valueStr{};
     llvm::raw_string_ostream stream(valueStr);
     val.print(stream);
     stream.flush();
@@ -49,7 +49,7 @@ auto print_type(const mlir::Type val) -> void {
 }
 
 auto type_to_string(const mlir::Type type) -> std::string {
-    std::string typeStr;
+    std::string typeStr{};
     llvm::raw_string_ostream stream(typeStr);
     type.print(stream);
     stream.flush();
@@ -57,7 +57,7 @@ auto type_to_string(const mlir::Type type) -> std::string {
 }
 
 auto value_to_string(const mlir::Value val) -> std::string {
-    std::string valueStr;
+    std::string valueStr{};
     llvm::raw_string_ostream stream(valueStr);
     val.print(stream);
     stream.flush();

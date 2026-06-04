@@ -24,7 +24,7 @@ namespace {
 
 mlir::MLIRContext& ctx() {
     static mlir::MLIRContext c;
-    static bool initialized = false;
+    static bool initialized{};
     if (!initialized) {
         c.loadDialect<mlir::util::UtilDialect>();
         initialized = true;

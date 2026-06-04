@@ -53,8 +53,7 @@ extern "C" {
 namespace mlir_runner {
 
 #ifdef POSTGRESQL_EXTENSION
-auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* /*econtext*/, DestReceiver* dest)
-    -> bool {
+auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext*, DestReceiver* dest) -> bool {
     if (!plannedStmt || !estate || !dest) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null parameters provided to MLIR runner with "
                                                               "DestReceiver");
@@ -90,7 +89,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
 
         // Phase 2-3: Run complete lowering pipeline with PostgreSQL safety wrapper
-        bool pipelineSuccess = false;
+        bool pipelineSuccess{};
 #ifndef BUILDING_UNIT_TESTS
         PG_TRY();
         {

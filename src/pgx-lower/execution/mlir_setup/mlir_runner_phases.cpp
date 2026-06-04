@@ -189,7 +189,7 @@ bool runPhase3c(::mlir::ModuleOp module) {
     }
 
     // Ensure only LLVM operations remain
-    bool hasNonLLVMOps = false;
+    bool hasNonLLVMOps{};
     module->walk([&](mlir::Operation* op) {
         if (!mlir::isa<mlir::ModuleOp>(op) && op->getDialect() && op->getDialect()->getNamespace() != "llvm") {
             if (op->getDialect()->getNamespace() != "func") {

@@ -41,10 +41,10 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
         std::map<std::string, int> operationCounts;
         std::map<std::string, int> typeCounts;
         std::map<std::string, int> attributeCounts;
-        int totalOperations = 0;
-        int totalBlocks = 0;
-        int totalRegions = 0;
-        int totalValues = 0;
+        int totalOperations{};
+        int totalBlocks{};
+        int totalRegions{};
+        int totalValues{};
 
         module.walk([&](::mlir::Operation* op) {
             if (!op) {
@@ -95,7 +95,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
         PHASE_LOG("  Total Values: %d", totalValues);
 
         try {
-            std::string moduleStr;
+            std::string moduleStr{};
             llvm::raw_string_ostream stream(moduleStr);
             module.print(stream);
 
@@ -103,7 +103,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
             formattedMLIR << "\n=== MLIR MODULE CONTENT: " << title << " ===\n";
 
             std::stringstream ss(moduleStr);
-            std::string line;
+            std::string line{};
             int lineNum = 1;
             while (std::getline(ss, line)) {
                 formattedMLIR << std::setw(3) << lineNum << ": " << line << "\n";
@@ -127,7 +127,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
             file << "// Total Operations: " << totalOperations << "\n";
             file << "// Module Valid: " << (isValid ? "YES" : "NO") << "\n\n";
 
-            std::string moduleStr;
+            std::string moduleStr{};
             llvm::raw_string_ostream stream(moduleStr);
             module.print(stream);
             file << moduleStr;
@@ -164,7 +164,7 @@ void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::
 
     for (auto& func : *module) {
         if (func.getName() == "main") {
-            std::string funcStr;
+            std::string funcStr{};
             llvm::raw_string_ostream funcStream(funcStr);
             func.print(funcStream, nullptr);
             funcStream.flush();
@@ -178,8 +178,8 @@ void dumpLLVMIR(llvm::Module* module, const std::string& title, pgx_lower::log::
 
 class ModuleDumpPass : public mlir::PassWrapper<ModuleDumpPass, mlir::OperationPass<mlir::ModuleOp>> {
 private:
-    std::string phaseName;
-    ::pgx_lower::log::Category phaseCategory;
+ std::string phaseName{};
+ ::pgx_lower::log::Category phaseCategory;
 
 public:
  explicit ModuleDumpPass(std::string name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL)

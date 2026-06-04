@@ -99,12 +99,10 @@ Checks: >
   readability-make-member-function-const,
   readability-misleading-indentation,
   readability-misplaced-array-index,
-  readability-named-parameter,
   readability-non-const-parameter,
   readability-redundant-access-specifiers,
   readability-redundant-control-flow,
   readability-redundant-function-ptr-dereference,
-  readability-redundant-member-init,
   readability-redundant-preprocessor,
   readability-redundant-smartptr-get,
   readability-redundant-string-cstr,
@@ -134,6 +132,10 @@ HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external).)*$'
 #   not match the surrounding pgx-lower style.
 # - readability-qualified-auto rewrites west-style `const auto ptr` to
 #   `auto* const ptr`; correct but noisy and against the repo's const style.
+# - readability-named-parameter forces fake unused-parameter comments such as
+#   `/*unused*/`; unnamed parameters are clearer when an ABI requires the slot.
+# - readability-redundant-member-init conflicts with pgx-lower's preference for
+#   explicit `{}` defaults on members, including default-constructed members.
 # - modernize-return-braced-init-list breaks VarLen32 returns by turning explicit
 #   constructors into braced initializers that reject existing length conversions.
 # - PG/LLVM boundary code legitimately uses pointer reinterpretation, PG pointer

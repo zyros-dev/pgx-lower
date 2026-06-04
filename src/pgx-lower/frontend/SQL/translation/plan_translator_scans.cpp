@@ -58,7 +58,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     auto physicalTableName = std::string();
     auto aliasName = std::string();
-    auto tableOid = InvalidOid;
+    auto tableOid{InvalidOid};
 
     if (seqScan->scan.scanrelid > 0) {
         physicalTableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
@@ -125,7 +125,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     if (uniqueScope != aliasName) {
         PGX_LOG(AST_TRANSLATE, DEBUG,
                 "[SCOPE_DEBUG] translate_seq_scan: uniqueScope != aliasName, populating varno_resolution");
-        for (size_t i = 0; i < allColumns.size(); i++) {
+        for (size_t i{}; i < allColumns.size(); i++) {
             const int varattno = static_cast<int>(i + 1);
             ctx.varno_resolution[std::make_pair(seqScan->scan.scanrelid, varattno)] = std::make_pair(
                 uniqueScope, allColumns[i].name);
@@ -166,7 +166,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
 
     auto physicalTableName = std::string();
     auto aliasName = std::string();
-    auto tableOid = InvalidOid;
+    auto tableOid{InvalidOid};
 
     if (indexScan->scan.scanrelid > 0) {
         physicalTableName = get_table_name_from_rte(&ctx.current_stmt, indexScan->scan.scanrelid);
@@ -235,7 +235,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
             "[SCOPE_DEBUG] translate_index_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
             uniqueScope.c_str(), aliasName.c_str());
 
-    for (size_t i = 0; i < allColumns.size(); i++) {
+    for (size_t i{}; i < allColumns.size(); i++) {
         const int varattno = static_cast<int>(i + 1);
 
         // Add mapping for scanrelid (regular Var and INDEX_VAR lookups)
@@ -280,7 +280,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_only_scan(QueryCtxT& ctx, In
 
     auto physicalTableName = std::string();
     auto aliasName = std::string();
-    auto tableOid = InvalidOid;
+    auto tableOid{InvalidOid};
 
     if (indexOnlyScan->scan.scanrelid > 0) {
         physicalTableName = get_table_name_from_rte(&ctx.current_stmt, indexOnlyScan->scan.scanrelid);
@@ -349,7 +349,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_only_scan(QueryCtxT& ctx, In
             "[SCOPE_DEBUG] translate_index_only_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
             uniqueScope.c_str(), aliasName.c_str());
 
-    for (size_t i = 0; i < allColumns.size(); i++) {
+    for (size_t i{}; i < allColumns.size(); i++) {
         const int varattno = static_cast<int>(i + 1);
 
         // Add mapping for scanrelid (regular Var and INDEX_VAR lookups)
@@ -404,7 +404,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bitmap_heap_scan(QueryCtxT& ctx, B
 
     auto physicalTableName = std::string();
     auto aliasName = std::string();
-    auto tableOid = InvalidOid;
+    auto tableOid{InvalidOid};
 
     if (bitmapScan->scan.scanrelid > 0) {
         physicalTableName = get_table_name_from_rte(&ctx.current_stmt, bitmapScan->scan.scanrelid);
@@ -472,7 +472,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bitmap_heap_scan(QueryCtxT& ctx, B
             "[SCOPE_DEBUG] translate_bitmap_heap_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
             uniqueScope.c_str(), aliasName.c_str());
 
-    for (size_t i = 0; i < allColumns.size(); i++) {
+    for (size_t i{}; i < allColumns.size(); i++) {
         const int varattno = static_cast<int>(i + 1);
 
         ctx.varno_resolution[std::make_pair(bitmapScan->scan.scanrelid, varattno)] = std::make_pair(
@@ -569,7 +569,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 TranslationResult exprContext;
                 exprContext.op = result.op;
                 exprContext.columns = subplan_columns;
-                for (size_t i = 0; i < subplan_columns.size(); ++i) {
+                for (size_t i{}; i < subplan_columns.size(); ++i) {
                     const auto& col = subplan_columns[i];
                     ctx.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name,
                                                                                                     col.column_name);

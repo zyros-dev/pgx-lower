@@ -56,8 +56,8 @@ bool StandalonePipelineTester::runPhase3c() {
 
 std::string StandalonePipelineTester::getCurrentMLIR() const {
     if (!module_ || !*module_) return "";
-    
-    std::string output;
+
+    std::string output{};
     llvm::raw_string_ostream stream(output);
     (*module_)->print(stream);
     return output;

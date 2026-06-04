@@ -23,18 +23,18 @@ using NumericDigit = int16;
 
 struct NumericLong {
     uint16 n_sign_dscale;
-    int16 n_weight;
+    int16 n_weight{};
     NumericDigit n_data[1];
 };
 
 union NumericChoice {
-    uint16 n_header;
+    uint16 n_header{};
     struct NumericLong n_long;
 };
 
 struct NumericData {
-    int32 vl_len_;
-    union NumericChoice choice;
+    int32 vl_len_{};
+    union NumericChoice choice{};
 };
 
 Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale,

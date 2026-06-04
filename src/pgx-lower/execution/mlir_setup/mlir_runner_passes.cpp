@@ -54,11 +54,11 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
         return false;
     }
 
-    context.getDiagEngine().registerHandler([](mlir::Diagnostic &diag) {
-        std::string diagStr;
+    context.getDiagEngine().registerHandler([](mlir::Diagnostic& diag) {
+        std::string diagStr{};
         llvm::raw_string_ostream os(diagStr);
-        
-        std::string locStr;
+
+        std::string locStr{};
         llvm::raw_string_ostream locOs(locStr);
         diag.getLocation().print(locOs);
         locOs.flush();
@@ -67,14 +67,12 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
         os.flush();
         
         switch (diag.getSeverity()) {
-            case mlir::DiagnosticSeverity::Error:
-            case mlir::DiagnosticSeverity::Warning:
-            case mlir::DiagnosticSeverity::Note:
-            case mlir::DiagnosticSeverity::Remark:
-                PGX_WARNING("MLIR Note at %s: %s",
-                       locStr.empty() ? "unknown" : locStr.c_str(), 
-                       diagStr.c_str());
-                break;
+        case mlir::DiagnosticSeverity::Error:
+        case mlir::DiagnosticSeverity::Warning:
+        case mlir::DiagnosticSeverity::Note:
+        case mlir::DiagnosticSeverity::Remark:
+            PGX_WARNING("MLIR Note at %s: %s", locStr.empty() ? "unknown" : locStr.c_str(), diagStr.c_str());
+            break;
         }
         
         return mlir::success();

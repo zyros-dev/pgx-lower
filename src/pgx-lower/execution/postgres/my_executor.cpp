@@ -83,7 +83,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
         if (rte && stmt->planTree && stmt->planTree->targetlist) {
             auto* targetList = stmt->planTree->targetlist;
 
-            int numSelectedColumns = 0;
+            int numSelectedColumns{};
             ListCell* lc = nullptr;
             foreach (lc, targetList) {
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
@@ -93,7 +93,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
             }
 
             selectedColumns.clear();
-            for (int i = 0; i < numSelectedColumns; i++) {
+            for (int i{}; i < numSelectedColumns; i++) {
                 selectedColumns.push_back(-1);
             }
             PGX_LOG(GENERAL, DEBUG, "Configured for %d result columns", numSelectedColumns);
@@ -113,7 +113,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
     const int numResultColumns = selectedColumns.size();
     const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
 
-    for (int i = 0; i < numResultColumns; i++) {
+    for (int i{}; i < numResultColumns; i++) {
         const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
 
         Oid columnType = INT4OID;
@@ -123,7 +123,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
 
         if (stmt->planTree && stmt->planTree->targetlist && i < list_length(stmt->planTree->targetlist)) {
             ListCell* lc = nullptr;
-            int colIdx = 0;
+            int colIdx{};
             foreach (lc, stmt->planTree->targetlist) {
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
                 if (tle && !tle->resjunk) {
@@ -150,7 +150,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             PGX_LOG(GENERAL, DEBUG, "Column %d: exprType returned OID=%u", i, columnType);
 
                             int16 typLen = 0;
-                            bool typByVal = false;
+                            bool typByVal{};
                             char typAlign = 0;
                             get_typlenbyvalalign(columnType, &typLen, &typByVal, &typAlign);
 
@@ -306,10 +306,10 @@ static bool validateAndPrepareQuery(const QueryDesc* queryDesc, const PlannedStm
 struct ExecutionContext {
     EState* estate = nullptr;
     ExprContext* econtext = nullptr;
-    MemoryContext old_context = nullptr;
+    MemoryContext old_context{nullptr};
     TupleTableSlot* slot = nullptr;
-    TupleDesc resultTupleDesc = nullptr;
-    bool initialized = false;
+    TupleDesc resultTupleDesc{nullptr};
+    bool initialized{};
 };
 
 static bool setupExecution(ExecutionContext& ctx, const PlannedStmt* stmt, DestReceiver* dest, CmdType operation) {
@@ -324,7 +324,7 @@ static bool setupExecution(ExecutionContext& ctx, const PlannedStmt* stmt, DestR
 }
 
 static bool executeWithExceptionHandling(ExecutionContext& ctx, PlannedStmt* stmt, DestReceiver* dest) {
-    bool mlir_success = false;
+    bool mlir_success{};
 
     PG_TRY();
     {
