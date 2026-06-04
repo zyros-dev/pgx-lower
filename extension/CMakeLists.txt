@@ -10,6 +10,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/standalone_mlir_runner.cpp
             ../src/pgx-lower/test/pipeline_phases_tests.cpp
             ../src/pgx-lower/test/query_analyzer_tests.cpp
+            ../src/pgx-lower/test/accepted_plan_verifier_tests.cpp
         )
     endif()
 
@@ -22,6 +23,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ${_pgx_lower_test_sources}
         ../src/pgx-lower/execution/postgres/my_executor.cpp
         ../src/pgx-lower/execution/postgres/executor_c.cpp
+        ../src/pgx-lower/execution/accepted_plan_verifier.cpp
         ../src/pgx-lower/execution/mlir_runner.cpp
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_phases.cpp
         ../src/pgx-lower/execution/mlir_setup/mlir_runner_passes.cpp
