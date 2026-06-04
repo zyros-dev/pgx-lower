@@ -2,7 +2,7 @@
 """Baseline-aware wrapper around ctest for the pg_regress suite.
 
 The pg_regress suite currently has many pre-existing failures that are not
-caused by any one PR's change. Without a baseline, `just test` can never
+caused by any one PR's change. Without a baseline, the pg_regress gate can never
 actually gate anything — every PR inherits the red state. This wrapper
 stores the known-failing set in `tests/pg_regress_baseline.txt` and
 exits non-zero only on *delta*:
@@ -126,7 +126,7 @@ def main() -> int:
     if args.record:
         header = (
             "# pg_regress baseline: tests expected to fail on main.\n"
-            "# Produced by `just test-record-baseline`. Review before committing.\n"
+            "# Produced by pg_regress baseline recording. Review before committing.\n"
             "# A PR that adds a test name here must justify why (in the PR\n"
             "# description). A PR that removes a name — good, that test is\n"
             "# passing now — can do so freely."
@@ -170,9 +170,9 @@ def main() -> int:
                 f"for: {tests_list}."
             )
             print(
-                "     Run `just expected-from-results <name>` once `just test` has "
-                "produced the results/ output,\n"
-                "     then re-run `just test` to confirm green. "
+                "     Copy the generated results/<name>.out to tests/expected/<name>.out "
+                "after the RED run,\n"
+                "     then re-run `pgx-cli dev gate review` to confirm green. "
                 "See .claude/skills/devops/SKILL.md step 2."
             )
         else:
@@ -192,7 +192,7 @@ def main() -> int:
             print(f"  ✘ {name}")
         print("\nFAIL: regressions detected. Fix the test(s) or, if the "
               "failure is genuinely expected, update the baseline with "
-              "`just test-record-baseline` and justify in the PR body.")
+              "the baseline file and justify it in the PR body.")
         return 1
 
     print("\nOK: no new regressions vs baseline.")

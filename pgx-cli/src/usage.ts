@@ -10,11 +10,11 @@ export function normalizeCommandKey(argv: string[]): string {
   if (!command) {
     return "help";
   }
-  if (command === "thor" && subcommand === "just") {
-    return "thor just";
-  }
   if (command === "thor" && subcommand === "shell") {
     return "thor shell";
+  }
+  if (command === "dev" && subcommand) {
+    return `dev ${subcommand}`;
   }
   if (command === "sync" && subcommand) {
     return `sync ${subcommand}`;

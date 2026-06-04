@@ -36,23 +36,29 @@ Show the configured Mutagen session status.
 .B sync flush
 Flush the configured Mutagen session.
 .TP
-.B build compile
-Flush Mutagen, then run the queued pgx-lower compile recipe on thor.
+.B dev status
+Show Mutagen, remote branch, and task-spooler queue status for pgx-lower.
 .TP
-.B build test
-Flush Mutagen, then run the queued pgx-lower regression test recipe on thor.
+.B dev lint diff
+Flush Mutagen, then run diff-scoped clang-tidy feedback for pgx-lower.
 .TP
-.B build utest-pg
-Flush Mutagen, then run the queued pgx-lower PostgreSQL unit test recipe on thor.
+.B dev test focused
+Flush Mutagen, then run the PostgreSQL unit-test gate on thor.
 .TP
-.B build bench
-Flush Mutagen, then run the queued pgx-lower benchmark recipe on thor.
+.B dev test tpch
+Flush Mutagen, then run the TPC-H pg_regress correctness subset on thor.
 .TP
-.B check diff
-Flush Mutagen, then run the queued changed-hunk formatting check on thor.
+.B dev gate batch
+Run the fast batch-boundary workflow gate.
 .TP
-.B check all
-Flush Mutagen, then run the full formatting check on thor.
+.B dev gate review
+Run the full review-boundary workflow gate.
+.TP
+.B dev build explain --profile \fINAME\fR
+Print resolved CMake/runtime profile settings without running CMake.
+.TP
+.B dev build compile --profile \fINAME\fR
+Run a profile-selected CMake build command on thor.
 .TP
 .B queue status
 Show pgx-lower build/check queue status.
@@ -65,9 +71,6 @@ Tail a queued build job log by id.
 .TP
 .B queue cancel \fIID\fR
 Cancel and remove a queued build job by id.
-.TP
-.B thor just \fIRECIPE\fR [\fIARGS\fR...]
-Flush Mutagen, then run a just recipe on thor in the configured pgx-lower checkout.
 .TP
 .B thor shell --dangerous -- \fICMD\fR [\fIARGS\fR...]
 Flush Mutagen, then run an explicit shell command on thor in the configured pgx-lower checkout.
@@ -143,10 +146,11 @@ CLION_MCP_REMOTE_URL
 pgx-cli tunnel
 pgx-cli sync status
 pgx-cli sync flush
-pgx-cli build compile
-pgx-cli check diff
+pgx-cli dev status
+pgx-cli dev lint diff
+pgx-cli dev gate batch
+pgx-cli dev build explain --profile debug
 pgx-cli queue status
-pgx-cli thor just --list
 pgx-cli thor shell --dangerous -- git status --short
 pgx-cli request feature make compile output easier to inspect
 pgx-cli request complaint thor command output is too noisy

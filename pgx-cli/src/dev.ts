@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { CommandRunner } from "./commands.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 
@@ -11,6 +12,8 @@ export type WorkflowStep = {
 };
 
 export type DevConfig = OperationConfig & {
+  localProjectPath: string;
+  dockerContainer: string;
   buildQueue: string;
   checkQueue: string;
 };
@@ -72,12 +75,12 @@ export async function runDevCommand(
 
   if (command === "lint") {
     const [lintCommand, ...lintArgs] = rest;
-    if (lintCommand === "diff") return runJust(runner, output, config, ["lint-diff"]);
+    if (lintCommand === "diff") return runLintDiff(runner, output, config);
     if (lintCommand === "file" && lintArgs.length === 1) {
-      return runJust(runner, output, config, ["lint-files", lintArgs[0]]);
+      return runLintFiles(runner, output, config, lintArgs);
     }
     if (lintCommand === "files" && lintArgs.length > 0) {
-      return runJust(runner, output, config, ["lint-files", ...lintArgs]);
+      return runLintFiles(runner, output, config, lintArgs);
     }
     output.stderr += "Usage: dev lint <file <path>|files <paths...>|diff>\n";
     return 1;
@@ -85,9 +88,9 @@ export async function runDevCommand(
 
   if (command === "test") {
     const [testCommand, testArg] = rest;
-    if (testCommand === "unit" && testArg) return runJust(runner, output, config, ["utest-pg-one", testArg]);
-    if (testCommand === "tpch") return runJust(runner, output, config, ["test-tpch"]);
-    if (testCommand === "focused") return runJust(runner, output, config, ["utest-pg"]);
+    if (testCommand === "unit" && testArg) return runPostgresUnitTests(runner, output, config, testArg);
+    if (testCommand === "tpch") return runTpchTests(runner, output, config);
+    if (testCommand === "focused") return runPostgresUnitTests(runner, output, config);
     output.stderr += "Usage: dev test <unit <suite>|tpch|focused>\n";
     return 1;
   }
@@ -96,18 +99,51 @@ export async function runDevCommand(
     const [gateCommand] = rest;
     if (gateCommand === "batch") {
       return runWorkflow(runner, output, config, [
-        { name: "check diff", justArgs: ["check-diff"] },
-        { name: "lint diff", justArgs: ["lint-diff"] },
-        { name: "utest-pg", justArgs: ["utest-pg"] }
+        {
+          name: "check diff",
+          command: ["pgx-cli", "dev", "check", "diff"],
+          run: () => runCheckDiff(runner, output, config)
+        },
+        {
+          name: "lint diff",
+          command: ["pgx-cli", "dev", "lint", "diff"],
+          run: () => runLintDiff(runner, output, config)
+        },
+        {
+          name: "utest-pg",
+          command: ["pgx-cli", "dev", "test", "focused"],
+          run: () => runPostgresUnitTests(runner, output, config)
+        }
       ]);
     }
     if (gateCommand === "review") {
       return runWorkflow(runner, output, config, [
-        { name: "check diff", justArgs: ["check-diff"] },
-        { name: "lint", justArgs: ["lint"] },
-        { name: "compile", justArgs: ["compile"], logPath: "/tmp/pgx-compile.out" },
-        { name: "utest-pg", justArgs: ["utest-pg"] },
-        { name: "test", justArgs: ["test"] }
+        {
+          name: "check diff",
+          command: ["pgx-cli", "dev", "check", "diff"],
+          run: () => runCheckDiff(runner, output, config)
+        },
+        {
+          name: "lint",
+          command: ["pgx-cli", "dev", "lint", "all"],
+          run: () => runFullLint(runner, output, config)
+        },
+        {
+          name: "compile",
+          command: ["pgx-cli", "dev", "build", "compile", "--profile", "debug"],
+          logPath: "/tmp/pgx-compile.out",
+          run: () => runCompile(runner, output, config)
+        },
+        {
+          name: "utest-pg",
+          command: ["pgx-cli", "dev", "test", "focused"],
+          run: () => runPostgresUnitTests(runner, output, config)
+        },
+        {
+          name: "test",
+          command: ["pgx-cli", "dev", "test", "all"],
+          run: () => runFullTests(runner, output, config)
+        }
       ]);
     }
     output.stderr += "Usage: dev gate <batch|review> [--no-bench]\n";
@@ -122,14 +158,14 @@ async function runWorkflow(
   runner: CommandRunner,
   output: OperationOutput,
   config: DevConfig,
-  steps: Array<{ name: string; justArgs: string[]; logPath?: string }>
+  steps: Array<{ name: string; command: string[]; logPath?: string; run: () => Promise<number> }>
 ): Promise<number> {
   const results: WorkflowStep[] = [];
   for (const step of steps) {
-    const exitCode = await runJust(runner, output, config, step.justArgs);
+    const exitCode = await step.run();
     results.push({
       name: step.name,
-      command: ["just", ...step.justArgs],
+      command: step.command,
       exitCode,
       logPath: step.logPath
     });
@@ -142,6 +178,121 @@ async function runWorkflow(
   return 0;
 }
 
+async function runCheckDiff(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  return runLocalShell(runner, output, checkDiffScript(config));
+}
+
+async function runLintDiff(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  return runLocalShell(runner, output, lintDiffScript(config));
+}
+
+async function runLintFiles(
+  runner: CommandRunner,
+  output: OperationOutput,
+  config: DevConfig,
+  files: string[]
+): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  const command = dockerBashCommand(
+    config,
+    `cd /workspace && LINT_SKIP_BUILD=1 bash /workspace/scripts/run_lint.sh /workspace check ${files
+      .map(quoteShell)
+      .join(" ")}`
+  );
+  return runRemoteShell(runner, output, config, command);
+}
+
+async function runFullLint(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  return runRemoteShell(
+    runner,
+    output,
+    config,
+    queuedDockerCommand(config, config.buildQueue, "bash /workspace/scripts/run_lint.sh /workspace check")
+  );
+}
+
+async function runPostgresUnitTests(
+  runner: CommandRunner,
+  output: OperationOutput,
+  config: DevConfig,
+  suite?: string
+): Promise<number> {
+  const generated = await runner.run("python3", [join(config.localProjectPath, "scripts/gen_unit_test_sql.py")]);
+  output.stdout += generated.stdout;
+  output.stderr += generated.stderr;
+  if (generated.exitCode !== 0) return generated.exitCode;
+
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+
+  const testSelector = suite
+    ? `test -f /workspace/tests/regress-unit/sql/${quoteShell(`${suite}.sql`)} && `
+    : "";
+  const testRunner = suite
+    ? `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f /workspace/tests/regress-unit/sql/${quoteShell(`${suite}.sql`)}"`
+    : `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit" && fail=0; for sql in /workspace/tests/regress-unit/sql/*.sql; do echo "--- $(basename "$sql") ---"; su postgres -c "/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f $sql" || { fail=1; echo FAIL: $sql; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi`;
+  const command = [
+    "export PATH=/usr/local/pgsql/bin:$PATH",
+    testSelector + buildAndInstallCommand(),
+    "chmod o+x /workspace/.worktrees 2>/dev/null || true",
+    "chmod -R o+rX /workspace/tests/regress-unit",
+    testRunner
+  ].join(" && ");
+  return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+}
+
+async function runTpchTests(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  const command = [
+    "set -euo pipefail",
+    "export PATH=/usr/local/pgsql/bin:$PATH",
+    "mkdir -p /workspace/build-artifacts/ptest /workspace/build-artifacts/ptest/extension",
+    "cd /workspace/build-artifacts/ptest",
+    "([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache /workspace)",
+    "cmake --build .",
+    "cmake --install .",
+    "mkdir -p /tmp/pgx_ir",
+    "chmod 777 /tmp/pgx_ir",
+    "chmod o+x /workspace/.worktrees 2>/dev/null || true",
+    "chmod -R o+rX /workspace",
+    "chown -R postgres:postgres /workspace/build-artifacts/ptest",
+    "pg_regress_bin=\"$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress\"",
+    "su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests --outputdir=/workspace/build-artifacts/ptest/extension --load-extension=pgx_lower 36_tpch_minimal 37_tpch_minimal_2 38_tpch_minimal_3 39_tpch_minimal 40_tpch_not_lowered init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out",
+    "cat /tmp/pg_regress_tpch.out | python3 /workspace/scripts/ptest_with_baseline.py --baseline-file /workspace/tests/pg_regress_baseline.txt"
+  ].join(" && ");
+  return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+}
+
+async function runCompile(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  return runLocalShell(runner, output, compileScript(config));
+}
+
+async function runFullTests(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const flush = await flushMutagen(runner, output, config.mutagenSession);
+  if (flush !== 0) return flush;
+  const command = [
+    buildAndInstallCommand(),
+    "mkdir -p /tmp/pgx_ir",
+    "chmod 777 /tmp/pgx_ir",
+    "chmod o+x /workspace/.worktrees 2>/dev/null || true",
+    "chmod -R o+rX /workspace",
+    "chown -R postgres:postgres /workspace/build-artifacts/ptest",
+    "cd /workspace/build-artifacts/ptest",
+    "(su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; cat /tmp/ctest.out | python3 /workspace/scripts/ptest_with_baseline.py --baseline-file /workspace/tests/pg_regress_baseline.txt)"
+  ].join(" && ");
+  return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+}
+
 async function flushMutagen(runner: CommandRunner, output: OperationOutput, session: string): Promise<number> {
   const result = await runner.run("mutagen", ["sync", "flush", session]);
   output.stdout += result.stdout;
@@ -149,20 +300,11 @@ async function flushMutagen(runner: CommandRunner, output: OperationOutput, sess
   return result.exitCode;
 }
 
-async function runJust(
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: DevConfig,
-  args: string[]
-): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
-  if (flush !== 0) return flush;
-  return runRemoteShell(
-    runner,
-    output,
-    config,
-    `cd ${quoteShell(config.remoteProjectPath)} && ${["just", ...args].map(quoteShell).join(" ")}`
-  );
+async function runLocalShell(runner: CommandRunner, output: OperationOutput, shellCommand: string): Promise<number> {
+  const result = await runner.run("sh", ["-lc", shellCommand]);
+  output.stdout += result.stdout;
+  output.stderr += result.stderr;
+  return result.exitCode;
 }
 
 async function runRemoteShell(
@@ -175,6 +317,84 @@ async function runRemoteShell(
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
+}
+
+function checkDiffScript(config: DevConfig): string {
+  return [
+    "set -eo pipefail",
+    "git fetch origin main --quiet",
+    "base=$(git merge-base origin/main HEAD)",
+    "diff=$(git diff -U0 \"$base\" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/*.c' 'tests/*.cc' 'tests/*.cpp' 'tests/*.h' 'tests/*.hpp' 'extension/*.c' 'extension/*.h' 2>/dev/null || true)",
+    "if [ -z \"$diff\" ]; then echo \"No C/C++ hunks changed vs origin/main - nothing to check.\"; exit 0; fi",
+    "echo \"Checking hunks changed vs origin/main...\"",
+    `printf '%s\\n' "$diff" | ssh ${quoteShell(config.sshHost)} ${quoteShell(
+      `docker exec -i ${quoteShell(config.dockerContainer)} bash -c 'cd /workspace && clang-format-diff-20 -p1 -style=file'`
+    )} > /tmp/check-diff.out || true`,
+    "if [ ! -s /tmp/check-diff.out ]; then echo \"check-diff: clean (your hunks match the project style)\"; exit 0; fi",
+    "cat /tmp/check-diff.out",
+    "echo",
+    "echo \"check-diff: your hunks need reformatting. Hand-edit the specific lines above.\"",
+    "exit 1"
+  ].join("\n");
+}
+
+function lintDiffScript(config: DevConfig): string {
+  return [
+    "set -eo pipefail",
+    "git fetch origin main --quiet",
+    "base=$(git merge-base origin/main HEAD)",
+    "diff=$(git diff -U0 \"$base\" -- 'src/pgx-lower/*.cpp' 'src/pgx-lower/*.h' 2>/dev/null || true)",
+    "if [ -z \"$diff\" ]; then echo \"No src/pgx-lower hunks changed vs origin/main.\"; exit 0; fi",
+    `printf '%s\\n' "$diff" | ssh ${quoteShell(config.sshHost)} ${quoteShell(
+      `docker exec -i ${quoteShell(config.dockerContainer)} bash -c 'cd /workspace && clang-tidy-diff-20 -p1 -path build-docker-lint -clang-tidy-binary clang-tidy-20 -warnings-as-errors="*"'`
+    )} > /tmp/lint-diff.out 2>&1 || true`,
+    "if grep -qE 'warning:|error:' /tmp/lint-diff.out; then cat /tmp/lint-diff.out; echo \"lint-diff: your hunks have clang-tidy violations (above).\"; exit 1; fi",
+    "echo \"lint-diff: clean (your src/pgx-lower hunks pass clang-tidy).\""
+  ].join("\n");
+}
+
+function compileScript(config: DevConfig): string {
+  const remoteCommand = queuedDockerCommand(config, config.buildQueue, buildAndInstallCommand());
+  return [
+    "set -o pipefail",
+    "log=/tmp/pgx-compile.out",
+    "echo \"compile: full log -> ${log}\"",
+    `ssh ${quoteShell(config.sshHost)} ${quoteShell(remoteCommand)} >"\${log}" 2>&1`,
+    "rc=$?",
+    "if [ \"$rc\" -eq 0 ]; then",
+    "  ninja_targets=$(grep -cE '^\\[[0-9]+/[0-9]+\\]' \"${log}\" 2>/dev/null || true)",
+    "  echo \"BUILD OK - ${ninja_targets} ninja step(s), pgx_lower.so installed\"",
+    "else",
+    "  errs=$(grep -cE 'error:|FAILED:' \"${log}\" 2>/dev/null || true)",
+    "  echo \"BUILD FAILED - ${errs} error line(s), exit $rc. Last 80 lines from ${log}:\"",
+    "  tail -n 80 \"${log}\"",
+    "  exit \"$rc\"",
+    "fi"
+  ].join("\n");
+}
+
+function buildAndInstallCommand(): string {
+  return [
+    "mkdir -p /workspace/build-artifacts/ptest",
+    "cd /workspace/build-artifacts/ptest",
+    "([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache /workspace)",
+    "cmake --build .",
+    "cmake --install ."
+  ].join(" && ");
+}
+
+function queuedDockerCommand(config: DevConfig, queue: string, command: string): string {
+  return [
+    `export TS_SOCKET=/tmp/${quoteShell(queue)}.sock`,
+    "tsp -S 1 >/dev/null",
+    `id=$(tsp ${dockerBashCommand(config, command)})`,
+    `echo "[job $id queued on ${queue}]"`,
+    "tsp -c $id"
+  ].join(" && ");
+}
+
+function dockerBashCommand(config: DevConfig, command: string): string {
+  return `docker exec ${quoteShell(config.dockerContainer)} bash -lc ${quoteShell(command)}`;
 }
 
 function quoteShell(value: string): string {

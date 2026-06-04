@@ -1,2 +1,2 @@
-#!/usr/bin/env bash
-exec just check-diff
+#!/usr/bin/env sh
+exec pgx-cli dev lint diff

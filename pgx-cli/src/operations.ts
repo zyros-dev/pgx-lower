@@ -52,20 +52,6 @@ export async function runThorCommand(
 ): Promise<number> {
   const [command, ...rest] = args;
 
-  if (command === "just") {
-    if (rest.length === 0) {
-      output.stderr += "Usage: thor just <recipe> [args...]\n";
-      return 1;
-    }
-
-    const flush = await flushMutagen(runner, output, config.mutagenSession);
-    if (flush !== 0) {
-      return flush;
-    }
-
-    return runRemote(runner, output, config, ["just", ...rest]);
-  }
-
   if (command === "shell") {
     const separatorIndex = rest.indexOf("--");
     if (!rest.includes("--dangerous") || separatorIndex === -1 || separatorIndex === rest.length - 1) {
@@ -81,7 +67,7 @@ export async function runThorCommand(
     return runRemote(runner, output, config, rest.slice(separatorIndex + 1));
   }
 
-  output.stderr += "Usage: thor <just|shell>\n";
+  output.stderr += "Usage: thor shell --dangerous -- <cmd...>\n";
   return 1;
 }
 
@@ -100,8 +86,7 @@ export async function runSetupCommand(
 
     for (const npmArgs of [
       ["--prefix", config.packageDir, "install"],
-      ["--prefix", config.packageDir, "run", "build"],
-      ["--prefix", config.packageDir, "link"]
+      ["--prefix", config.packageDir, "run", "build"]
     ]) {
       const result = await runner.run("npm", npmArgs);
       output.stdout += result.stdout;
@@ -109,6 +94,13 @@ export async function runSetupCommand(
       if (result.exitCode !== 0) {
         return result.exitCode;
       }
+    }
+
+    const link = await runner.run("sh", ["-lc", `cd ${quoteShell(config.packageDir)} && npm link --force`]);
+    output.stdout += link.stdout;
+    output.stderr += link.stderr;
+    if (link.exitCode !== 0) {
+      return link.exitCode;
     }
 
     output.stdout += "setup install: linked in-repo pgx-cli\n";
@@ -157,46 +149,6 @@ export async function runSetupCommand(
 
   output.stderr += "Usage: setup <install|doctor>\n";
   return 1;
-}
-
-export async function runBuildCommand(
-  args: string[],
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: OperationConfig
-): Promise<number> {
-  const recipes = new Map([
-    ["compile", "compile"],
-    ["test", "test"],
-    ["utest-pg", "utest-pg"],
-    ["bench", "bench"]
-  ]);
-  const recipe = recipes.get(args[0] ?? "");
-  if (!recipe) {
-    output.stderr += "Usage: build <compile|test|utest-pg|bench>\n";
-    return 1;
-  }
-
-  return runJustRecipe(recipe, [], runner, output, config);
-}
-
-export async function runCheckCommand(
-  args: string[],
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: OperationConfig
-): Promise<number> {
-  const recipes = new Map([
-    ["diff", "check-diff"],
-    ["all", "check"]
-  ]);
-  const recipe = recipes.get(args[0] ?? "");
-  if (!recipe) {
-    output.stderr += "Usage: check <diff|all>\n";
-    return 1;
-  }
-
-  return runJustRecipe(recipe, [], runner, output, config);
 }
 
 export async function runQueueCommand(
@@ -265,21 +217,6 @@ async function flushMutagen(
   output.stdout += result.stdout;
   output.stderr += result.stderr;
   return result.exitCode;
-}
-
-async function runJustRecipe(
-  recipe: string,
-  args: string[],
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: OperationConfig
-): Promise<number> {
-  const flush = await flushMutagen(runner, output, config.mutagenSession);
-  if (flush !== 0) {
-    return flush;
-  }
-
-  return runRemote(runner, output, config, ["just", recipe, ...args]);
 }
 
 async function runRemoteWithFlush(

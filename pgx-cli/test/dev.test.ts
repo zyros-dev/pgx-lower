@@ -16,6 +16,8 @@ const devConfig = {
   mutagenSession: "pgx-lower",
   sshHost: "comfy",
   remoteProjectPath: "/home/zel/repos/pgx-lower",
+  localProjectPath: "/Users/nickvandermerwe/repos/pgx-lower",
+  dockerContainer: "pgx-lower-dev",
   buildQueue: "pgx-build",
   checkQueue: "pgx-check"
 };
@@ -24,14 +26,14 @@ describe("dev workflow summaries", () => {
   test("formats passing workflow steps", () => {
     expect(
       formatWorkflowSummary([
-        { name: "lint diff", command: ["just", "lint-diff"], exitCode: 0, summary: "clean" },
-        { name: "compile", command: ["just", "compile"], exitCode: 0, logPath: "/tmp/pgx-compile.out" }
+        { name: "lint diff", command: ["pgx-cli", "dev", "lint", "diff"], exitCode: 0, summary: "clean" },
+        { name: "compile", command: ["pgx-cli", "dev", "build", "compile"], exitCode: 0, logPath: "/tmp/pgx-compile.out" }
       ])
     ).toBe(
       [
         "Workflow summary:",
-        "- ok lint diff: just lint-diff - clean",
-        "- ok compile: just compile - log /tmp/pgx-compile.out",
+        "- ok lint diff: pgx-cli dev lint diff - clean",
+        "- ok compile: pgx-cli dev build compile - log /tmp/pgx-compile.out",
         "Workflow result: ok"
       ].join("\n") + "\n"
     );
@@ -40,9 +42,9 @@ describe("dev workflow summaries", () => {
   test("formats failing workflow steps", () => {
     expect(
       formatWorkflowSummary([
-        { name: "lint diff", command: ["just", "lint-diff"], exitCode: 1, jobId: "12" }
+        { name: "lint diff", command: ["pgx-cli", "dev", "lint", "diff"], exitCode: 1, jobId: "12" }
       ])
-    ).toContain("- fail lint diff: just lint-diff - job 12");
+    ).toContain("- fail lint diff: pgx-cli dev lint diff - job 12");
   });
 });
 
@@ -85,25 +87,20 @@ describe("dev commands", () => {
   });
 
   test.each([
-    [["lint", "diff"], "just lint-diff"],
-    [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "just lint-files src/pgx-lower/runtime/tuple_access.cpp"],
-    [["lint", "files", "a.cpp", "b.cpp"], "just lint-files a.cpp b.cpp"],
-    [["test", "unit", "type_mapping"], "just utest-pg-one type_mapping"],
-    [["test", "tpch"], "just test-tpch"],
-    [["test", "focused"], "just utest-pg"]
-  ])("dev %s maps to thor just command", async (args, shellCommand) => {
+    [["lint", "diff"], "sh", "clang-tidy-diff-20"],
+    [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "scripts/run_lint.sh"],
+    [["lint", "files", "a.cpp", "b.cpp"], "ssh", "scripts/run_lint.sh"],
+    [["test", "unit", "type_mapping"], "ssh", "type_mapping.sql"],
+    [["test", "tpch"], "ssh", "pg_regress"],
+    [["test", "focused"], "ssh", "UTEST-PG_OK"]
+  ])("dev %s runs direct workflow commands", async (args, command, marker) => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
     const exitCode = await runDevCommand(args, runner, output, devConfig);
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: ["comfy", "bash", "-lc", `'cd /home/zel/repos/pgx-lower && ${shellCommand}'`]
-      }
-    ]);
+    expect(runner.calls.some((call) => call.command === command && call.args.join(" ").includes(marker))).toBe(true);
+    expect(runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n")).not.toContain("just");
   });
 
   test("dev gate batch runs diff-scoped checks", async () => {
@@ -112,11 +109,11 @@ describe("dev commands", () => {
     const exitCode = await runDevCommand(["gate", "batch"], runner, output, devConfig);
 
     expect(exitCode).toBe(0);
-    expect(runner.calls.filter((call) => call.command === "ssh").map((call) => call.args.at(-1))).toEqual([
-      "'cd /home/zel/repos/pgx-lower && just check-diff'",
-      "'cd /home/zel/repos/pgx-lower && just lint-diff'",
-      "'cd /home/zel/repos/pgx-lower && just utest-pg'"
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("clang-format-diff-20");
+    expect(commands).toContain("clang-tidy-diff-20");
+    expect(commands).toContain("UTEST-PG_OK");
+    expect(commands).not.toContain("just");
     expect(output.stdout).toContain("Workflow result: ok");
   });
 
@@ -126,13 +123,13 @@ describe("dev commands", () => {
     const exitCode = await runDevCommand(["gate", "review"], runner, output, devConfig);
 
     expect(exitCode).toBe(0);
-    expect(runner.calls.filter((call) => call.command === "ssh").map((call) => call.args.at(-1))).toEqual([
-      "'cd /home/zel/repos/pgx-lower && just check-diff'",
-      "'cd /home/zel/repos/pgx-lower && just lint'",
-      "'cd /home/zel/repos/pgx-lower && just compile'",
-      "'cd /home/zel/repos/pgx-lower && just utest-pg'",
-      "'cd /home/zel/repos/pgx-lower && just test'"
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("clang-format-diff-20");
+    expect(commands).toContain("scripts/run_lint.sh");
+    expect(commands).toContain("pgx-compile.out");
+    expect(commands).toContain("UTEST-PG_OK");
+    expect(commands).toContain("ctest -V");
+    expect(commands).not.toContain("just");
   });
 
   test("dev gate review no-bench does not run bench", async () => {
