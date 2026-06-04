@@ -278,7 +278,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
             // COUNT(*) - but in combining mode, we sum partial counts instead
             if (is_combining) {
-                auto* const argTE = getFirstAggregateArgument(aggref);
+                const auto argTE = getFirstAggregateArgument(aggref);
                 if (!argTE) {
                     PGX_ERROR("COUNT in combining mode but no argument found (aggno=%d)", aggref->aggno);
                     return;
@@ -327,7 +327,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 createdValues.push_back(aggResult);
             }
         } else {
-            auto* const argTE = getFirstAggregateArgument(aggref);
+            const auto argTE = getFirstAggregateArgument(aggref);
             if (!argTE) {
                 return;
             }

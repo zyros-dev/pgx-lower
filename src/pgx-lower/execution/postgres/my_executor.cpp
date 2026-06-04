@@ -111,10 +111,10 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
 
 TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns) {
     const int numResultColumns = selectedColumns.size();
-    auto* const resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
+    const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
 
     for (int i = 0; i < numResultColumns; i++) {
-        auto* const resultAttr = TupleDescAttr(resultTupleDesc, i);
+        const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
 
         Oid columnType = INT4OID;
         int typeLen = sizeof(int32);
@@ -223,7 +223,7 @@ setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, TupleTableSlo
     TupleDesc resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
 
     for (auto i = 0; i < resultTupleDesc->natts; i++) {
-        auto* const attr = TupleDescAttr(resultTupleDesc, i);
+        const auto attr = TupleDescAttr(resultTupleDesc, i);
         if (i < g_computed_results.numComputedColumns) {
             g_computed_results.computedTypes[i] = attr->atttypid;
             PGX_LOG(GENERAL, DEBUG, "Initialized computed result column %d with type OID %d", i, attr->atttypid);

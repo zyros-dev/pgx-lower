@@ -76,7 +76,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     auto& columnManager = dialect->getColumnManager();
 
     if (nodeTag(expr) == T_Var) {
-        auto* const var = reinterpret_cast<Var*>(expr);
+        const auto var = reinterpret_cast<Var*>(expr);
 
         std::string tableName;
         std::string columnName;
@@ -189,7 +189,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         ListCell* lc = nullptr;
         foreach (lc, func_expr->args) {
-            if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
+            if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                 if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                     args.push_back(argValue);
                 }

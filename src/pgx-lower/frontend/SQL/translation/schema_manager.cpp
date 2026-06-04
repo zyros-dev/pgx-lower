@@ -50,7 +50,7 @@ auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int 
         throw std::runtime_error("Invalid RTE");
     }
 
-    auto* const rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_ERROR("Invalid RTE for varno %d", varno);
@@ -79,7 +79,7 @@ auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, const int
         throw std::runtime_error("Invalid RTE");
     }
 
-    auto* const rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
         PGX_ERROR("Invalid RTE for varno %d", varno);
@@ -116,7 +116,7 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
         throw std::runtime_error("Invalid - read logs");
     }
 
-    auto* const rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
         PGX_ERROR("Invalid RTE for column lookup: varno=%d", varno);
@@ -158,7 +158,7 @@ auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int v
         throw std::runtime_error("Invalid - read logs");
     }
 
-    auto* const rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
         PGX_ERROR("Invalid RTE for varno %d", varno);
@@ -182,17 +182,17 @@ auto is_column_nullable(const PlannedStmt* currentPlannedStmt, const int varno, 
         return true;
     }
 
-    auto* const rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
     if (!rte || rte->relid == InvalidOid) {
         return true;
     }
 
-    auto* const rel = table_open(rte->relid, AccessShareLock);
+    const auto rel = table_open(rte->relid, AccessShareLock);
     if (!rel) {
         return true;
     }
 
-    auto* const tupleDesc = RelationGetDescr(rel);
+    const auto tupleDesc = RelationGetDescr(rel);
     if (!tupleDesc) {
         table_close(rel, AccessShareLock);
         return true;
@@ -231,7 +231,7 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
         throw std::runtime_error("Invalid - read logs");
     }
 
-    auto* const rte = static_cast<RangeTblEntry*>(
+    const auto rte = static_cast<RangeTblEntry*>(
         list_nth(current_planned_stmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {

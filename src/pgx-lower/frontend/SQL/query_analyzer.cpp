@@ -381,7 +381,7 @@ auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
 }
 
 auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool {
-    auto* const rootPlan = stmt->planTree;
+    const auto rootPlan = stmt->planTree;
     Plan* scanPlan = nullptr;
 
     logExecutionTree(rootPlan);
@@ -436,8 +436,8 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
     }
 
     if (scanPlan) {
-        auto* const scan = reinterpret_cast<SeqScan*>(scanPlan);
-        auto* const rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
+        const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
+        const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
 
         PGX_LOG(AST_TRANSLATE, DEBUG, " Table OID: %d", rte->relid);
         g_jit_table_oid = rte->relid;
