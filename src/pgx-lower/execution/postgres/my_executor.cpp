@@ -1,5 +1,6 @@
 #include "pgx-lower/execution/postgres/my_executor.h"
 #include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/postgres/executor_c.h"
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
@@ -11,6 +12,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
 
 #include "pgx-lower/runtime/tuple_access.h"
 
+#include <cstring>
 #include <vector>
 #include <functional>
 
@@ -312,6 +314,33 @@ struct ExecutionContext {
     bool initialized{};
 };
 
+enum class ExecutionMode {
+    auto_mode,
+    force_fallback,
+    force_lower,
+};
+
+static auto currentExecutionMode() -> ExecutionMode {
+#ifdef POSTGRESQL_EXTENSION
+    const auto* mode = pgx_lower_get_execution_mode();
+    if (mode && strcmp(mode, "force_fallback") == 0) {
+        return ExecutionMode::force_fallback;
+    }
+    if (mode && strcmp(mode, "force_lower") == 0) {
+        return ExecutionMode::force_lower;
+    }
+#endif
+    return ExecutionMode::auto_mode;
+}
+
+static auto emitAnalyzerFallbackNotice(const pgx_lower::AnalyzerResult& analysis) -> void {
+    const auto& reason = analysis.primaryReason();
+    pgx_lower::log::route_fallback_notice(
+        pgx_lower::unsupportedReasonKindName(reason.kind),
+        reason.message.c_str(),
+        reason.location.c_str());
+}
+
 static bool setupExecution(ExecutionContext& ctx, const PlannedStmt* stmt, DestReceiver* dest, CmdType operation) {
     if (!initializeExecutionResources(&ctx.estate, &ctx.econtext, &ctx.old_context)) {
         return false;
@@ -380,14 +409,31 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 
     const auto* stmt = plan->plannedstmt;
 #ifdef POSTGRESQL_EXTENSION
+    const auto mode = currentExecutionMode();
+
+    if (mode == ExecutionMode::force_fallback) {
+        pgx_lower::log::route_fallback_notice("force_fallback",
+                                              "execution mode forced stock PostgreSQL",
+                                              "pgx_lower.execution_mode");
+        return false;
+    }
+
     const auto analysis = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
+
+    if (!analysis.isSupported() && mode == ExecutionMode::auto_mode) {
+        PGX_LOG(GENERAL, DEBUG, "Query rejected by analyzer: %s", analysis.humanSummary().c_str());
+        if (stmt && stmt->commandType == CMD_SELECT) {
+            emitAnalyzerFallbackNotice(analysis);
+        }
+        return false;
+    }
+
+    if (!analysis.isSupported() && mode == ExecutionMode::force_lower) {
+        PGX_LOG(GENERAL, DEBUG, "force_lower ignoring analyzer result: %s", analysis.humanSummary().c_str());
+    }
 
     PGX_LOG(GENERAL, DEBUG, "FORCING tree logging for all queries in comprehensive collection mode");
     pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
-    if (!analysis.isSupported()) {
-        PGX_LOG(GENERAL, DEBUG, "Query rejected by analyzer: %s", analysis.humanSummary().c_str());
-        return false;
-    }
 #else
     auto capabilities = pgx_lower::QueryAnalyzer::analyzeForTesting("test query");
 
@@ -397,7 +443,6 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     }
 #endif
 
-    elog(NOTICE, "[PGX-LOWER] Routing through PGX_LOWER compilation");
     bool mlir_success = run_mlir_with_ast_translation(plan);
 
     PGX_LOG(GENERAL, DEBUG, "MyCppExecutor::execute completed, returning %s", mlir_success ? "true" : "false");

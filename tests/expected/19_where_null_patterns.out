@@ -21,7 +21,6 @@ VALUES ('Alice', 25, 'alice@test.com', 85),
 SELECT id, name, age
 FROM test_where_nulls
 WHERE age IS NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name | age 
 ----+------+-----
   2 | Bob  |    
@@ -31,7 +30,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, email
 FROM test_where_nulls
 WHERE email IS NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | email 
 ----+-------+-------
   3 | Carol | 
@@ -42,7 +40,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, score
 FROM test_where_nulls
 WHERE score IS NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | score 
 ----+-------+-------
   4 | David |      
@@ -52,7 +49,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, age
 FROM test_where_nulls
 WHERE age IS NOT NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | age 
 ----+-------+-----
   1 | Alice |  25
@@ -65,7 +61,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, email
 FROM test_where_nulls
 WHERE email IS NOT NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  |     email      
 ----+-------+----------------
   1 | Alice | alice@test.com
@@ -77,7 +72,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, score
 FROM test_where_nulls
 WHERE score IS NOT NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | score 
 ----+-------+-------
   1 | Alice |    85
@@ -105,7 +99,6 @@ SELECT id, name, age
 FROM test_where_nulls
 WHERE age IS NULL
    OR age < 30;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | age 
 ----+-------+-----
   1 | Alice |  25
@@ -118,7 +111,6 @@ SELECT id, name, email
 FROM test_where_nulls
 WHERE email IS NOT NULL
   AND age > 25;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  |     email      
 ----+-------+----------------
   4 | David | david@test.com
@@ -129,7 +121,6 @@ SELECT id, name
 FROM test_where_nulls
 WHERE score IS NULL
   AND age IS NOT NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  
 ----+-------
   4 | David
@@ -139,7 +130,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, age
 FROM test_where_nulls
 WHERE COALESCE(age, 0) > 25;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | age 
 ----+-------+-----
   3 | Carol |  30
@@ -151,7 +141,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name, score
 FROM test_where_nulls
 WHERE COALESCE(score, 0) >= 85;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | score 
 ----+-------+-------
   1 | Alice |    85
@@ -164,7 +153,6 @@ SELECT id, name
 FROM test_where_nulls
 WHERE age IS NULL
   AND email IS NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name 
 ----+------
   5 | Eve
@@ -175,7 +163,6 @@ FROM test_where_nulls
 WHERE age IS NOT NULL
   AND email IS NOT NULL
   AND score IS NOT NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  
 ----+-------
   1 | Alice
@@ -186,7 +173,6 @@ FROM test_where_nulls
 WHERE age IS NULL
    OR email IS NULL
    OR score IS NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  
 ----+-------
   2 | Bob
@@ -201,7 +187,6 @@ SELECT id, name, age
 FROM test_where_nulls
 WHERE (age IS NULL)
    OR (age > 30 AND score IS NOT NULL);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  | age 
 ----+-------+-----
   2 | Bob   |    
@@ -212,7 +197,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT id, name
 FROM test_where_nulls
 WHERE NOT (age IS NULL);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | name  
 ----+-------
   1 | Alice

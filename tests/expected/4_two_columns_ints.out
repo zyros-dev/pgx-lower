@@ -10,7 +10,6 @@ INSERT INTO test(col2)
 SELECT generate_series(1, 100);
 SELECT *
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id  | col2 
 -----+------
    1 |    1

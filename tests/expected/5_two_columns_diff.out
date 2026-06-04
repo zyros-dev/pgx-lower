@@ -11,7 +11,6 @@ SELECT CASE WHEN gs % 2 = 0 THEN TRUE ELSE FALSE END
 FROM generate_series(1, 100) AS gs;
 SELECT *
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id  | col2 
 -----+------
    1 | f

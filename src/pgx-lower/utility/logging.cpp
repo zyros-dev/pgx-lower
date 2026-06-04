@@ -74,6 +74,8 @@ static void initialize_if_needed() {
                 enabled_categories.insert(Category::JIT);
             } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+            } else if (cat == "route") {
+                enabled_categories.insert(Category::ROUTE);
             }
         }
     }
@@ -90,6 +92,7 @@ const char* category_name(Category cat) {
     case Category::RUNTIME: return "RUNTIME";
     case Category::JIT: return "JIT";
     case Category::GENERAL: return "GENERAL";
+    case Category::ROUTE: return "ROUTE";
     case Category::PROBLEM: return "PROBLEM";
     }
     return "UNKNOWN";
@@ -181,6 +184,29 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 #endif
 }
 
+void route_fallback_notice(const char* reason_kind, const char* message, const char* location) {
+    const auto* safe_kind = reason_kind && reason_kind[0] ? reason_kind : "invalid";
+    const auto* safe_message = message && message[0] ? message : "fallback route selected";
+
+#ifdef POSTGRESQL_EXTENSION
+    if (location && location[0]) {
+        elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s", safe_kind, safe_message, location);
+    } else {
+        elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s", safe_kind, safe_message);
+    }
+#else
+    if (location && location[0]) {
+        fprintf(stderr,
+                "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s at %s\n",
+                safe_kind,
+                safe_message,
+                location);
+    } else {
+        fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s\n", safe_kind, safe_message);
+    }
+#endif
+}
+
 static thread_local int scope_logger_depth{};
 static constexpr int MAX_SCOPE_LOGGER_DEPTH = 3000;
 
@@ -247,6 +273,8 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
                 enabled_categories.insert(Category::JIT);
             } else if (cat == "general") {
                 enabled_categories.insert(Category::GENERAL);
+            } else if (cat == "route") {
+                enabled_categories.insert(Category::ROUTE);
             }
         }
     }

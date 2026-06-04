@@ -21,7 +21,6 @@ VALUES ('Sales', 50000, 3, 'Alice'),
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department, salary;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
@@ -36,7 +35,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department ASC, salary ASC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
@@ -51,7 +49,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department ASC, salary DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
@@ -66,7 +63,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department DESC, salary DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | name  
 ------------+--------+-------
  Sales      |  50000 | Alice
@@ -81,7 +77,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT department, salary, years, name
 FROM test_order_multi
 ORDER BY department, salary, years;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | years | name  
 ------------+--------+-------+-------
  HR         |  55000 |     3 | Grace
@@ -96,7 +91,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT department, salary, years, name
 FROM test_order_multi
 ORDER BY department ASC, salary DESC, years ASC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | salary | years | name  
 ------------+--------+-------+-------
  HR         |  55000 |     3 | Grace

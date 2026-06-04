@@ -27,7 +27,6 @@ FROM employee_sales
 GROUP BY department
 HAVING COUNT(*) > 2
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | sale_count 
 ------------+------------
  IT         |          3
@@ -39,7 +38,6 @@ FROM employee_sales
 GROUP BY employee_name
 HAVING SUM(sale_amount) > 8000
 ORDER BY employee_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  employee_name | total_sales 
 ---------------+-------------
  Alice         |    15000.00
@@ -51,7 +49,6 @@ FROM employee_sales
 GROUP BY department
 HAVING AVG(sale_amount) > 3000
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department |       avg_sale        
 ------------+-----------------------
  Sales      | 4900.0000000000000000
@@ -66,7 +63,6 @@ GROUP BY department
 HAVING COUNT(*) >= 2
    AND SUM(sale_amount) > 5000
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department | sale_count | total_sales |       avg_sale        
 ------------+------------+-------------+-----------------------
  IT         |          3 |     5800.00 | 1933.3333333333333333
@@ -82,7 +78,6 @@ GROUP BY employee_name
 HAVING MIN(sale_amount) > 2000
    AND MAX(sale_amount) < 6000
 ORDER BY employee_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  employee_name | sale_count | min_sale | max_sale 
 ---------------+------------+----------+----------
  Alice         |          3 |  4500.00 |  5500.00

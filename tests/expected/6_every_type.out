@@ -22,7 +22,6 @@ END
 FROM generate_series(1, 5) AS s(i);
 SELECT id, integer_value, big_value
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | integer_value |   big_value   
 ----+---------------+---------------
   1 |          1001 | 1000000000001
@@ -34,7 +33,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT category_name, text_field
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category_name |  text_field   
 ---------------+---------------
  Books         | Description 1
@@ -46,7 +44,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT id, boolean_flag, text_field
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | boolean_flag |  text_field   
 ----+--------------+---------------
   1 | f            | Description 1
@@ -58,7 +55,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT id, integer_value, big_value, boolean_flag, text_field, category_name, amount_cents
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | integer_value |   big_value   | boolean_flag |  text_field   | category_name | amount_cents 
 ----+---------------+---------------+--------------+---------------+---------------+--------------
   1 |          1001 | 1000000000001 | f            | Description 1 | Books         |        10100

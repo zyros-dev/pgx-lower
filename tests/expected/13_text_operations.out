@@ -17,7 +17,6 @@ VALUES ('Apple', 'Fresh red apple fruit', 'fruit'),
        ('Spinach', 'Green leafy vegetable', 'vegetable');
 SELECT (name LIKE 'A%') AS starts_with_a
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  starts_with_a 
 ---------------
  t
@@ -29,7 +28,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (name LIKE '%a%') AS contains_a
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  contains_a 
 ------------
  f
@@ -41,7 +39,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (description LIKE '%green%') AS contains_green
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  contains_green 
 ----------------
  f
@@ -53,7 +50,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (category LIKE 'fruit') AS is_fruit
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  is_fruit 
 ----------
  t
@@ -65,7 +61,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (name || ' - ' || description) AS concatenated
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           concatenated           
 ---------------------------------
  Apple - Fresh red apple fruit
@@ -77,7 +72,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (name || ' (' || category || ')') AS name_with_category
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name_with_category  
 ---------------------
  Apple (fruit)
@@ -89,7 +83,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT SUBSTRING(name FROM 1 FOR 3) AS name_prefix
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name_prefix 
 -------------
  App
@@ -101,7 +94,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT SUBSTRING(description FROM 1 FOR 10) AS desc_start
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  desc_start 
 ------------
  Fresh red 
@@ -113,7 +105,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT UPPER(name) AS upper_name
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  upper_name 
 ------------
  APPLE
@@ -125,7 +116,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT LOWER(description) AS lower_desc
 FROM test_text;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
       lower_desc       
 -----------------------
  fresh red apple fruit

@@ -18,7 +18,6 @@ SELECT gs % 2 = 0,
 FROM generate_series(1, 100) AS gs;
 SELECT col3, col5
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  col3 | col5 
 ------+------
  f    | f
@@ -125,7 +124,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT col4
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  col4 
 ------
  f

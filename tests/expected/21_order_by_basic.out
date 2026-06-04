@@ -17,7 +17,6 @@ VALUES (30, 3),
 SELECT value, name
 FROM test_order_basic
 ORDER BY value;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value | name 
 -------+------
     10 |    1
@@ -30,7 +29,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT value, name
 FROM test_order_basic
 ORDER BY value ASC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value | name 
 -------+------
     10 |    1
@@ -43,7 +41,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT value, name
 FROM test_order_basic
 ORDER BY value DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value | name 
 -------+------
     40 |    4
@@ -56,7 +53,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT value, name
 FROM test_order_basic
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value | name 
 -------+------
     10 |    1
@@ -84,7 +80,6 @@ SET client_min_messages TO DEBUG1;
 SELECT name
 FROM test_order_string
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   name   
 ---------
  Alice
@@ -98,7 +93,6 @@ SET client_min_messages TO NOTICE;
 SELECT name
 FROM test_order_string
 ORDER BY name DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   name   
 ---------
  Eve
@@ -124,7 +118,6 @@ VALUES (99.99),
 SELECT price * 2.2
 FROM test_order_decimal
 ORDER BY price;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      ?column?      
 -------------------
              0.022
@@ -137,7 +130,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT price
 FROM test_order_decimal
 ORDER BY price;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
       price       
 ------------------
              0.01

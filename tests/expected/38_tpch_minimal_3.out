@@ -197,7 +197,6 @@ order by
     supp_nation,
     cust_nation,
     l_year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
         supp_nation        |        cust_nation        | l_year |  revenue   
 ---------------------------+---------------------------+--------+------------
  FRANCE                    | GERMANY                   |   1996 | 41844.6756

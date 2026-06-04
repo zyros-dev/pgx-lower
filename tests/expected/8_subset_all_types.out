@@ -21,7 +21,6 @@ SELECT (1000 + i),
 FROM generate_series(1, 3) AS s(i);
 SELECT id, integer_col, big_int
 FROM all_types_test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | integer_col |    big_int    
 ----+-------------+---------------
   1 |        1001 | 1000000000001
@@ -31,7 +30,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT id, boolean_col, text_col, varchar_col
 FROM all_types_test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | boolean_col |  text_col   | varchar_col 
 ----+-------------+-------------+-------------
   1 | f           | Text data 1 | Item-001
@@ -41,7 +39,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT id, integer_col, big_int, boolean_col, decimal_col, text_col, varchar_col
 FROM all_types_test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | integer_col |    big_int    | boolean_col | decimal_col |  text_col   | varchar_col 
 ----+-------------+---------------+-------------+-------------+-------------+-------------
   1 |        1001 | 1000000000001 | f           |       10100 | Text data 1 | Item-001

@@ -21,7 +21,6 @@ group by
 order by
         l_returnflag,
         l_linestatus;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_returnflag | l_linestatus |  sum_qty  | sum_base_price | sum_disc_price |    sum_charge     |       avg_qty       |     avg_price      |        avg_disc        | count_order 
 --------------+--------------+-----------+----------------+----------------+-------------------+---------------------+--------------------+------------------------+-------------
  A            | F            | 380456.00 |   532348211.65 | 505822441.4861 |  526165934.000839 | 25.5751546114546921 | 35785.709306937349 | 0.05008133906964237698 |       14876
@@ -75,7 +74,6 @@ order by
         s_name,
         p_partkey
 limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_acctbal |          s_name           |          n_name           | p_partkey |          p_mfgr           |                s_address                |     s_phone     |                                            s_comment                                            
 -----------+---------------------------+---------------------------+-----------+---------------------------+-----------------------------------------+-----------------+-------------------------------------------------------------------------------------------------
    4186.95 | Supplier#000000077        | GERMANY                   |       249 | Manufacturer#4            | wVtcr0uH3CyrSiWMLsqnB09Syo,UuZxPMeBghlY | 17-281-345-4863 | the slyly final asymptotes. blithely pending theodoli
@@ -108,7 +106,6 @@ order by
         revenue desc,
         o_orderdate
 limit 10;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_orderkey |   revenue   | o_orderdate | o_shippriority 
 ------------+-------------+-------------+----------------
       47714 | 267010.5894 | 03-11-1995  |              0
@@ -144,7 +141,6 @@ group by
         o_orderpriority
 order by
         o_orderpriority;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_orderpriority | order_count 
 -----------------+-------------
  1-URGENT        |          93
@@ -179,7 +175,6 @@ group by
         n_name
 order by
         revenue desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           n_name           |   revenue    
 ---------------------------+--------------
  VIETNAM                   | 1000926.6999
@@ -199,7 +194,6 @@ where
         and l_shipdate < date '1995-01-01'
         and l_discount between 0.06 - 0.01 and 0.06 + 0.01
         and l_quantity < 24;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    revenue    
 --------------
  1193053.2253
@@ -245,7 +239,6 @@ order by
         supp_nation,
         cust_nation,
         l_year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
         supp_nation        |        cust_nation        | l_year |   revenue   
 ---------------------------+---------------------------+--------+-------------
  FRANCE                    | GERMANY                   |   1995 | 268068.5774
@@ -292,7 +285,6 @@ group by
         o_year
 order by
         o_year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_year |         mkt_share          
 --------+----------------------------
    1995 | 0.000000000000000000000000
@@ -332,7 +324,6 @@ group by
 order by
         nation,
         o_year desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           nation           | o_year |  sum_profit  
 ---------------------------+--------+--------------
  ALGERIA                   |   1998 |   97864.5682
@@ -543,7 +534,6 @@ group by
 order by
         revenue desc
 limit 20;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  c_custkey |       c_name       |   revenue   | c_acctbal |          n_name           |                c_address                 |     c_phone     |                                                      c_comment                                                       
 -----------+--------------------+-------------+-----------+---------------------------+------------------------------------------+-----------------+----------------------------------------------------------------------------------------------------------------------
        679 | Customer#000000679 | 378211.3252 |   1394.44 | IRAN                      | IJf1FlZL9I9m,rvofcoKy5pRUOjUQV           | 20-146-696-9508 | ely pending frays boost carefully
@@ -596,7 +586,6 @@ group by
                 )
 order by
         "value" desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  ps_partkey |    value    
 ------------+-------------
        1376 | 13271249.89
@@ -989,7 +978,6 @@ group by
         l_shipmode
 order by
         l_shipmode;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_shipmode | high_line_count | low_line_count 
 ------------+-----------------+----------------
  MAIL       |              64 |             86
@@ -1017,7 +1005,6 @@ group by
 order by
         custdist desc,
         c_count desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  c_count | custdist 
 ---------+----------
        0 |      500
@@ -1069,7 +1056,6 @@ where
         l_partkey = p_partkey
         and l_shipdate >= date '1995-09-01'
         and l_shipdate < date '1995-10-01';
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     promo_revenue    
 ---------------------
  15.4865458122840715
@@ -1106,7 +1092,6 @@ where
 	)
 order by
 	s_suppkey;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_suppkey |          s_name           |              s_address               |     s_phone     | total_revenue 
 -----------+---------------------------+--------------------------------------+-----------------+---------------
         21 | Supplier#000000021        | 81CavellcrJ0PQ3CPBID0Z0JwyJm0ka5igEs | 12-253-590-5816 |  1161099.4636
@@ -1143,7 +1128,6 @@ order by
         p_brand,
         p_type,
         p_size;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   p_brand   |          p_type           | p_size | supplier_cnt 
 ------------+---------------------------+--------+--------------
  Brand#14   | PROMO BRUSHED STEEL       |      9 |            8
@@ -1462,7 +1446,6 @@ where
                 where
                         l_partkey = p_partkey
         );
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  avg_yearly 
 ------------
            
@@ -1502,7 +1485,6 @@ order by
         o_totalprice desc,
         o_orderdate
 limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
        c_name       | c_custkey | o_orderkey | o_orderdate | o_totalprice |  sum   
 --------------------+-----------+------------+-------------+--------------+--------
  Customer#000000667 |       667 |      29158 | 10-21-1995  |    439687.23 | 305.00
@@ -1545,7 +1527,6 @@ where
                 and l_shipmode in ('AIR', 'AIR REG')
                 and l_shipinstruct = 'DELIVER IN PERSON'
         );
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   revenue   
 ------------
  22923.0280
@@ -1589,7 +1570,6 @@ where
         and n_name = 'CANADA'
 order by
         s_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           s_name           |           s_address            
 ---------------------------+--------------------------------
  Supplier#000000013        | HK71HQyWoqRWOX8GI FpgAifW,2PoH
@@ -1636,7 +1616,6 @@ order by
         numwait desc,
         s_name
 limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           s_name           | numwait 
 ---------------------------+---------
  Supplier#000000074        |       9
@@ -1680,7 +1659,6 @@ group by
         cntrycode
 order by
         cntrycode;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  cntrycode | numcust | totacctbal 
 -----------+---------+------------
  13        |      10 |   75359.29

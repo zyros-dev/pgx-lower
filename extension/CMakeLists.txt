@@ -95,6 +95,7 @@ if(NOT BUILDING_UNIT_TESTS)
             42_test_relalg_function
             43_decode_at_scan
             44_numeric_correctness
+            45_route_notices
             init_tpch
             tpch_no_lower
             tpch

@@ -18,7 +18,6 @@ VALUES
     (5, 50, 45, 'demo', 'value', true);
 -- Test T_Integer in WHERE clause (direct integer constants)
 SELECT id FROM expr_test_data WHERE 42 > 10;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -29,7 +28,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT id FROM expr_test_data WHERE 100 = 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -41,7 +39,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - arithmetic operations in SELECT
 SELECT value1 + value2 AS sum_values FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  sum_values 
 ------------
          15
@@ -52,7 +49,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT value1 - value2 AS diff_values FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  diff_values 
 -------------
            5
@@ -63,7 +59,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT value1 * 2 AS double_value FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  double_value 
 --------------
            20
@@ -74,7 +69,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT value1 / 10 AS tenth_value FROM expr_test_data WHERE value1 > 0;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  tenth_value 
 -------------
            1
@@ -85,7 +79,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT value1 % 7 AS modulo_result FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  modulo_result 
 ---------------
              3
@@ -97,7 +90,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - comparison operations in WHERE
 SELECT id FROM expr_test_data WHERE value1 > 25;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   3
@@ -106,7 +98,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE value2 < 30;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -115,7 +106,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE value1 >= 30;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   3
@@ -124,7 +114,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE value2 <= 25;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -133,14 +122,12 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE value1 = 30;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   3
 (1 row)
 
 SELECT id FROM expr_test_data WHERE value1 != 20;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -150,7 +137,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (4 rows)
 
 SELECT id FROM expr_test_data WHERE value2 <> 15;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -161,7 +147,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - logical operations
 SELECT id FROM expr_test_data WHERE flag AND true;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -170,7 +155,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE flag OR false;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -179,7 +163,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE NOT flag;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   2
@@ -188,7 +171,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - string concatenation
 SELECT text1 || ' ' || text2 AS combined_text FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  combined_text 
 ---------------
  hello world
@@ -200,14 +182,12 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - LIKE operations
 SELECT id, text1 FROM expr_test_data WHERE text1 LIKE 'h%';
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | text1 
 ----+-------
   1 | hello
 (1 row)
 
 SELECT id, text1 FROM expr_test_data WHERE text1 NOT LIKE '%xyz%';
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id |  text1  
 ----+---------
   1 | hello
@@ -219,7 +199,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - NULL operations
 SELECT id FROM expr_test_data WHERE NULL IS NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -230,7 +209,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT id FROM expr_test_data WHERE value1 IS NOT NULL;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -242,7 +220,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - IN operations
 SELECT id FROM expr_test_data WHERE value1 IN (10, 20, 30);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -251,7 +228,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE value1 NOT IN (15, 25, 35);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -263,7 +239,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_A_Expr - BETWEEN operations
 SELECT id FROM expr_test_data WHERE value1 BETWEEN 20 AND 40;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   2
@@ -272,7 +247,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (3 rows)
 
 SELECT id FROM expr_test_data WHERE value2 NOT BETWEEN 10 AND 20;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
   1
@@ -289,7 +263,6 @@ SELECT
     (value1 + value2) / 2 AS average
 FROM expr_test_data
 WHERE value1 > 10;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  plus_ten | minus_five | product | average 
 ----------+------------+---------+---------
        30 |         15 |     300 |      17
@@ -305,7 +278,6 @@ SELECT
     (value1 - 10) / 5 AS adjusted_value
 FROM expr_test_data
 WHERE (value1 > 20 AND value2 < 40) OR flag = true;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | complex_calc | adjusted_value 
 ----+--------------+----------------
   1 |           20 |              0
@@ -316,7 +288,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_ColumnRef - basic column references (already working but let's verify)
 SELECT value1 FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value1 
 --------
      10
@@ -327,7 +298,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT id, value1, value2 FROM expr_test_data WHERE id > 2;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | value1 | value2 
 ----+--------+--------
   3 |     30 |     25
@@ -337,7 +307,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 -- Test T_TypeCast - explicit type casting
 SELECT CAST(value1 AS BIGINT) AS bigint_value FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  bigint_value 
 --------------
            10
@@ -348,7 +317,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT CAST(value1 AS DECIMAL(10,2)) AS decimal_value FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  decimal_value 
 ---------------
             10
@@ -359,7 +327,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT CAST(value1 AS VARCHAR(10)) AS string_value FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  string_value 
 --------------
  10
@@ -370,7 +337,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT value1::bigint AS bigint_cast FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  bigint_cast 
 -------------
           10
@@ -381,7 +347,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT value2::decimal(5,1) AS decimal_cast FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  decimal_cast 
 --------------
             5
@@ -392,7 +357,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 (5 rows)
 
 SELECT id::text AS text_cast FROM expr_test_data;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  text_cast 
 -----------
  1
@@ -407,7 +371,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 PREPARE test_param_stmt (int) AS
   SELECT id, value1 FROM expr_test_data WHERE value1 > $1;
 EXECUTE test_param_stmt(25);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | value1 
 ----+--------
   3 |     30
@@ -419,7 +382,6 @@ DEALLOCATE test_param_stmt;
 PREPARE test_multi_param (int, int) AS
   SELECT id, value1, value2 FROM expr_test_data WHERE value1 > $1 AND value2 < $2;
 EXECUTE test_multi_param(15, 30);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id | value1 | value2 
 ----+--------+--------
   2 |     20 |     15

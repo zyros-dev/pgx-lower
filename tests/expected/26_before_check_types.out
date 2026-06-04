@@ -32,7 +32,6 @@ SELECT bool_col,
        bool_col = false AS is_false,
        bool_col IS NULL AS is_null
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  bool_col | is_true | is_false | is_null 
 ----------+---------+----------+---------
  t        | t       | f        | f
@@ -47,7 +46,6 @@ SELECT int2_col > 0 AS int2_positive,
        int8_col >= 100000 AS int8_large,
        int2_col + int4_col AS int_sum
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  int2_positive | int4_small | int8_large | int_sum 
 ---------------+------------+------------+---------
  t             | f          | t          |    1100
@@ -66,7 +64,6 @@ SELECT SUM(int2_col) AS sum_int2,
        MIN(int2_col) AS min_int2,
        MAX(int4_col) AS max_int4
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  sum_int2 | sum_int4 | sum_int8  |      avg_int2       |       avg_int4        |      avg_int8      | min_int2 | max_int4 
 ----------+----------+-----------+---------------------+-----------------------+--------------------+----------+----------
       222 |    20474 | 922237203 | 55.5000000000000000 | 5118.5000000000000000 | 230559300.75000000 |     -200 |    21474
@@ -77,7 +74,6 @@ SELECT float4_col > 0 AS float4_positive,
        float4_col * 2.0 AS float4_doubled,
        float8_col / 3.0 AS float8_divided
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  float4_positive | float8_small |   float4_doubled   |   float8_divided   
 -----------------+--------------+--------------------+--------------------
  t               | t            |   6.28000020980835 | 1.0471975511966667
@@ -94,7 +90,6 @@ SELECT SUM(float4_col) AS sum_float4,
        MIN(float4_col) AS min_float4,
        MAX(float8_col) AS max_float8
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  sum_float4 | sum_float8 |   avg_float4    | avg_float8 | min_float4 | max_float8 
 ------------+------------+-----------------+------------+------------+------------
    1.23e+10 |   1.23e+20 | 3075000064.1075 |  3.075e+19 |      -2.71 |   1.23e+20
@@ -138,7 +133,6 @@ SELECT decimal_col,
        decimal_col + numeric_col AS sum_decimals,
        decimal_col * 2 AS decimal_doubled
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  decimal_col | numeric_col | decimal_positive | numeric_small | sum_decimals | decimal_doubled 
 -------------+-------------+------------------+---------------+--------------+-----------------
      1245.67 |  9865.43210 | t                | t             |  11111.10210 |         2491.34
@@ -155,7 +149,6 @@ SELECT SUM(decimal_col) AS sum_decimal,
        MIN(decimal_col) AS min_decimal,
        MAX(numeric_col) AS max_numeric
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  sum_decimal | sum_numeric |     avg_decimal      |      avg_numeric      | min_decimal | max_numeric 
 -------------+-------------+----------------------+-----------------------+-------------+-------------
      1245.67 | 18619.75319 | 311.4175000000000000 | 4654.9382975000000000 |    -9999.99 |  9999.99999
@@ -166,7 +159,6 @@ SELECT date_col,
        date_col < '2024-12-01' AS before_december,
        date_col = '2024-02-29' AS is_leap_day
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   date_col  | after_june | before_december | is_leap_day 
 ------------+------------+-----------------+-------------
  01-15-2024 | f          | t               | f
@@ -180,7 +172,6 @@ SELECT MIN(date_col) AS earliest_date,
        MAX(date_col) AS latest_date,
        COUNT(date_col) AS unique_dates
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  earliest_date | latest_date | unique_dates 
 ---------------+-------------+--------------
  01-15-2024    | 12-31-2024  |            4
@@ -191,7 +182,6 @@ SELECT timestamp_col,
        timestamp_col < '2024-12-01 00:00:00' AS before_december,
        timestamp_col = '2024-01-15 10:30:00' AS exact_match
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           timestamp_col          | after_june | before_december | exact_match 
 ---------------------------------+------------+-----------------+-------------
  Mon Jan 15 10:30:00 2024        | f          | t               | t
@@ -205,7 +195,6 @@ SELECT MIN(timestamp_col) AS earliest_timestamp,
        MAX(timestamp_col) AS latest_timestamp,
        COUNT(timestamp_col) AS unique_timestamps
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     earliest_timestamp    |        latest_timestamp         | unique_timestamps 
 --------------------------+---------------------------------+-------------------
  Mon Jan 15 10:30:00 2024 | Tue Dec 31 23:59:59.999999 2024 |                 4
@@ -215,7 +204,6 @@ SELECT interval_col,
        interval_col > INTERVAL '1 day' AS more_than_day,
        interval_col < INTERVAL '1 year' AS less_than_year
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  interval_col  | more_than_day | less_than_year 
 ---------------+---------------+----------------
  @ 120 hours   | t             | t
@@ -229,7 +217,6 @@ SELECT int2_col::float4 > float4_col AS int_to_float_compare,
        int4_col + float4_col AS int_plus_float,
        decimal_col::float8 AS decimal_to_float
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  int_to_float_compare |   int_plus_float   | decimal_to_float 
 ----------------------+--------------------+------------------
  t                    | 1003.1400001049042 |          1245.67
@@ -249,14 +236,12 @@ SELECT COUNT(*) AS total_rows,
        COUNT(timestamp_col) AS non_null_timestamp,
        COUNT(interval_col) AS non_null_interval
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_rows | non_null_bool | non_null_int | non_null_float | non_null_string | non_null_decimal | non_null_date | non_null_timestamp | non_null_interval 
 ------------+---------------+--------------+----------------+-----------------+------------------+---------------+--------------------+-------------------
           5 |             4 |            4 |              4 |               4 |                4 |             4 |                  4 |                 4
 (1 row)
 
 SELECT * FROM type_test_table;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  bool_col | int2_col | int4_col | int8_col  | float4_col |   float8_col   | string_col |  char_col  |     text_col     | decimal_col | numeric_col |  date_col  |          timestamp_col          | interval_col  
 ----------+----------+----------+-----------+------------+----------------+------------+------------+------------------+-------------+-------------+------------+---------------------------------+---------------
  t        |      100 |     1000 |    100000 |       3.14 |  3.14159265359 | hello      | fixed      | longer text here |     1245.67 |  9865.43210 | 01-15-2024 | Mon Jan 15 10:30:00 2024        | @ 120 hours

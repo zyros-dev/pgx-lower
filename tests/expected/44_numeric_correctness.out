@@ -21,7 +21,6 @@ VALUES ('pos', 12345.6789),
 SELECT label, n
 FROM numeric_correctness
 ORDER BY n, label;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     label    |                                                  n                                                   
 -------------+------------------------------------------------------------------------------------------------------
  ninf        |                                                                                            -Infinity
@@ -41,7 +40,6 @@ SELECT label,
        n < 0::NUMERIC AS lt_zero
 FROM numeric_correctness
 ORDER BY label;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     label    | eq_nan | gt_boundary | lt_zero 
 -------------+--------+-------------+---------
  boundary38  | f      | f           | f
@@ -60,7 +58,6 @@ SELECT SUM(n) AS finite_sum,
        MAX(n) AS finite_max
 FROM numeric_correctness
 WHERE label IN ('pos', 'neg', 'scale18', 'boundary38');
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
                          finite_sum                         | finite_min  |               finite_max               
 ------------------------------------------------------------+-------------+----------------------------------------
  100000000000000000000000000000000000000.000000000000000001 | -12345.6789 | 99999999999999999999999999999999999999
@@ -104,7 +101,6 @@ SELECT id,
        n::TEXT AS as_text
 FROM numeric_untyped
 ORDER BY id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id |                         n                         |                      plus_1e_minus_18                      |                      triple                       |                      as_text                      
 ----+---------------------------------------------------+------------------------------------------------------------+---------------------------------------------------+---------------------------------------------------
   1 |                                               1.2 |                                       1.200000000000000001 |                                               3.6 | 1.2

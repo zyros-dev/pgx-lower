@@ -17,7 +17,6 @@ VALUES (true, false, 10),
        (true, false, 50);
 SELECT (flag1 AND flag2) AS and_result
 FROM test_logical;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  and_result 
 ------------
  f
@@ -29,7 +28,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (flag1 OR flag2) AS or_result
 FROM test_logical;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  or_result 
 -----------
  t
@@ -41,7 +39,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (NOT flag1) AS not_flag1
 FROM test_logical;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  not_flag1 
 -----------
  f
@@ -53,7 +50,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (NOT flag2) AS not_flag2
 FROM test_logical;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  not_flag2 
 -----------
  t
@@ -65,7 +61,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (flag1 AND flag2 AND value > 25) AS complex_and
 FROM test_logical;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  complex_and 
 -------------
  f
@@ -77,7 +72,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (flag1 OR flag2 OR value < 15) AS complex_or
 FROM test_logical;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  complex_or 
 ------------
  t

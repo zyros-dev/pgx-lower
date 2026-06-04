@@ -46,7 +46,6 @@ SELECT name
 FROM products
 WHERE category_id = ANY(ARRAY(SELECT category_id FROM categories WHERE active = 1))
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    name   
 ----------
  Chair
@@ -62,7 +61,6 @@ FROM products
 WHERE price > (SELECT AVG(price)
                FROM products)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   name  | price 
 --------+-------
  Desk   |   500
@@ -75,7 +73,6 @@ WHERE price > ALL (SELECT price
                    FROM products
                    WHERE category_id = 20)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   name   | price 
 ---------+-------
  Chair   |   200
@@ -90,7 +87,6 @@ WHERE price > (SELECT AVG(price)
                FROM products
                WHERE category_id = p.category_id)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    name   | price 
 ----------+-------
  Desk     |   500
@@ -102,7 +98,6 @@ SELECT name
 FROM products
 WHERE category_id IN (SELECT category_id FROM categories WHERE active = 1)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    name   
 ----------
  Chair
@@ -117,7 +112,6 @@ SELECT name
 FROM products
 WHERE category_id NOT IN (SELECT category_id FROM categories WHERE active = 0)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    name   
 ----------
  Chair
@@ -132,7 +126,6 @@ SELECT name
 FROM categories c
 WHERE EXISTS (SELECT 1 FROM products WHERE category_id = c.category_id)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     name     
 -------------
  Accessories
@@ -144,7 +137,6 @@ SELECT name
 FROM categories c
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE category_id = c.category_id)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      name     
 --------------
  Discontinued
@@ -156,7 +148,6 @@ SELECT product_id, name,
         WHERE c.category_id = p.category_id) as category_name
 FROM products p
 ORDER BY product_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  product_id |   name   | category_name 
 ------------+----------+---------------
           1 | Laptop   | Electronics
@@ -173,7 +164,6 @@ SELECT name, price,
         WHERE i.product_id = p.product_id) as max_stock
 FROM products p
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    name   | price | max_stock 
 ----------+-------+-----------
  Chair    |   200 |          
@@ -191,7 +181,6 @@ JOIN (SELECT category_id, SUM(price) as total_price
       GROUP BY category_id) AS stats
 ON c.category_id = stats.category_id
 ORDER BY c.name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     name     | total_price 
 -------------+-------------
  Accessories |         100

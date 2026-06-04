@@ -227,6 +227,19 @@ static auto supportedOrUnsupported(const AnalyzerResult& result) -> AnalyzerResu
     return result;
 }
 
+static auto postgresFunctionName(const Oid functionOid) -> std::string {
+    if (functionOid == InvalidOid) {
+        return {};
+    }
+    const char* name = get_func_name(functionOid);
+    if (!name) {
+        return {};
+    }
+    auto functionName = std::string(name);
+    pfree(const_cast<char*>(name));
+    return functionName;
+}
+
 auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> AnalyzerResult {
     if (!stmt) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::invalid, "planned statement is null", "PlannedStmt");
@@ -269,6 +282,15 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_SetOp:
     case T_Group:
         break;
+    case T_ProjectSet:
+        mergeAnalyzerResult(result, analyzeExprList(plan->qual, location + ".qual"));
+        mergeAnalyzerResult(result, analyzeTargetList(plan->targetlist, location + ".targetlist"));
+        if (result.isSupported()) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                        "unsupported plan node tag " + std::to_string(nodeTag(plan)),
+                                        location);
+        }
+        return supportedOrUnsupported(result);
     case T_SubqueryScan: {
         const auto* subqueryScan = reinterpret_cast<const SubqueryScan*>(plan);
         mergeAnalyzerResult(result, analyzeNode(subqueryScan->subplan, location + ".subplan"));
@@ -378,8 +400,11 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> Analy
     case T_FuncExpr: {
         const auto* func = reinterpret_cast<const FuncExpr*>(expr);
         if (!isFunctionSupported(func->funcid)) {
+            const auto functionName = postgresFunctionName(func->funcid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
-                                        "unsupported function OID " + std::to_string(func->funcid),
+                                        functionName.empty()
+                                            ? "unsupported function OID " + std::to_string(func->funcid)
+                                            : "unsupported function " + functionName + "()",
                                         location);
         }
         if (!isCollationSupported(func->inputcollid) || !isCollationSupported(func->funccollid)) {
@@ -426,8 +451,11 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, std::string location) -> Analy
     case T_Aggref: {
         const auto* agg = reinterpret_cast<const Aggref*>(expr);
         if (!isFunctionSupported(agg->aggfnoid)) {
+            const auto functionName = postgresFunctionName(agg->aggfnoid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
-                                        "unsupported aggregate function OID " + std::to_string(agg->aggfnoid),
+                                        functionName.empty()
+                                            ? "unsupported aggregate function OID " + std::to_string(agg->aggfnoid)
+                                            : "unsupported aggregate function " + functionName + "()",
                                         location);
         }
         mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
@@ -481,15 +509,10 @@ auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
 }
 
 auto QueryAnalyzer::isFunctionSupported(const Oid functionOid) -> bool {
-    if (functionOid == InvalidOid) {
+    const auto functionName = postgresFunctionName(functionOid);
+    if (functionName.empty()) {
         return false;
     }
-    const char* name = get_func_name(functionOid);
-    if (!name) {
-        return false;
-    }
-    const auto functionName = std::string(name);
-    pfree(const_cast<char*>(name));
     return functionName == "count" ||
            functionName == "sum" ||
            functionName == "avg" ||

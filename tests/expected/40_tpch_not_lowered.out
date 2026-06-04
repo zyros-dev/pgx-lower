@@ -184,7 +184,6 @@ order by
         o_totalprice desc,
         o_orderdate
 limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  c_name | c_custkey | o_orderkey | o_orderdate | o_totalprice | sum 
 --------+-----------+------------+-------------+--------------+-----
 (0 rows)

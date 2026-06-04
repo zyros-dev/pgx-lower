@@ -12,6 +12,8 @@
 #include "utils/guc_hooks.h"
 #include "utils/tuplestore.h"
 
+#include <string.h>
+
 PG_MODULE_MAGIC;
 
 extern bool g_extension_after_load;
@@ -22,6 +24,7 @@ static bool pgx_lower_log_ir = false;
 static bool pgx_lower_log_io = false;
 static bool pgx_lower_log_trace = false;
 static char *pgx_lower_enabled_categories = NULL;
+static char *pgx_lower_execution_mode = NULL;
 
 extern void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char *categories);
 
@@ -66,6 +69,28 @@ static void register_string_guc(const char *name, const char *desc, char **var) 
     DefineCustomStringVariable(name, desc, NULL, var, "", PGC_USERSET, 0, NULL, update_logging_string, NULL);
 }
 
+const char*
+pgx_lower_get_execution_mode(void)
+{
+    return pgx_lower_execution_mode ? pgx_lower_execution_mode : "auto";
+}
+
+static bool
+check_execution_mode(char **newval, void **extra, GucSource source)
+{
+    (void) extra;
+    (void) source;
+
+    if (strcmp(*newval, "auto") == 0 ||
+        strcmp(*newval, "force_fallback") == 0 ||
+        strcmp(*newval, "force_lower") == 0) {
+        return true;
+    }
+
+    GUC_check_errmsg("pgx_lower.execution_mode must be one of: auto, force_fallback, force_lower");
+    return false;
+}
+
 void _PG_init(void) {
     extern void initialize_stderr_redirect(void);
     initialize_stderr_redirect();
@@ -83,6 +108,17 @@ void _PG_init(void) {
     register_bool_guc("pgx_lower.log_trace", "Enable trace logging", &pgx_lower_log_trace);
     register_string_guc("pgx_lower.enabled_categories", "Comma-separated list of enabled log categories", 
                        &pgx_lower_enabled_categories);
+    DefineCustomStringVariable(
+        "pgx_lower.execution_mode",
+        "Controls pgx-lower routing: auto, force_fallback, or force_lower",
+        NULL,
+        &pgx_lower_execution_mode,
+        "auto",
+        PGC_USERSET,
+        0,
+        check_execution_mode,
+        NULL,
+        NULL);
 
     PGX_NOTICE_C("Initializing MLIR pass registration...");
     extern void initialize_mlir_passes(void);

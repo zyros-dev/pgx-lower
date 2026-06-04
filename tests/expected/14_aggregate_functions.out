@@ -20,7 +20,6 @@ VALUES (1, 10050, 5, 2010),
        (3, 25040, 1, 25040);
 SELECT SUM(amount) AS total_amount_all
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_amount_all 
 ------------------
            130330
@@ -28,7 +27,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT COUNT(*) AS total_rows
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_rows 
 ------------
           7
@@ -39,7 +37,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 -- FROM test_aggregates;
 SELECT AVG(amount) AS avg_amount_all
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    avg_amount_all   
 --------------------
  18618.571428571429
@@ -47,7 +44,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT MIN(amount) AS min_amount_all
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  min_amount_all 
 ----------------
           10050
@@ -55,7 +51,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT MAX(amount) AS max_amount_all
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  max_amount_all 
 ----------------
           30000
@@ -63,7 +58,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT SUM(quantity) AS total_quantity
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_quantity 
 ----------------
              28
@@ -71,7 +65,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT AVG(price) AS avg_price
 FROM test_aggregates;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
        avg_price       
 -----------------------
  8196.5714285714285714

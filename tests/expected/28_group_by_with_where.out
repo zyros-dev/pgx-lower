@@ -29,7 +29,6 @@ FROM product_orders
 WHERE category = 'Electronics'
   AND order_amount > 100
 GROUP BY category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   category   | order_count 
 -------------+-------------
  Electronics |           4
@@ -40,7 +39,6 @@ FROM product_orders
 WHERE customer_type = 'Premium'
 GROUP BY region
 ORDER BY region;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region | total_sales 
 --------+-------------
  North  |     1500.00
@@ -56,7 +54,6 @@ WHERE order_amount >= 100
   AND quantity <= 3
 GROUP BY category
 ORDER BY category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   category   | order_count | total_sales |    avg_quantity    
 -------------+-------------+-------------+--------------------
  Electronics |           3 |     2700.00 | 1.3333333333333333
@@ -70,7 +67,6 @@ FROM product_orders
 WHERE order_date >= '2024-01-05'
 GROUP BY customer_type
 ORDER BY customer_type;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  customer_type | order_count | total_sales 
 ---------------+-------------+-------------
  Business      |           3 |     1250.00
@@ -89,7 +85,6 @@ WHERE (category = 'Electronics' OR category = 'Furniture')
   AND order_amount BETWEEN 100 AND 1000
 GROUP BY region, category
 ORDER BY region, category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region |  category   | order_count | total_sales | min_order | max_order 
 --------+-------------+-------------+-------------+-----------+-----------
  East   | Furniture   |           1 |      300.00 |    300.00 |    300.00
@@ -106,7 +101,6 @@ WHERE quantity >= 2
 GROUP BY customer_type
 HAVING COUNT(*) >= 2
 ORDER BY customer_type;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  customer_type | order_count |   avg_order_amount   
 ---------------+-------------+----------------------
  Business      |           2 | 175.0000000000000000

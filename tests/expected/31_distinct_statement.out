@@ -22,7 +22,6 @@ VALUES (1, 10, 100, 'apple'),
        (1, 10, 100, 'apple');
 SELECT DISTINCT category
 FROM test_distinct;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category 
 ----------
         1
@@ -34,7 +33,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT DISTINCT category
 FROM test_distinct
 ORDER BY category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category 
 ----------
         1
@@ -46,7 +44,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT DISTINCT category, status
 FROM test_distinct
 ORDER BY category, status;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category | status 
 ----------+--------
         1 |     10
@@ -60,7 +57,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT DISTINCT category + status AS combined
 FROM test_distinct
 ORDER BY combined;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  combined 
 ----------
        11
@@ -74,7 +70,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT DISTINCT name
 FROM test_distinct
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
    name    
 -----------
  apple
@@ -89,7 +84,6 @@ SELECT DISTINCT category
 FROM test_distinct
 WHERE value >= 200
 ORDER BY category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category 
 ----------
         2
@@ -101,7 +95,6 @@ SELECT DISTINCT category, value
 FROM test_distinct
 WHERE status <= 20
 ORDER BY category, value;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category | value 
 ----------+-------
         1 |   100
@@ -113,7 +106,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT DISTINCT value / 100 AS hundreds
 FROM test_distinct
 ORDER BY hundreds;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  hundreds 
 ----------
         1
@@ -125,7 +117,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT ALL category
 FROM test_distinct
 ORDER BY category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category 
 ----------
         1
@@ -142,7 +133,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT SUM(category)
 FROM test_distinct;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  sum 
 -----
   20
@@ -150,7 +140,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT SUM(DISTINCT category)
 FROM test_distinct;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  sum 
 -----
   10

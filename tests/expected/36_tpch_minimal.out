@@ -41,7 +41,6 @@ SELECT o_id, o_date, o_amount
 FROM simple_orders
 WHERE o_date <= date '1994-07-01' - interval '90' day
 ORDER BY o_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_id |   o_date   | o_amount 
 ------+------------+----------
     1 | 01-15-1994 |   100.00
@@ -51,7 +50,6 @@ SELECT o_id, o_date
 FROM simple_orders
 WHERE o_date >= date '1994-01-01' AND o_date < date '1995-01-01'
 ORDER BY o_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_id |   o_date   
 ------+------------
     1 | 01-15-1994
@@ -64,7 +62,6 @@ WHERE o.o_id = i.i_order_id
   AND o.o_date >= date '1994-01-01'
   AND i.i_discount > 0.00
 ORDER BY o.o_id, i.i_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_id | i_id | discounted 
 ------+------+------------
     1 |    1 |    47.5000
@@ -83,7 +80,6 @@ WHERE o.o_date >= date '1994-01-01'
       AND i.i_discount > 0
   )
 ORDER BY o_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_id |   o_date   
 ------+------------
     1 | 01-15-1994
@@ -97,7 +93,6 @@ FROM simple_items i, simple_orders o
 WHERE i.i_order_id = o.o_id
   AND o.o_date >= date '1994-01-01'
   AND o.o_date < date '1995-01-01';
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_revenue 
 ---------------
       287.5000
@@ -108,7 +103,6 @@ FROM simple_customers c
 LEFT OUTER JOIN simple_items i ON c.c_order_id = i.i_order_id
 GROUP BY c.c_id, c.c_name
 ORDER BY c.c_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  c_id |   c_name   | item_count 
 ------+------------+------------
     1 | Customer A |          2

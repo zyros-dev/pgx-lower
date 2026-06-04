@@ -163,7 +163,6 @@ where
         l_partkey = p_partkey
         and l_shipdate >= date '1995-09-01'
         and l_shipdate < date '1995-10-01';
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  promo_revenue 
 ---------------
               
@@ -199,7 +198,6 @@ where
 )
 order by
     s_suppkey;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_suppkey |          s_name           | s_address |     s_phone     | total_revenue 
 -----------+---------------------------+-----------+-----------------+---------------
          1 | Supplier#000000001        | Address 1 | 27-918-335-1736 |    20321.5008
@@ -222,7 +220,6 @@ where
     where
         l_partkey = p_partkey
 );
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  avg_yearly 
 ------------
            
@@ -263,7 +260,6 @@ where
             and l_shipmode in ('AIR', 'AIR REG')
             and l_shipinstruct = 'DELIVER IN PERSON'
         );
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  revenue 
 ---------
         
@@ -306,7 +302,6 @@ where
   and n_name = 'CANADA'
 order by
     s_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_name | s_address 
 --------+-----------
 (0 rows)

@@ -11,7 +11,6 @@ INSERT INTO sort_test VALUES
     (3, 'Mango'),
     (4, 'Banana');
 SELECT name FROM sort_test ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   name  
 --------
  Apple
@@ -24,7 +23,6 @@ SELECT t1.name
 FROM sort_test t1
 JOIN sort_test t2 ON t1.id = t2.id
 ORDER BY t1.name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   name  
 --------
  Apple
@@ -62,7 +60,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | country_count 
 -------------+---------------
  Americas    |             2
@@ -76,7 +73,6 @@ JOIN regions r1 ON c.region_id = r1.region_id
 JOIN regions r2 ON r1.region_id = r2.region_id
 WHERE r2.region_name = 'Asia'
 ORDER BY c.country_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  country_name 
 --------------
  China
@@ -91,7 +87,6 @@ FROM (
     WHERE r.region_name IN ('Asia', 'Europe')
 ) sub
 ORDER BY country_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  country_name 
 --------------
  China
@@ -112,7 +107,6 @@ INSERT INTO bpchar_test VALUES
     (3, 'MMM'),
     (4, 'BBB');
 SELECT code FROM bpchar_test ORDER BY code;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  code  
 -------
  AAA  
@@ -126,7 +120,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY c.country_name
 ORDER BY total DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  country_name | total 
 --------------+-------
  Canada       |     6
@@ -149,7 +142,6 @@ INSERT INTO date_test VALUES
     (3, '2024-06-15'),
     (4, '2024-03-20');
 SELECT event_date FROM date_test ORDER BY event_date;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  event_date 
 ------------
  01-01-2024
@@ -170,7 +162,6 @@ INSERT INTO timestamp_test VALUES
     (3, '2024-06-15 12:30:00'),
     (4, '2024-03-20 08:15:30');
 SELECT event_time FROM timestamp_test ORDER BY event_time;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
         event_time        
 --------------------------
  Mon Jan 01 00:00:00 2024
@@ -186,7 +177,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY total_ids DESC, r.region_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | country_count | total_ids 
 -------------+---------------+-----------
  Americas    |             2 |        11
@@ -199,7 +189,6 @@ FROM regions r
 JOIN regions r2 ON r.region_id = r2.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | cnt 
 -------------+-----
  Americas    |   1
@@ -223,7 +212,6 @@ INSERT INTO mixed_sort_test VALUES
 SELECT value, name
 FROM mixed_sort_test
 ORDER BY value DESC, name ASC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value  | name  
 --------+-------
  200.75 | Beta
@@ -240,7 +228,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY cnt DESC, r.region_name ASC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | cnt | total 
 -------------+-----+-------
  Americas    |   2 |    11
@@ -251,7 +238,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT value, name
 FROM mixed_sort_test
 ORDER BY value DESC, name DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  value  | name  
 --------+-------
  200.75 | Beta
@@ -267,7 +253,6 @@ SELECT r.region_name,
 FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 ORDER BY r.region_name ASC, country_id DESC, c.country_name ASC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | country_name | country_id 
 -------------+--------------+------------
  Americas    | Canada       |          6
@@ -282,7 +267,6 @@ SELECT EXTRACT(year FROM event_date) as year, COUNT(*) as cnt
 FROM date_test
 GROUP BY EXTRACT(year FROM event_date)
 ORDER BY year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  year | cnt 
 ------+-----
  2024 |   4
@@ -298,7 +282,6 @@ SELECT
 FROM countries c
 GROUP BY category
 ORDER BY category;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  category | cnt 
 ----------+-----
  High     |   2
@@ -314,7 +297,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY avg_id DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | total | cnt | avg_id 
 -------------+-------+-----+--------
  Americas    |    11 |   2 |      5
@@ -330,7 +312,6 @@ FROM (
     GROUP BY EXTRACT(year FROM event_date)
 ) sub
 ORDER BY year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  year | total_countries 
 ------+-----------------
  2024 |               4
@@ -343,7 +324,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | conditional_sum | total_sum 
 -------------+-----------------+-----------
  Americas    |               0 |        11
@@ -362,7 +342,6 @@ FROM (
     GROUP BY r.region_name
 ) sub
 ORDER BY ratio DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | ratio 
 -------------+-------
  Asia        |     1

@@ -48,7 +48,6 @@ SELECT e.emp_name, e.salary, d.dept_name, d.location
 FROM employees e
          LEFT JOIN departments d ON e.dept_id = d.dept_id
 ORDER BY e.emp_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  emp_name | salary |  dept_name  |  location  
 ----------+--------+-------------+------------
  Alice    |  75000 | Engineering | Building A
@@ -63,7 +62,6 @@ SELECT e.emp_name, e.salary, d.dept_name, d.location
 FROM employees e
          RIGHT JOIN departments d ON e.dept_id = d.dept_id
 ORDER BY d.dept_id, e.emp_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  emp_name | salary |  dept_name  |  location  
 ----------+--------+-------------+------------
  Alice    |  75000 | Engineering | Building A
@@ -79,7 +77,6 @@ WHERE EXISTS (SELECT 1
               FROM departments d
               WHERE d.dept_id = e.dept_id)
 ORDER BY e.emp_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  emp_name | salary | dept_id 
 ----------+--------+---------
  Alice    |  75000 |      10
@@ -94,7 +91,6 @@ WHERE NOT EXISTS (SELECT 1
                   FROM departments d
                   WHERE d.dept_id = e.dept_id)
 ORDER BY e.emp_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  emp_name | salary | dept_id 
 ----------+--------+---------
  Eve      |  60000 |        
@@ -106,7 +102,6 @@ FROM departments d
 WHERE d.dept_id IN (SELECT p.dept_id
                     FROM projects p)
 ORDER BY d.dept_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   dept_name  |  location  
 -------------+------------
  Engineering | Building A
@@ -119,7 +114,6 @@ FROM employees e
 WHERE d.location = 'Building A'
    OR d.location IS NULL
 ORDER BY e.emp_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  emp_name |  dept_name  
 ----------+-------------
  Alice    | Engineering
@@ -136,7 +130,6 @@ FROM employees e
          LEFT JOIN departments d ON e.dept_id = d.dept_id
          LEFT JOIN projects p ON d.dept_id = p.dept_id
 ORDER BY e.emp_id, p.project_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  emp_name |  dept_name  | project_name  | budget 
 ----------+-------------+---------------+--------
  Alice    | Engineering | Project Alpha | 500000
@@ -157,7 +150,6 @@ FROM employees e1
                    ON e1.dept_id = e2.dept_id
                        AND e1.emp_id < e2.emp_id
 ORDER BY e1.emp_id, e2.emp_id;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  employee | colleague | dept_id 
 ----------+-----------+---------
  Alice    | Carol     |      10

@@ -10,7 +10,6 @@ INSERT INTO test(id)
 VALUES (42);
 SELECT *
 FROM test;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
  42

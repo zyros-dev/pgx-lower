@@ -22,7 +22,6 @@ VALUES (1200.00, 2),
 SELECT quantity, COUNT(*) AS item_count
 FROM simple_group_by
 GROUP BY quantity;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  quantity | item_count 
 ----------+------------
         2 |          6
@@ -33,7 +32,6 @@ SELECT quantity, COUNT(*) AS item_count
 FROM simple_group_by
 GROUP BY quantity
 ORDER BY quantity;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  quantity | item_count 
 ----------+------------
         2 |          6
@@ -44,7 +42,6 @@ SELECT quantity, COUNT(*) AS item_count
 FROM simple_group_by
 GROUP BY quantity
 ORDER BY COUNT(*);
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  quantity | item_count 
 ----------+------------
         3 |          4
@@ -75,7 +72,6 @@ VALUES ('Electronics', 'Laptop', 1200, 2),
 SELECT department, COUNT(*) AS item_count
 FROM sales_data
 GROUP BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department  | item_count 
 -------------+------------
  Electronics |          5
@@ -87,7 +83,6 @@ SELECT department, SUM(amount) AS total_sales
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department  | total_sales 
 -------------+-------------
  Books       |         140
@@ -99,7 +94,6 @@ SELECT department, AVG(amount) AS avg_amount
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department  |      avg_amount      
 -------------+----------------------
  Books       |  70.0000000000000000
@@ -111,7 +105,6 @@ SELECT department, MIN(amount) AS min_amount, MAX(amount) AS max_amount
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department  | min_amount | max_amount 
 -------------+------------+------------
  Books       |         15 |        125
@@ -126,7 +119,6 @@ SELECT department,
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department  | item_count | total_sales |    avg_quantity     
 -------------+------------+-------------+---------------------
  Books       |          2 |         140 | 12.0000000000000000

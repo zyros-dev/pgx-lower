@@ -39,7 +39,6 @@ SELECT sum(i_price * i_discount) as revenue
 FROM test_items
 WHERE i_discount BETWEEN 0.05 - 0.01 AND 0.05 + 0.01
   AND i_quantity < 24;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  revenue 
 ---------
   5.0000
@@ -54,7 +53,6 @@ FROM (
 ) as subq
 GROUP BY o_year
 ORDER BY o_year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_year | revenue  
 --------+----------
    1994 |  95.0000
@@ -72,7 +70,6 @@ FROM (
 ) as profit_calc
 GROUP BY o_year
 ORDER BY o_year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_year | total_profit 
 --------+--------------
    1994 |    -405.0000
@@ -90,7 +87,6 @@ HAVING sum(s_cost * i_quantity) > (
     WHERE s_item_id = i_id
 )
 ORDER BY value DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  i_id |   value   
 ------+-----------
     2 | 1500.0000
@@ -102,7 +98,6 @@ WHERE o_id = i_order_id
   AND i_shipmode IN ('MAIL', 'SHIP')
 GROUP BY i_shipmode
 ORDER BY i_shipmode;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  i_shipmode | cnt 
 ------------+-----
  MAIL       |   1

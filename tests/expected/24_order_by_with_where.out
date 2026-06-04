@@ -24,7 +24,6 @@ SELECT name, salary
 FROM test_order_where
 WHERE salary > 50000
 ORDER BY salary;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | salary 
 -------+--------
  Grace |  55000
@@ -37,7 +36,6 @@ SELECT name, department, salary
 FROM test_order_where
 WHERE salary >= 50000
 ORDER BY name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | department | salary 
 -------+------------+--------
  Alice | Sales      |  50000
@@ -53,7 +51,6 @@ FROM test_order_where
 WHERE years > 2
   AND department = 'IT'
 ORDER BY years;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | department | years 
 -------+------------+-------
  David | IT         |     4
@@ -64,7 +61,6 @@ SELECT name, age, salary
 FROM test_order_where
 WHERE age < 30
 ORDER BY salary DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | age | salary 
 -------+-----+--------
  Bob   |  25 |  60000
@@ -78,7 +74,6 @@ SELECT name, department, salary, years
 FROM test_order_where
 WHERE salary >= 45000
 ORDER BY department, salary DESC;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | department | salary | years 
 -------+------------+--------+-------
  Grace | HR         |  55000 |     3
@@ -95,7 +90,6 @@ SELECT name, department, age
 FROM test_order_where
 WHERE department IN ('IT', 'Sales')
 ORDER BY department, age;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | department | age 
 -------+------------+-----
  Bob   | IT         |  25
@@ -110,7 +104,6 @@ SELECT name, salary, age
 FROM test_order_where
 WHERE salary <> 50000
 ORDER BY age, salary;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name  | salary | age 
 -------+--------+-----
  Bob   |  60000 |  25

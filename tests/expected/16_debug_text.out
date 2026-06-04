@@ -14,7 +14,6 @@ INSERT INTO char_only
 VALUES (LPAD('ch3', 10, 'x'));
 SELECT ch
 FROM char_only;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      ch     
 ------------
  xxxxxxxch1

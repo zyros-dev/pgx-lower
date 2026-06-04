@@ -18,7 +18,6 @@ VALUES (99.99, 2.500, 0.1575, 10.50),
 -- Basic arithmetic operations
 SELECT price + discount AS price_plus_discount
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  price_plus_discount 
 ---------------------
               110.49
@@ -30,7 +29,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT price - discount AS price_minus_discount
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  price_minus_discount 
 ----------------------
                 89.49
@@ -42,7 +40,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT price * quantity AS total_value
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_value 
 -------------
    249.97500
@@ -54,7 +51,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT price / quantity AS price_per_unit
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
     price_per_unit    
 ----------------------
   39.9960000000000000
@@ -67,7 +63,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 -- Mixed precision operations
 SELECT price * rate AS tax_amount
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  tax_amount 
 ------------
   15.748425
@@ -79,7 +74,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (price * quantity) AS total_before_discount
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  total_before_discount 
 -----------------------
              249.97500
@@ -91,7 +85,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT (price * quantity * (1 - discount / 100)) AS total_after_discount
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      total_after_discount      
 -------------------------------
  223.7276250000000000000000000
@@ -104,7 +97,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 -- Division with different scales
 SELECT discount / 100 AS discount_rate
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      discount_rate      
 ------------------------
  0.10500000000000000000
@@ -116,7 +108,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT price / 2 AS half_price
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      half_price      
 ---------------------
  49.9950000000000000
@@ -128,7 +119,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT quantity / 3 AS third_quantity
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      third_quantity     
 ------------------------
  0.83333333333333333333
@@ -141,7 +131,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 -- Complex expressions
 SELECT ((price + 10) * quantity) / (1 + rate) AS complex_calc
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      complex_calc     
 ----------------------
  237.5593952483801296
@@ -153,7 +142,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT price * quantity * rate AS tax_on_total
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  tax_on_total 
 --------------
  39.371062500
@@ -185,7 +173,6 @@ SELECT 100.00 / 7.00 AS hundred_sevenths;
 -- Operations with integer literals
 SELECT price * 2 AS double_price
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  double_price 
 --------------
        199.98
@@ -197,7 +184,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT price / 10 AS tenth_price
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
      tenth_price     
 ---------------------
   9.9990000000000000
@@ -209,7 +195,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 
 SELECT quantity + 1 AS quantity_plus_one
 FROM test_decimal_maths;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  quantity_plus_one 
 -------------------
              3.500
