@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -123,6 +123,28 @@ describe("dev commands", () => {
     expect(commands).not.toContain(oldLintScript);
     expect(commands).not.toContain(oldBaselineScript);
     expect(commands).not.toContain("just");
+  });
+
+
+  test("dev focused unit tests use generated unit-tests path", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runDevCommand(["test", "focused"], runner, output, makeDevConfig());
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("tests/unit-tests/sql");
+    expect(commands).not.toContain("tests/regress-unit/sql");
+  });
+
+  test("CTest registrations include route assertions and unit SQL", () => {
+    const extensionCmake = readFileSync(new URL("../../extension/CMakeLists.txt", import.meta.url), "utf8");
+
+    expect(extensionCmake).toContain("pgx_lower_regress_routes");
+    expect(extensionCmake).toContain("pgx_lower_tpch_routes");
+    expect(extensionCmake).toContain("pgx_lower_unit_tests");
+    expect(extensionCmake).toContain("route-check");
+    expect(extensionCmake).toContain("tests/unit-tests/sql");
   });
 
   test("dev gate batch runs diff-scoped checks", async () => {

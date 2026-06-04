@@ -18,9 +18,9 @@ workloads:
     expected: tests/tpch/expected
     setup: tests/tpch/sql/init_tpch.sql
 
-  regress-unit:
+  unit-tests:
     kind: pg-unit-tests
-    sql: tests/regress-unit/sql
+    sql: tests/unit-tests/sql
     generated: true
 
   psql-regression:

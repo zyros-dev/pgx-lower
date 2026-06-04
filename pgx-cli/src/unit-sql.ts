@@ -30,7 +30,7 @@ export function generateUnitSql(sourceBasename: string, names: string[]): string
 
 export function writeUnitSqlFiles(root: string): string[] {
   const srcDir = join(root, "src/pgx-lower/test");
-  const outDir = join(root, "tests/regress-unit/sql");
+  const outDir = join(root, "tests/unit-tests/sql");
   mkdirSync(outDir, { recursive: true });
   const written: string[] = [];
   for (const file of readdirSync(srcDir).filter((entry) => entry.endsWith("_tests.cpp")).sort()) {

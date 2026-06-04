@@ -14,6 +14,11 @@ if(NOT BUILDING_UNIT_TESTS)
         )
     endif()
 
+    find_program(PGX_CLI_EXECUTABLE pgx-cli)
+    if(NOT PGX_CLI_EXECUTABLE)
+        set(PGX_CLI_EXECUTABLE pgx-cli)
+    endif()
+
     add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
@@ -104,6 +109,39 @@ if(NOT BUILDING_UNIT_TESTS)
             45_route_notices
 )
 
+
+if(PG_REGRESS)
+    add_test(
+        NAME pgx_lower_regress_routes
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                ${PGX_CLI_EXECUTABLE}
+                test
+                route-check
+                --run-name pgx-regression-correctness
+                --profile debug
+                --execution-mode extension-auto
+                --sql-dir ${CMAKE_SOURCE_DIR}/tests/pgx-regression/sql
+                --output-dir ${CMAKE_CURRENT_BINARY_DIR}/pgx-regression/results
+                --summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/pgx-regression-correctness/summary.md
+                --default-auto-should-route-to lower
+                --require-route-directives
+    )
+    set_tests_properties(pgx_lower_regress_routes PROPERTIES DEPENDS pgx_lower_regress)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/unit-tests/sql)
+    file(CHMOD ${CMAKE_SOURCE_DIR}/tests/unit-tests/sql PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE GROUP_EXECUTE WORLD_READ WORLD_WRITE WORLD_EXECUTE)
+    add_test(
+        NAME pgx_lower_unit_tests
+        COMMAND bash
+                -lc
+                "set -euo pipefail; cd '${CMAKE_SOURCE_DIR}'; rm -f '${CMAKE_SOURCE_DIR}'/tests/unit-tests/sql/*.sql; node --input-type=module -e 'import { writeUnitSqlFiles } from \"./pgx-cli/dist/unit-sql.js\"; for (const line of writeUnitSqlFiles(\"${CMAKE_SOURCE_DIR}\")) console.log(line);'; /usr/local/pgsql/bin/dropdb --if-exists regression_unit; /usr/local/pgsql/bin/createdb regression_unit; fail=0; for sql in '${CMAKE_SOURCE_DIR}'/tests/unit-tests/sql/*.sql; do echo \"--- $(basename \"$sql\") ---\"; /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f \"$sql\" || { fail=1; echo FAIL: \"$sql\"; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi"
+    )
+endif()
+
 if(PG_REGRESS)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tpch)
     add_test(
@@ -118,15 +156,30 @@ if(PG_REGRESS)
                 tpch_no_lower
                 tpch
     )
+
+    add_test(
+        NAME pgx_lower_tpch_routes
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                ${PGX_CLI_EXECUTABLE}
+                test
+                route-check
+                --run-name tpch-correctness
+                --profile debug
+                --execution-mode extension-auto
+                --sql-dir ${CMAKE_SOURCE_DIR}/tests/tpch/sql
+                --output-dir ${CMAKE_CURRENT_BINARY_DIR}/tpch/results
+                --summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/tpch-correctness/summary.md
+                --default-auto-should-route-to lower
+                --require-route-directives
+    )
+    set_tests_properties(pgx_lower_tpch_routes PROPERTIES DEPENDS pgx_lower_tpch_regress)
 endif()
 
 if(PGX_LOWER_ENABLE_POSTGRES_REGRESS)
     if(NOT PG_REGRESS)
         message(FATAL_ERROR "PGX_LOWER_ENABLE_POSTGRES_REGRESS requires pg_regress")
-    endif()
-    find_program(PGX_CLI_EXECUTABLE pgx-cli)
-    if(NOT PGX_CLI_EXECUTABLE)
-        set(PGX_CLI_EXECUTABLE pgx-cli)
     endif()
     add_test(
         NAME pgx_lower_psql_regression_burndown

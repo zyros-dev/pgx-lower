@@ -231,16 +231,16 @@ async function runPostgresUnitTests(
   if (flush !== 0) return flush;
 
   const testSelector = suite
-    ? `test -f /workspace/tests/regress-unit/sql/${quoteShell(`${suite}.sql`)} && `
+    ? `test -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)} && `
     : "";
   const testRunner = suite
-    ? `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f /workspace/tests/regress-unit/sql/${quoteShell(`${suite}.sql`)}"`
-    : `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit" && fail=0; for sql in /workspace/tests/regress-unit/sql/*.sql; do echo "--- $(basename "$sql") ---"; su postgres -c "/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f $sql" || { fail=1; echo FAIL: $sql; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi`;
+    ? `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)}"`
+    : `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit" && fail=0; for sql in /workspace/tests/unit-tests/sql/*.sql; do echo "--- $(basename "$sql") ---"; su postgres -c "/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f $sql" || { fail=1; echo FAIL: $sql; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi`;
   const command = [
     "export PATH=/usr/local/pgsql/bin:$PATH",
     testSelector + buildAndInstallCommand(),
     "chmod o+x /workspace/.worktrees 2>/dev/null || true",
-    "chmod -R o+rX /workspace/tests/regress-unit",
+    "chmod -R o+rX /workspace/tests/unit-tests",
     testRunner
   ].join(" && ");
   return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));

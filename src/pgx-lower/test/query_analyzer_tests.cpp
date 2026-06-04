@@ -1,8 +1,11 @@
 extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
+#include "catalog/pg_operator_d.h"
+#include "catalog/pg_type.h"
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
+#include "utils/fmgroids.h"
 }
 
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
@@ -16,6 +19,22 @@ extern "C" {
             elog(ERROR, "%s:%d require failed: %s", __FILE__, __LINE__, #cond);                                        \
         }                                                                                                              \
     } while (0)
+
+namespace {
+
+auto makeIntConst() -> Const {
+    auto value = Const{};
+    value.xpr.type = T_Const;
+    value.consttype = INT4OID;
+    value.consttypmod = -1;
+    value.constisnull = false;
+    value.constbyval = true;
+    value.constlen = sizeof(int32);
+    value.constvalue = Datum{1};
+    return value;
+}
+
+} // namespace
 
 PGX_TEST_FN(query_analyzer_default_result_is_invalid) {
     const auto result = pgx_lower::AnalyzerResult{};
@@ -88,5 +107,55 @@ PGX_TEST_FN(query_analyzer_rejects_translator_unsupported_set_operation_plan) {
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(&plan);
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_function_signature_mismatch) {
+    auto arg = makeIntConst();
+    auto func = FuncExpr{};
+    func.xpr.type = T_FuncExpr;
+    func.funcid = F_UPPER_TEXT;
+    func.funcresulttype = TEXTOID;
+    func.inputcollid = InvalidOid;
+    func.funccollid = InvalidOid;
+    func.args = list_make1(&arg);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&func));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_operator_signature_mismatch) {
+    auto lhs = makeIntConst();
+    auto rhs = makeIntConst();
+    auto op = OpExpr{};
+    op.xpr.type = T_OpExpr;
+    op.opno = TextEqualOperator;
+    op.opfuncid = F_TEXTEQ;
+    op.opresulttype = BOOLOID;
+    op.inputcollid = InvalidOid;
+    op.opcollid = InvalidOid;
+    op.args = list_make2(&lhs, &rhs);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_missing_target_expr_metadata) {
+    auto target = TargetEntry{};
+    target.xpr.type = T_TargetEntry;
+    target.expr = nullptr;
+    target.resjunk = false;
+
+    auto plan = Plan{};
+    plan.type = T_SeqScan;
+    plan.targetlist = list_make1(&target);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(&plan);
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
     PG_RETURN_VOID();
 }

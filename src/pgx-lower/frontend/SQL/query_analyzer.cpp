@@ -7,7 +7,12 @@
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
 #include "postgres.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_namespace_d.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_proc_d.h"
 #include "nodes/plannodes.h"
 #include "nodes/execnodes.h"
 #include "nodes/primnodes.h"
@@ -24,6 +29,7 @@ extern Oid g_jit_table_oid;
 #include <vector>
 #include <sstream>
 #include <functional>
+#include <iterator>
 
 #ifdef POSTGRESQL_EXTENSION
 
@@ -226,6 +232,239 @@ static auto supportedOrUnsupported(const AnalyzerResult& result) -> AnalyzerResu
     return result;
 }
 
+static auto postgresTypeIsMLIRSupported(const Oid postgresType) -> bool {
+    switch (postgresType) {
+    case INT4OID:
+    case INT8OID:
+    case INT2OID:
+    case FLOAT4OID:
+    case FLOAT8OID:
+    case BOOLOID:
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID:
+    case NUMERICOID:
+    case DATEOID:
+    case TIMESTAMPOID:
+    case INTERVALOID: return true;
+
+    default: return false;
+    }
+}
+
+struct PgFunctionSignature {
+    const char* name;
+    char kind;
+    Oid resultType;
+    int nargs;
+    Oid argTypes[3];
+};
+
+static auto functionSignatureMatches(const Form_pg_proc proc, const PgFunctionSignature& signature) -> bool {
+    if (proc->pronamespace != PG_CATALOG_NAMESPACE || proc->prokind != signature.kind
+        || proc->prorettype != signature.resultType || proc->pronargs != signature.nargs
+        || std::strcmp(NameStr(proc->proname), signature.name) != 0)
+    {
+        return false;
+    }
+    for (auto index = 0; index < signature.nargs; ++index) {
+        if (proc->proargtypes.values[index] != signature.argTypes[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static auto catalogFunctionMatchesAny(const Oid functionOid, const PgFunctionSignature* signatures,
+                                      const size_t signatureCount) -> bool {
+    if (functionOid == InvalidOid) {
+        return false;
+    }
+    const auto tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(functionOid));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+
+    const auto proc = reinterpret_cast<Form_pg_proc>(GETSTRUCT(tuple));
+    auto supported = false;
+    for (size_t index = 0; index < signatureCount; ++index) {
+        if (functionSignatureMatches(proc, signatures[index])) {
+            supported = true;
+            break;
+        }
+    }
+    ReleaseSysCache(tuple);
+    return supported;
+}
+
+static auto expressionListMatchesSignature(const List* expressions, const PgFunctionSignature& signature) -> bool {
+    const auto expressionCount = expressions ? list_length(expressions) : 0;
+    if (expressionCount != signature.nargs) {
+        return false;
+    }
+
+    for (auto index = 0; index < signature.nargs; ++index) {
+        const auto* expr = static_cast<const Node*>(lfirst(list_nth_cell(expressions, index)));
+        if (!expr || exprType(const_cast<Node*>(expr)) != signature.argTypes[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static auto functionExprMatchesAny(const FuncExpr* func, const PgFunctionSignature* signatures,
+                                   const size_t signatureCount) -> bool {
+    if (!func || func->funcid == InvalidOid) {
+        return false;
+    }
+    const auto tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(func->funcid));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+
+    const auto proc = reinterpret_cast<Form_pg_proc>(GETSTRUCT(tuple));
+    auto supported = false;
+    for (size_t index = 0; index < signatureCount; ++index) {
+        const auto& signature = signatures[index];
+        if (functionSignatureMatches(proc, signature) && func->funcresulttype == signature.resultType
+            && expressionListMatchesSignature(func->args, signature))
+        {
+            supported = true;
+            break;
+        }
+    }
+    ReleaseSysCache(tuple);
+    return supported;
+}
+
+static auto operatorExprMatchesCatalog(const OpExpr* op) -> bool {
+    if (!op || op->opno == InvalidOid || op->opresulttype == InvalidOid || !op->args || list_length(op->args) != 2) {
+        return false;
+    }
+
+    const auto tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(op->opno));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+
+    const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
+                   && oper->oprresult == op->opresulttype;
+    if (matches) {
+        const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+        const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+        matches = lhs != nullptr && rhs != nullptr && exprType(const_cast<Node*>(lhs)) == oper->oprleft
+                  && exprType(const_cast<Node*>(rhs)) == oper->oprright;
+    }
+    ReleaseSysCache(tuple);
+    return matches;
+}
+
+static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
+    const char* name = get_opname(op->opno);
+    if (!name) {
+        return false;
+    }
+    const auto operatorName = std::string(name);
+    pfree(const_cast<char*>(name));
+
+    if (!postgresTypeIsMLIRSupported(op->opresulttype)) {
+        return false;
+    }
+
+    const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+    const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+    const auto lhsType = exprType(const_cast<Node*>(lhs));
+    const auto rhsType = exprType(const_cast<Node*>(rhs));
+    if (!postgresTypeIsMLIRSupported(lhsType) || !postgresTypeIsMLIRSupported(rhsType)) {
+        return false;
+    }
+
+    return operatorName == "=" || operatorName == "<>" || operatorName == "!=" || operatorName == "<"
+           || operatorName == "<=" || operatorName == ">" || operatorName == ">=" || operatorName == "+"
+           || operatorName == "-" || operatorName == "*" || operatorName == "/" || operatorName == "~~"
+           || operatorName == "!~~";
+}
+
+static constexpr PgFunctionSignature supportedScalarFunctions[] = {
+    {"upper", PROKIND_FUNCTION, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
+    {"lower", PROKIND_FUNCTION, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
+    {"substr", PROKIND_FUNCTION, TEXTOID, 2, {TEXTOID, INT4OID, InvalidOid}},
+    {"substr", PROKIND_FUNCTION, TEXTOID, 3, {TEXTOID, INT4OID, INT4OID}},
+    {"substring", PROKIND_FUNCTION, TEXTOID, 2, {TEXTOID, INT4OID, InvalidOid}},
+    {"substring", PROKIND_FUNCTION, TEXTOID, 3, {TEXTOID, INT4OID, INT4OID}},
+    {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"numeric", PROKIND_FUNCTION, NUMERICOID, 2, {NUMERICOID, INT4OID, InvalidOid}},
+    {"varchar", PROKIND_FUNCTION, VARCHAROID, 3, {VARCHAROID, INT4OID, BOOLOID}},
+    {"text", PROKIND_FUNCTION, TEXTOID, 1, {BPCHAROID, InvalidOid, InvalidOid}},
+    {"int4", PROKIND_FUNCTION, INT4OID, 1, {BOOLOID, InvalidOid, InvalidOid}},
+    {"int4", PROKIND_FUNCTION, INT4OID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"int4", PROKIND_FUNCTION, INT4OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"int4", PROKIND_FUNCTION, INT4OID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"int4", PROKIND_FUNCTION, INT4OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"int4", PROKIND_FUNCTION, INT4OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"int8", PROKIND_FUNCTION, INT8OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"int8", PROKIND_FUNCTION, INT8OID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"int8", PROKIND_FUNCTION, INT8OID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"int8", PROKIND_FUNCTION, INT8OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"int8", PROKIND_FUNCTION, INT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"float4", PROKIND_FUNCTION, FLOAT4OID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"float4", PROKIND_FUNCTION, FLOAT4OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"float4", PROKIND_FUNCTION, FLOAT4OID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"float4", PROKIND_FUNCTION, FLOAT4OID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"float4", PROKIND_FUNCTION, FLOAT4OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+};
+
+static constexpr PgFunctionSignature supportedAggregates[] = {
+    {"count", PROKIND_AGGREGATE, INT8OID, 0, {InvalidOid, InvalidOid, InvalidOid}},
+    {"count", PROKIND_AGGREGATE, INT8OID, 1, {ANYOID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, NUMERICOID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, INT8OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, INT8OID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, FLOAT4OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
+    {"sum", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
+    {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, INT8OID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, INT2OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, INT4OID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, FLOAT4OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, BPCHAROID, 1, {BPCHAROID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, DATEOID, 1, {DATEOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, TIMESTAMPOID, 1, {TIMESTAMPOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, INT8OID, 1, {INT8OID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, INT2OID, 1, {INT2OID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, INT4OID, 1, {INT4OID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, FLOAT4OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, BPCHAROID, 1, {BPCHAROID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, DATEOID, 1, {DATEOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, TIMESTAMPOID, 1, {TIMESTAMPOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
+};
+
 static auto postgresFunctionName(const Oid functionOid) -> std::string {
     if (functionOid == InvalidOid) {
         return {};
@@ -317,11 +556,22 @@ auto QueryAnalyzer::analyzeTargetList(const List* targetList, const std::string&
     auto index = 0;
     foreach (lc, targetList) {
         const auto* tle = static_cast<const TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk || !tle->expr) {
+        const auto exprLocation = location + "[" + std::to_string(index) + "]";
+        if (!tle) {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "target entry is null", exprLocation);
             ++index;
             continue;
         }
-        const auto exprLocation = location + "[" + std::to_string(index) + "]";
+        if (tle->resjunk) {
+            ++index;
+            continue;
+        }
+        if (!tle->expr) {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "target expression is null",
+                                        exprLocation + ".expr");
+            ++index;
+            continue;
+        }
         mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(tle->expr), exprLocation + ".expr"));
         mergeAnalyzerResult(result, analyzeExprType(reinterpret_cast<const Node*>(tle->expr), exprLocation + ".type"));
         ++index;
@@ -387,7 +637,7 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_FuncExpr: {
         const auto* func = reinterpret_cast<const FuncExpr*>(expr);
-        if (!isFunctionSupported(func->funcid)) {
+        if (!isFunctionSupported(func)) {
             const auto functionName = postgresFunctionName(func->funcid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
                                         functionName.empty() ? "unsupported function OID " + std::to_string(func->funcid)
@@ -405,7 +655,7 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_OpExpr: {
         const auto* op = reinterpret_cast<const OpExpr*>(expr);
-        if (!isOperatorSupported(op->opno)) {
+        if (!isOperatorSupported(op)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
                                         "unsupported operator OID " + std::to_string(op->opno), location);
         }
@@ -434,7 +684,7 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_Aggref: {
         const auto* agg = reinterpret_cast<const Aggref*>(expr);
-        if (!isFunctionSupported(agg->aggfnoid)) {
+        if (!isAggregateSupported(agg)) {
             const auto functionName = postgresFunctionName(agg->aggfnoid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
                                         functionName.empty()
@@ -472,52 +722,22 @@ auto QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) -> bool {
 }
 
 auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
-    switch (postgresType) {
-    case INT4OID:
-    case INT8OID:
-    case INT2OID:
-    case FLOAT4OID:
-    case FLOAT8OID:
-    case BOOLOID:
-    case TEXTOID:
-    case VARCHAROID:
-    case BPCHAROID:
-    case NUMERICOID:
-    case DATEOID:
-    case TIMESTAMPOID:
-    case INTERVALOID: return true;
-
-    default: return false;
-    }
+    return postgresTypeIsMLIRSupported(postgresType);
 }
 
-auto QueryAnalyzer::isFunctionSupported(const Oid functionOid) -> bool {
-    const auto functionName = postgresFunctionName(functionOid);
-    if (functionName.empty()) {
-        return false;
-    }
-    return functionName == "count" || functionName == "sum" || functionName == "avg" || functionName == "min"
-           || functionName == "max" || functionName == "upper" || functionName == "lower" || functionName == "substring"
-           || functionName == "varchar" || functionName == "text" || functionName == "char" || functionName == "bpchar"
-           || functionName == "int2" || functionName == "int4" || functionName == "int8" || functionName == "numeric"
-           || functionName == "float4" || functionName == "float8" || functionName == "date"
-           || functionName == "timestamp" || functionName == "interval";
+auto QueryAnalyzer::isFunctionSupported(const FuncExpr* func) -> bool {
+    return functionExprMatchesAny(func, supportedScalarFunctions, std::size(supportedScalarFunctions));
 }
 
-auto QueryAnalyzer::isOperatorSupported(const Oid operatorOid) -> bool {
-    if (operatorOid == InvalidOid) {
+auto QueryAnalyzer::isAggregateSupported(const Aggref* agg) -> bool {
+    if (!agg) {
         return false;
     }
-    const char* name = get_opname(operatorOid);
-    if (!name) {
-        return false;
-    }
-    const auto operatorName = std::string(name);
-    pfree(const_cast<char*>(name));
-    return operatorName == "=" || operatorName == "<>" || operatorName == "!=" || operatorName == "<"
-           || operatorName == "<=" || operatorName == ">" || operatorName == ">=" || operatorName == "+"
-           || operatorName == "-" || operatorName == "*" || operatorName == "/" || operatorName == "~~"
-           || operatorName == "!~~";
+    return catalogFunctionMatchesAny(agg->aggfnoid, supportedAggregates, std::size(supportedAggregates));
+}
+
+auto QueryAnalyzer::isOperatorSupported(const OpExpr* op) -> bool {
+    return operatorExprMatchesCatalog(op) && operatorSignatureIsLowerable(op);
 }
 
 auto QueryAnalyzer::isCollationSupported(const Oid collationOid) -> bool {

@@ -93,8 +93,9 @@ class QueryAnalyzer {
     static AnalyzerResult analyzeExprType(const Node* expr, std::string location);
     static bool checkCommandType(const PlannedStmt* stmt);
     static bool isTypeSupportedByMLIR(Oid postgresType);
-    static bool isFunctionSupported(Oid functionOid);
-    static bool isOperatorSupported(Oid operatorOid);
+    static bool isFunctionSupported(const FuncExpr* func);
+    static bool isAggregateSupported(const Aggref* agg);
+    static bool isOperatorSupported(const OpExpr* op);
     static bool isCollationSupported(Oid collationOid);
 #endif
 };
