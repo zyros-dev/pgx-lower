@@ -10,6 +10,7 @@ import { runDockerCommand } from "./docker.js";
 import { connectMcp } from "./mcp.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
+import { runUnitSqlCommand } from "./unit-sql.js";
 import {
   runQueueCommand,
   runSetupCommand,
@@ -129,6 +130,13 @@ try {
 
   if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
     process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "unit-sql") {
+    process.exitCode = runUnitSqlCommand(argv.slice(2), io);
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
     process.exit();

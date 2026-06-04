@@ -27,7 +27,9 @@ workloads:
     kind: upstream-psql-regression
     sql: tests/psql-regression/sql
     expected: tests/psql-regression/expected
+    data: tests/psql-regression/data
     schedule: tests/psql-regression/parallel_schedule
+    resultmap: tests/psql-regression/resultmap
     baseline: tests/psql-regression/baselines/current.txt
     default_auto_should_route_to: not_asserted
     require_route_directives: false

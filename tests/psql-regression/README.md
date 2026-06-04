@@ -1,9 +1,9 @@
 # PostgreSQL Regression Burndown
 
 This directory stores pgx-lower's imported upstream PostgreSQL regression burn-down workload.
-The imported `sql/`, `expected/`, and `parallel_schedule` files are committed
-so agents have a stable slow-suite surface. Generated logs and results are
-ignored.
+The imported `sql/`, `expected/`, `data/`, `parallel_schedule`, and `resultmap`
+files are committed so agents have a stable slow-suite surface. Generated logs
+and results are ignored.
 
 Bootstrap PostgreSQL 17.6 regression sources:
 

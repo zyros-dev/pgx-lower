@@ -90,14 +90,20 @@ describe("psql regression burndown helpers", () => {
     expect(message).toContain("tests/psql-regression");
   });
 
-  test("validates sql expected and schedule source paths", () => {
+  test("validates sql expected data resultmap and schedule source paths", () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-psql-source-"));
     mkdirSync(join(root, "sql"), { recursive: true });
     mkdirSync(join(root, "expected"), { recursive: true });
+    mkdirSync(join(root, "data"), { recursive: true });
+    writeFileSync(join(root, "resultmap"), "");
     writeFileSync(join(root, "parallel_schedule"), "test: boolean\n");
 
     expect(() => validatePsqlRegressionSource(root, (path) => path !== join(root, "expected"))).toThrow(
       /expected/
+    );
+    expect(() => validatePsqlRegressionSource(root, (path) => path !== join(root, "data"))).toThrow(/data/);
+    expect(() => validatePsqlRegressionSource(root, (path) => path !== join(root, "resultmap"))).toThrow(
+      /resultmap/
     );
     expect(() => validatePsqlRegressionSource(root, () => true)).not.toThrow();
   });
@@ -311,8 +317,10 @@ function makeCommandFixture(testNames: readonly string[]) {
   const routeSummary = join(root, "route-summary.md");
   mkdirSync(join(source, "sql"), { recursive: true });
   mkdirSync(join(source, "expected"), { recursive: true });
+  mkdirSync(join(source, "data"), { recursive: true });
   mkdirSync(join(source, "baselines"), { recursive: true });
   mkdirSync(outputDir, { recursive: true });
+  writeFileSync(join(source, "resultmap"), "");
   writeFileSync(join(source, "parallel_schedule"), `test: ${testNames.join(" ")}\n`);
   writeFileSync(baseline, "");
 

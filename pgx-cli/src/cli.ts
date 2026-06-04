@@ -361,6 +361,7 @@ export function helpText(): string {
     "  pgx-cli dev logs latest",
     "  pgx-cli dev logs <job-id>",
     "  pgx-cli test route-check --help",
+    "  pgx-cli test unit-sql --root <repo>",
     "  pgx-cli test psql-regression-burndown --help",
     "  pgx-cli docker status",
     "  pgx-cli docker build ptest",

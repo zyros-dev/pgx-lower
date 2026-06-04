@@ -50,6 +50,7 @@ pgx-cli dev gate review
 pgx-cli dev build explain --profile debug
 pgx-cli dev build compile --profile debug
 pgx-cli test route-check --help
+pgx-cli test unit-sql --root .
 pgx-cli test psql-regression-burndown --help
 pgx-cli docker status
 pgx-cli docker build ptest
@@ -80,6 +81,8 @@ The `call` command supports every tool the CLion MCP server advertises. The conv
 flush Mutagen and run the needed local/thor/Docker/task-spooler steps directly.
 `pgx-cli test route-check` validates pg_regress route notices against SQL
 directives and writes a route summary without contacting CLion MCP.
+`pgx-cli test unit-sql` generates pg_regress SQL wrappers for PGX_TEST_FN C++
+unit tests.
 `pgx-cli test psql-regression-burndown` runs the opt-in upstream PostgreSQL
 regression burn-down ledger and compares failures against a reviewed baseline.
 `pgx-cli docker ...` commands wrap explicit thor-side Docker maintenance flows.

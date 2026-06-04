@@ -99,7 +99,7 @@ export function renderPsqlRegressionBaseline(failures: ReadonlySet<string>): str
 export function missingPsqlRegressionSourceMessage(source: string): string {
   return [
     `Missing PostgreSQL regression source under ${source}.`,
-    "Expected PostgreSQL 17.6 src/test/regress files: sql/, expected/, and parallel_schedule.",
+    "Expected PostgreSQL 17.6 src/test/regress files: sql/, expected/, data/, parallel_schedule, and resultmap.",
     "",
     "Bootstrap PostgreSQL 17.6 regression sources:",
     "mkdir -p build-artifacts/psql-regression",
@@ -116,6 +116,8 @@ export function validatePsqlRegressionSource(source: string, exists: (path: stri
   const requiredPaths = [
     join(source, "sql"),
     join(source, "expected"),
+    join(source, "data"),
+    join(source, "resultmap"),
     join(source, "parallel_schedule")
   ];
   const missing = requiredPaths.filter((path) => !exists(path));

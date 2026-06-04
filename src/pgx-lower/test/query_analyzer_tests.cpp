@@ -34,6 +34,18 @@ auto makeIntConst() -> Const {
     return value;
 }
 
+auto makeBoolConst() -> Const {
+    auto value = Const{};
+    value.xpr.type = T_Const;
+    value.consttype = BOOLOID;
+    value.consttypmod = -1;
+    value.constisnull = false;
+    value.constbyval = true;
+    value.constlen = sizeof(bool);
+    value.constvalue = BoolGetDatum(true);
+    return value;
+}
+
 } // namespace
 
 PGX_TEST_FN(query_analyzer_default_result_is_invalid) {
@@ -133,6 +145,24 @@ PGX_TEST_FN(query_analyzer_rejects_operator_signature_mismatch) {
     op.xpr.type = T_OpExpr;
     op.opno = TextEqualOperator;
     op.opfuncid = F_TEXTEQ;
+    op.opresulttype = BOOLOID;
+    op.inputcollid = InvalidOid;
+    op.opcollid = InvalidOid;
+    op.args = list_make2(&lhs, &rhs);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unlisted_operator_signature) {
+    auto lhs = makeBoolConst();
+    auto rhs = makeBoolConst();
+    auto op = OpExpr{};
+    op.xpr.type = T_OpExpr;
+    op.opno = 58;
+    op.opfuncid = InvalidOid;
     op.opresulttype = BOOLOID;
     op.inputcollid = InvalidOid;
     op.opcollid = InvalidOid;

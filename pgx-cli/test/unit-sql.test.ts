@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { collectPgTestFunctions, generateUnitSql, writeUnitSqlFiles } from "../src/unit-sql.js";
+import { collectPgTestFunctions, generateUnitSql, runUnitSqlCommand, writeUnitSqlFiles } from "../src/unit-sql.js";
 
 describe("unit SQL generation", () => {
   test("collects PGX_TEST_FN declarations", () => {
@@ -47,5 +47,18 @@ describe("unit SQL generation", () => {
 
     expect(written).toEqual(["tests/unit-tests/sql/numeric.sql (1 tests)"]);
     expect(readFileSync(out, "utf8")).toContain("numeric_add_basic");
+  });
+
+  test("runs the unit-sql command for an explicit root", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-unit-sql-"));
+    const srcDir = join(root, "src/pgx-lower/test");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(join(srcDir, "numeric_tests.cpp"), "PGX_TEST_FN(numeric_add_basic)\n", { flag: "w" });
+    const io = { stdout: "", stderr: "" };
+
+    const exitCode = runUnitSqlCommand(["--root", root], io);
+
+    expect(exitCode).toBe(0);
+    expect(io.stdout).toContain("tests/unit-tests/sql/numeric.sql (1 tests)");
   });
 });

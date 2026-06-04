@@ -360,30 +360,130 @@ static auto operatorExprMatchesCatalog(const OpExpr* op) -> bool {
     return matches;
 }
 
+struct PgOperatorTypeSignature {
+    Oid resultType;
+    Oid leftType;
+    Oid rightType;
+};
+
+static auto operatorNameMatchesAny(const char* operatorName, const char* const* names, const size_t nameCount) -> bool {
+    if (!operatorName) {
+        return false;
+    }
+    for (size_t index = 0; index < nameCount; ++index) {
+        if (std::strcmp(operatorName, names[index]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static auto operatorTypeSignatureMatchesAny(const Oid resultType, const Oid leftType, const Oid rightType,
+                                            const PgOperatorTypeSignature* signatures, const size_t signatureCount)
+    -> bool {
+    for (size_t index = 0; index < signatureCount; ++index) {
+        const auto& signature = signatures[index];
+        if (signature.resultType == resultType && signature.leftType == leftType && signature.rightType == rightType) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static constexpr const char* equalityOperatorNames[] = {"=", "<>"};
+static constexpr const char* orderingOperatorNames[] = {"<", "<=", ">", ">="};
+static constexpr const char* arithmeticOperatorNames[] = {"+", "-", "*", "/"};
+static constexpr const char* likeOperatorNames[] = {"~~", "!~~"};
+
+static constexpr PgOperatorTypeSignature supportedEqualityOperatorSignatures[] = {
+    {BOOLOID, BOOLOID, BOOLOID},         {BOOLOID, INT2OID, INT2OID},      {BOOLOID, INT4OID, INT4OID},
+    {BOOLOID, INT8OID, INT8OID},         {BOOLOID, INT2OID, INT4OID},      {BOOLOID, INT4OID, INT2OID},
+    {BOOLOID, INT2OID, INT8OID},         {BOOLOID, INT8OID, INT2OID},      {BOOLOID, INT4OID, INT8OID},
+    {BOOLOID, INT8OID, INT4OID},         {BOOLOID, FLOAT4OID, FLOAT4OID},  {BOOLOID, FLOAT8OID, FLOAT8OID},
+    {BOOLOID, FLOAT4OID, FLOAT8OID},     {BOOLOID, FLOAT8OID, FLOAT4OID},  {BOOLOID, NUMERICOID, NUMERICOID},
+    {BOOLOID, TEXTOID, TEXTOID},         {BOOLOID, BPCHAROID, BPCHAROID},  {BOOLOID, DATEOID, DATEOID},
+    {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID}, {BOOLOID, TIMESTAMPOID, TIMESTAMPOID},
+    {BOOLOID, INTERVALOID, INTERVALOID},
+};
+
+static constexpr PgOperatorTypeSignature supportedOrderingOperatorSignatures[] = {
+    {BOOLOID, INT2OID, INT2OID},      {BOOLOID, INT4OID, INT4OID},           {BOOLOID, INT8OID, INT8OID},
+    {BOOLOID, INT2OID, INT4OID},      {BOOLOID, INT4OID, INT2OID},           {BOOLOID, INT2OID, INT8OID},
+    {BOOLOID, INT8OID, INT2OID},      {BOOLOID, INT4OID, INT8OID},           {BOOLOID, INT8OID, INT4OID},
+    {BOOLOID, FLOAT4OID, FLOAT4OID},  {BOOLOID, FLOAT8OID, FLOAT8OID},       {BOOLOID, FLOAT4OID, FLOAT8OID},
+    {BOOLOID, FLOAT8OID, FLOAT4OID},  {BOOLOID, NUMERICOID, NUMERICOID},     {BOOLOID, TEXTOID, TEXTOID},
+    {BOOLOID, BPCHAROID, BPCHAROID},  {BOOLOID, DATEOID, DATEOID},           {BOOLOID, DATEOID, TIMESTAMPOID},
+    {BOOLOID, TIMESTAMPOID, DATEOID}, {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, INTERVALOID, INTERVALOID},
+};
+
+static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[] = {
+    {INT2OID, INT2OID, INT2OID},
+    {INT4OID, INT4OID, INT4OID},
+    {INT8OID, INT8OID, INT8OID},
+    {INT4OID, INT2OID, INT4OID},
+    {INT4OID, INT4OID, INT2OID},
+    {INT8OID, INT2OID, INT8OID},
+    {INT8OID, INT8OID, INT2OID},
+    {INT8OID, INT4OID, INT8OID},
+    {INT8OID, INT8OID, INT4OID},
+    {FLOAT4OID, FLOAT4OID, FLOAT4OID},
+    {FLOAT8OID, FLOAT8OID, FLOAT8OID},
+    {FLOAT8OID, FLOAT4OID, FLOAT8OID},
+    {FLOAT8OID, FLOAT8OID, FLOAT4OID},
+    {NUMERICOID, NUMERICOID, NUMERICOID},
+    {TIMESTAMPOID, DATEOID, INTERVALOID},
+    {TIMESTAMPOID, INTERVALOID, DATEOID},
+    {TIMESTAMPOID, TIMESTAMPOID, INTERVALOID},
+    {TIMESTAMPOID, INTERVALOID, TIMESTAMPOID},
+    {INTERVALOID, TIMESTAMPOID, TIMESTAMPOID},
+    {DATEOID, DATEOID, INT4OID},
+    {DATEOID, INT4OID, DATEOID},
+    {INTERVALOID, INTERVALOID, INTERVALOID},
+};
+
+static constexpr PgOperatorTypeSignature supportedLikeOperatorSignatures[] = {
+    {BOOLOID, TEXTOID, TEXTOID},
+    {BOOLOID, BPCHAROID, TEXTOID},
+};
+
 static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
     const char* name = get_opname(op->opno);
     if (!name) {
         return false;
     }
-    const auto operatorName = std::string(name);
+    const auto supportsEquality = operatorNameMatchesAny(name, equalityOperatorNames, std::size(equalityOperatorNames));
+    const auto supportsOrdering = operatorNameMatchesAny(name, orderingOperatorNames, std::size(orderingOperatorNames));
+    const auto supportsArithmetic = operatorNameMatchesAny(name, arithmeticOperatorNames,
+                                                           std::size(arithmeticOperatorNames));
+    const auto supportsLike = operatorNameMatchesAny(name, likeOperatorNames, std::size(likeOperatorNames));
     pfree(const_cast<char*>(name));
-
-    if (!postgresTypeIsMLIRSupported(op->opresulttype)) {
-        return false;
-    }
 
     const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
     const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
     const auto lhsType = exprType(const_cast<Node*>(lhs));
     const auto rhsType = exprType(const_cast<Node*>(rhs));
-    if (!postgresTypeIsMLIRSupported(lhsType) || !postgresTypeIsMLIRSupported(rhsType)) {
-        return false;
-    }
 
-    return operatorName == "=" || operatorName == "<>" || operatorName == "!=" || operatorName == "<"
-           || operatorName == "<=" || operatorName == ">" || operatorName == ">=" || operatorName == "+"
-           || operatorName == "-" || operatorName == "*" || operatorName == "/" || operatorName == "~~"
-           || operatorName == "!~~";
+    if (supportsEquality
+        && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedEqualityOperatorSignatures,
+                                           std::size(supportedEqualityOperatorSignatures)))
+    {
+        return true;
+    }
+    if (supportsOrdering
+        && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedOrderingOperatorSignatures,
+                                           std::size(supportedOrderingOperatorSignatures)))
+    {
+        return true;
+    }
+    if (supportsArithmetic
+        && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedArithmeticOperatorSignatures,
+                                           std::size(supportedArithmeticOperatorSignatures)))
+    {
+        return true;
+    }
+    return supportsLike
+           && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedLikeOperatorSignatures,
+                                              std::size(supportedLikeOperatorSignatures));
 }
 
 static constexpr PgFunctionSignature supportedScalarFunctions[] = {

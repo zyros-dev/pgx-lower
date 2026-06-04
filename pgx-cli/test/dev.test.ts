@@ -175,6 +175,9 @@ describe("dev commands", () => {
     expect(extensionCmake).toContain("pgx_lower_regress_unit");
     expect(extensionCmake).toContain("route-check");
     expect(extensionCmake).toContain("tests/unit-tests/sql");
+    expect(extensionCmake).toContain("test unit-sql");
+    expect(extensionCmake).not.toContain("npm --prefix");
+    expect(extensionCmake).not.toContain("dist/unit-sql.js");
   });
 
   test("dev gate batch runs diff-scoped checks", async () => {
