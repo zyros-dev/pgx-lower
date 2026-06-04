@@ -120,6 +120,33 @@ if(PG_REGRESS)
     )
 endif()
 
+if(PGX_LOWER_ENABLE_POSTGRES_REGRESS)
+    if(NOT PG_REGRESS)
+        message(FATAL_ERROR "PGX_LOWER_ENABLE_POSTGRES_REGRESS requires pg_regress")
+    endif()
+    find_program(PGX_CLI_EXECUTABLE pgx-cli)
+    if(NOT PGX_CLI_EXECUTABLE)
+        set(PGX_CLI_EXECUTABLE pgx-cli)
+    endif()
+    add_test(
+        NAME pgx_lower_psql_regression_burndown
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                ${PGX_CLI_EXECUTABLE}
+                test
+                psql-regression-burndown
+                --source ${CMAKE_SOURCE_DIR}/tests/psql-regression
+                --baseline ${CMAKE_SOURCE_DIR}/tests/psql-regression/baselines/current.txt
+                --output-dir ${CMAKE_SOURCE_DIR}/tests/psql-regression/results
+                --summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/psql-regression-burndown/summary.md
+                --route-summary ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/psql-regression-burndown/route-summary.md
+                --pg-regress ${PG_REGRESS}
+                --bindir ${_pg_bindir}
+                --dlpath ${PostgreSQL_PACKAGE_LIBRARY_DIR}
+    )
+endif()
+
 target_link_libraries(pgx_lower PRIVATE
     -Wl,--no-as-needed
     -Wl,--whole-archive
