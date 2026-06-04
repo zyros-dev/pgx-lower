@@ -100,7 +100,6 @@ Checks: >
   readability-misplaced-array-index,
   readability-named-parameter,
   readability-non-const-parameter,
-  readability-qualified-auto,
   readability-redundant-access-specifiers,
   readability-redundant-control-flow,
   readability-redundant-function-ptr-dereference,
@@ -132,6 +131,8 @@ HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external).)*$'
 #   `VAL`, producing unreviewable churn rather than useful cleanup.
 # - misc-const-correctness inserts east-const (`std::string const`), which does
 #   not match the surrounding pgx-lower style.
+# - readability-qualified-auto rewrites west-style `const auto ptr` to
+#   `auto* const ptr`; correct but noisy and against the repo's const style.
 # - modernize-return-braced-init-list breaks VarLen32 returns by turning explicit
 #   constructors into braced initializers that reject existing length conversions.
 # - PG/LLVM boundary code legitimately uses pointer reinterpretation, PG pointer

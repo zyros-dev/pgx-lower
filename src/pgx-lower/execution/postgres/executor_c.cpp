@@ -160,7 +160,7 @@ bool try_cpp_executor_direct(const QueryDesc* queryDesc) {
 
 PG_FUNCTION_INFO_V1(try_cpp_executor);
 Datum try_cpp_executor(PG_FUNCTION_ARGS) {
-    auto* const queryDesc = reinterpret_cast<QueryDesc*>(PG_GETARG_POINTER(0));
+    const auto queryDesc = reinterpret_cast<QueryDesc*>(PG_GETARG_POINTER(0));
     const bool result = try_cpp_executor_direct(queryDesc);
     PG_RETURN_BOOL(result);
 }

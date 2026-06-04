@@ -471,7 +471,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
                         continue;
                     }
 
-                    auto* const qualNode = static_cast<Node*>(lfirst(lc));
+                    const auto qualNode = static_cast<Node*>(lfirst(lc));
 
                     if (!qualNode) {
                         PGX_WARNING("Null qual node at index %d", i);
@@ -563,7 +563,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
                         continue;
                     }
 
-                    auto* const qualNode = static_cast<Node*>(lfirst(lc));
+                    const auto qualNode = static_cast<Node*>(lfirst(lc));
 
                     if (!qualNode) {
                         PGX_WARNING("Null qual node at index %d", i);

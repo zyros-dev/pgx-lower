@@ -134,7 +134,7 @@ bool JITEngine::execute(void* estate, void* dest) const {
     // directly; any crash surfaces as a test failure instead of being wrapped
     // in a PG-level exception.
 #ifdef POSTGRESQL_EXTENSION
-    auto* const saved_context = CurrentMemoryContext;
+    const auto saved_context = CurrentMemoryContext;
 
     PG_TRY();
     {

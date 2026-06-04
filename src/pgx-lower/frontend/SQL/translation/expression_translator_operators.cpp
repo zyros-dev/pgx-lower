@@ -189,7 +189,7 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
 
     for (int argIndex = 0; argIndex < op_expr->args->length && argIndex < 2; argIndex++) {
         const ListCell* lc = &op_expr->args->elements[argIndex];
-        if (auto* const argNode = static_cast<Node*>(lfirst(lc))) {
+        if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
             if (const mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                 if (argIndex == 0) {
                     lhs = argValue;

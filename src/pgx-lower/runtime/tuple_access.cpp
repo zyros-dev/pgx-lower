@@ -271,7 +271,7 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
             return -1;
         }
 
-        auto* const tupdesc = RelationGetDescr(rel);
+        const auto tupdesc = RelationGetDescr(rel);
         int32_t attnum = -1;
 
         for (int i = 0; i < tupdesc->natts; i++) {
@@ -388,7 +388,7 @@ extern "C" void* open_postgres_table(const char* tableName) {
 
         CommandCounterIncrement();
 
-        if (auto* const currentSnapshot = GetActiveSnapshot()) {
+        if (const auto currentSnapshot = GetActiveSnapshot()) {
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Updating scan with fresh snapshot xmin=%u, xmax=%u",
                     currentSnapshot->xmin, currentSnapshot->xmax);
             handle->scanDesc->rs_snapshot = currentSnapshot;
@@ -684,7 +684,7 @@ static bool process_computed_results_for_streaming() {
         return false;
     }
 
-    auto* const slot = g_tuple_streamer.slot;
+    const auto slot = g_tuple_streamer.slot;
     const MemoryContext oldContext = CurrentMemoryContext;
 
     const MemoryContext destContext = setup_processing_memory_context(slot);
@@ -799,17 +799,17 @@ get_string_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null, int
     // This avoids redundant TupleDesc access since caller already has the type OID
     switch (type_oid) {
     case TEXTOID: {
-        auto* const pg_text = DatumGetTextPP(value);
+        const auto pg_text = DatumGetTextPP(value);
         *length = VARSIZE_ANY_EXHDR(pg_text);
         return VARDATA_ANY(pg_text);
     }
     case VARCHAROID: {
-        auto* const pg_varchar = DatumGetVarCharPP(value);
+        const auto pg_varchar = DatumGetVarCharPP(value);
         *length = VARSIZE_ANY_EXHDR(pg_varchar);
         return VARDATA_ANY(pg_varchar);
     }
     case BPCHAROID: {
-        auto* const pg_bpchar = DatumGetBpCharPP(value);
+        const auto pg_bpchar = DatumGetBpCharPP(value);
         *length = VARSIZE_ANY_EXHDR(pg_bpchar);
         return VARDATA_ANY(pg_bpchar);
     }
