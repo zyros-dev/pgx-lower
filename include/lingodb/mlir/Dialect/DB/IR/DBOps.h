@@ -12,9 +12,14 @@
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/ArrayRef.h"
 
 #define GET_OP_CLASSES
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h.inc"
+namespace mlir::db {
+PgNullability combineSqlNullability(mlir::ValueRange values);
+PgNullability combineSqlNullability(llvm::ArrayRef<mlir::Type> types);
+} // namespace mlir::db
 mlir::Type getBaseType(mlir::Type t);
 bool isIntegerType(mlir::Type, unsigned int width);
 int getIntegerWidth(mlir::Type, bool isUnSigned);

@@ -16,11 +16,23 @@ using namespace mlir;
 bool mlir::db::CmpOp::isEqualityPred() { return getPredicate() == mlir::db::DBCmpPredicate::eq; }
 bool mlir::db::CmpOp::isLessPred(bool eq) { return getPredicate() == (eq ? mlir::db::DBCmpPredicate::lte : mlir::db::DBCmpPredicate::lt); }
 bool mlir::db::CmpOp::isGreaterPred(bool eq) { return getPredicate() == (eq ? mlir::db::DBCmpPredicate::gte : mlir::db::DBCmpPredicate::gt); }
+static bool isPgValue(mlir::Type type) {
+    return mlir::db::isPgValueType(type);
+}
+static bool isPgValue(mlir::Value value) {
+    return isPgValue(value.getType());
+}
+static bool hasPgValue(mlir::ValueRange values) {
+    return llvm::any_of(values, [](mlir::Value value) { return isPgValue(value); });
+}
 static Type wrapNullableType(MLIRContext* context, Type type, ValueRange values) {
    if (llvm::any_of(values, [](Value v) { return v.getType().isa<mlir::db::NullableType>(); })) {
       return mlir::db::NullableType::get(type);
    }
    return type;
+}
+static Type inferLegacyLogicalResultType(MLIRContext* context, ValueRange values) {
+    return wrapNullableType(context, IntegerType::get(context, 1), values);
 }
 mlir::Type getBaseType(mlir::Type t) {
    if (auto nullableT = t.dyn_cast_or_null<mlir::db::NullableType>()) {
@@ -39,7 +51,74 @@ int getIntegerWidth(mlir::Type type, bool isUnSigned) {
    }
    return 0;
 }
+mlir::db::PgNullability mlir::db::combineSqlNullability(mlir::ValueRange values) {
+    llvm::SmallVector<mlir::Type> types;
+    types.reserve(values.size());
+    for (mlir::Value value : values) {
+        types.push_back(value.getType());
+    }
+    return combineSqlNullability(types);
+}
+mlir::db::PgNullability mlir::db::combineSqlNullability(llvm::ArrayRef<mlir::Type> types) {
+    for (mlir::Type type : types) {
+        if (mlir::db::isPgValueType(type) && mlir::db::getPgNullability(type) == mlir::db::PgNullability::Maybe) {
+            return mlir::db::PgNullability::Maybe;
+        }
+    }
+    return mlir::db::PgNullability::Never;
+}
+static bool isI1Type(mlir::Type type) {
+    auto intType = mlir::dyn_cast_or_null<mlir::IntegerType>(type);
+    return intType && intType.getWidth() == 1;
+}
+static bool isPgBoolType(mlir::Type type) {
+    return mlir::isa<mlir::db::PgBoolType>(type);
+}
+static bool isPgBoolWithNullability(mlir::Type type, mlir::db::PgNullability nullability) {
+    return isPgBoolType(type) && mlir::db::getPgNullability(type) == nullability;
+}
+static mlir::LogicalResult
+verifyPgValueResult(mlir::Operation* op, mlir::Type resultType, mlir::db::PgNullability nullability) {
+    if (!mlir::db::isPgValueType(resultType)) {
+        return op->emitOpError("requires a PostgreSQL semantic result type for PostgreSQL operands");
+    }
+    if (mlir::db::getPgNullability(resultType) != nullability) {
+        return op->emitOpError("result PostgreSQL nullability does not match operand nullability");
+    }
+    return mlir::success();
+}
+static mlir::LogicalResult
+verifyPgBoolResult(mlir::Operation* op, mlir::Type resultType, mlir::db::PgNullability nullability) {
+    if (!isPgBoolType(resultType)) {
+        return op->emitOpError("requires a PostgreSQL boolean result type for PostgreSQL operands");
+    }
+    if (mlir::db::getPgNullability(resultType) != nullability) {
+        return op->emitOpError("result PostgreSQL boolean nullability does not match operand nullability");
+    }
+    return mlir::success();
+}
+static mlir::LogicalResult verifyLegacyBoolResult(mlir::Operation* op, mlir::Type resultType) {
+    if (isI1Type(resultType) || mlir::isa<mlir::db::NullableType>(resultType)) {
+        return mlir::success();
+    }
+    return op->emitOpError("requires i1, legacy nullable, or PostgreSQL boolean result type");
+}
+static mlir::LogicalResult verifyBinarySqlValueOp(mlir::Operation* op) {
+    if (!hasPgValue(op->getOperands())) {
+        return mlir::success();
+    }
+    return verifyPgValueResult(op, op->getResult(0).getType(), mlir::db::combineSqlNullability(op->getOperands()));
+}
+static mlir::LogicalResult verifyLogicalSqlValueOp(mlir::Operation* op) {
+    if (!hasPgValue(op->getOperands())) {
+        return verifyLegacyBoolResult(op, op->getResult(0).getType());
+    }
+    return verifyPgBoolResult(op, op->getResult(0).getType(), mlir::db::combineSqlNullability(op->getOperands()));
+}
 LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+    if (hasPgValue(operands)) {
+        return failure();
+    }
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -59,6 +138,9 @@ LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> loca
    return success();
 }
 LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+    if (hasPgValue(operands)) {
+        return failure();
+    }
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -77,6 +159,9 @@ LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> l
    return success();
 }
 LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+    if (hasPgValue(operands)) {
+        return failure();
+    }
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -149,6 +234,87 @@ bool mlir::db::DivOp::supportsInvalidValues() {
 }
 bool mlir::db::ModOp::supportsInvalidValues() {
     return binaryOpSupportsInvalidValues(getLeft().getType());
+}
+
+LogicalResult mlir::db::ConstantOp::verify() {
+    mlir::Type resultType = getResult().getType();
+    if (mlir::db::isPgValueType(resultType) && mlir::db::getPgNullability(resultType) != mlir::db::PgNullability::Never)
+    {
+        return emitOpError("PostgreSQL constants must use a non-null PostgreSQL result type");
+    }
+    return success();
+}
+
+LogicalResult mlir::db::NullOp::verify() {
+    mlir::Type resultType = getRes().getType();
+    if (auto nullableType = mlir::dyn_cast_or_null<mlir::db::NullableType>(resultType)) {
+        if (mlir::db::isPgValueType(nullableType.getType())) {
+            return emitOpError("must not wrap a PostgreSQL semantic type in db.nullable");
+        }
+        return success();
+    }
+    if (!mlir::db::isPgValueType(resultType)) {
+        return emitOpError("requires a legacy nullable or nullable PostgreSQL result type");
+    }
+    if (mlir::db::getPgNullability(resultType) != mlir::db::PgNullability::Maybe) {
+        return emitOpError("PostgreSQL nulls must use a nullable PostgreSQL result type");
+    }
+    return success();
+}
+
+LogicalResult mlir::db::IsNullOp::verify() {
+    mlir::Type valueType = getVal().getType();
+    mlir::Type resultType = getResult().getType();
+    if (mlir::db::isPgValueType(valueType)) {
+        if (!isPgBoolWithNullability(resultType, mlir::db::PgNullability::Never)) {
+            return emitOpError("over a PostgreSQL value requires non-null !db.pg_bool result type");
+        }
+        return success();
+    }
+    return verifyLegacyBoolResult(*this, resultType);
+}
+
+LogicalResult mlir::db::CastOp::verify() {
+    mlir::Type valueType = getVal().getType();
+    if (!mlir::db::isPgValueType(valueType)) {
+        return success();
+    }
+    return verifyPgValueResult(*this, getResult().getType(), mlir::db::getPgNullability(valueType));
+}
+
+LogicalResult mlir::db::AddOp::verify() {
+    return verifyBinarySqlValueOp(*this);
+}
+LogicalResult mlir::db::SubOp::verify() {
+    return verifyBinarySqlValueOp(*this);
+}
+LogicalResult mlir::db::MulOp::verify() {
+    return verifyBinarySqlValueOp(*this);
+}
+LogicalResult mlir::db::DivOp::verify() {
+    return verifyBinarySqlValueOp(*this);
+}
+LogicalResult mlir::db::ModOp::verify() {
+    return verifyBinarySqlValueOp(*this);
+}
+
+LogicalResult mlir::db::CmpOp::verify() {
+    return verifyLogicalSqlValueOp(*this);
+}
+LogicalResult mlir::db::BetweenOp::verify() {
+    return verifyLogicalSqlValueOp(*this);
+}
+LogicalResult mlir::db::OneOfOp::verify() {
+    return verifyLogicalSqlValueOp(*this);
+}
+LogicalResult mlir::db::AndOp::verify() {
+    return verifyLogicalSqlValueOp(*this);
+}
+LogicalResult mlir::db::OrOp::verify() {
+    return verifyLogicalSqlValueOp(*this);
+}
+LogicalResult mlir::db::NotOp::verify() {
+    return verifyLogicalSqlValueOp(*this);
 }
 
 LogicalResult mlir::db::OrOp::canonicalize(mlir::db::OrOp orOp, mlir::PatternRewriter& rewriter) {
