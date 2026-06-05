@@ -45,6 +45,13 @@ class DB_Type<string name, string typeMnemonic> : TypeDef<DB_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
+def DB_PgNullability_Never : I64EnumAttrCase<"Never", 0, "never">;
+def DB_PgNullability_Maybe : I64EnumAttrCase<"Maybe", 1, "maybe">;
+def DB_PgNullabilityAttr : I64EnumAttr<"PgNullability", "",
+        [DB_PgNullability_Never, DB_PgNullability_Maybe]> {
+    let cppNamespace = "::mlir::db";
+}
+
 def NullableType : DB_Type<"Nullable","nullable"> {
     let summary = "nullable";
 
@@ -121,6 +128,119 @@ def DB_StringType : DB_Type<"String","string"> {
     let summary = "string";
     let description = [{
         Variable-length string.
+    }];
+}
+
+class DB_PgType<string name, string typeMnemonic> : DB_Type<name, typeMnemonic> {
+    let hasCustomAssemblyFormat = 1;
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+class DB_PgNoMetadataType<string name, string typeMnemonic> : DB_PgType<name, typeMnemonic> {
+    let parameters = (ins "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins), [{
+            return $_get($_ctxt, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        int32_t getTypmod() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgBoolType : DB_PgNoMetadataType<"PgBool", "pg_bool">;
+def DB_PgInt2Type : DB_PgNoMetadataType<"PgInt2", "pg_int2">;
+def DB_PgInt4Type : DB_PgNoMetadataType<"PgInt4", "pg_int4">;
+def DB_PgInt8Type : DB_PgNoMetadataType<"PgInt8", "pg_int8">;
+def DB_PgFloat4Type : DB_PgNoMetadataType<"PgFloat4", "pg_float4">;
+def DB_PgFloat8Type : DB_PgNoMetadataType<"PgFloat8", "pg_float8">;
+def DB_PgDateType : DB_PgNoMetadataType<"PgDate", "pg_date">;
+
+def DB_PgNumericType : DB_PgType<"PgNumeric", "pg_numeric"> {
+    let parameters = (ins "int32_t":$typmod, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod), [{
+            return $_get($_ctxt, typmod, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgTimestampType : DB_PgType<"PgTimestamp", "pg_timestamp"> {
+    let parameters = (ins "int32_t":$typmod, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod), [{
+            return $_get($_ctxt, typmod, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgIntervalType : DB_PgType<"PgInterval", "pg_interval"> {
+    let parameters = (ins "int32_t":$typmod, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod), [{
+            return $_get($_ctxt, typmod, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgTextType : DB_PgType<"PgText", "pg_text"> {
+    let parameters = (ins "PgOid":$collation, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "PgOid":$collation), [{
+            return $_get($_ctxt, collation, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        int32_t getTypmod() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgVarcharType : DB_PgType<"PgVarchar", "pg_varchar"> {
+    let parameters = (ins "int32_t":$typmod, "PgOid":$collation, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod, "PgOid":$collation), [{
+            return $_get($_ctxt, typmod, collation, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgBpcharType : DB_PgType<"PgBpchar", "pg_bpchar"> {
+    let parameters = (ins "int32_t":$typmod, "PgOid":$collation, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod, "PgOid":$collation), [{
+            return $_get($_ctxt, typmod, collation, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        ::mlir::Type getPhysicalCarrierType() const;
     }];
 }
 
