@@ -244,7 +244,7 @@ def DB_PgBpcharType : DB_PgType<"PgBpchar", "pg_bpchar"> {
     }];
 }
 
-def AnyBool: AnyTypeOf<[I1,NullableType]>;
+def AnyBool: AnyTypeOf<[I1,NullableType,DB_PgBoolType]>;
 def NullableDBType: AnyTypeOf<[AnyType,NullableType]>;
 
 def DB_ConstantOp : DB_Op<"constant", [Pure]> {
@@ -253,6 +253,7 @@ def DB_ConstantOp : DB_Op<"constant", [Pure]> {
     let arguments = (ins AnyAttr:$value);
     let results = (outs AnyType:$result);
     let assemblyFormat = "`(` $value `)` `:` type($result) attr-dict";
+    let hasVerifier = 1;
 
     let extraClassDeclaration = [{
         Attribute getConstantValue() { return (*this)->getAttr("value"); }
@@ -262,8 +263,9 @@ def DB_ConstantOp : DB_Op<"constant", [Pure]> {
 def DB_NullOp : DB_Op<"null", [Pure]> {
     let summary = "Create null value";
 
-    let results = (outs NullableType:$res);
+    let results = (outs AnyType:$res);
     let assemblyFormat = "`:` type($res) attr-dict";
+    let hasVerifier = 1;
 }
 
 def DB_DeriveTruth : DB_Op<"derive_truth", [Pure]> {
@@ -285,9 +287,15 @@ def DB_AsNullableOp : DB_Op<"as_nullable", [Pure]> {
 def DB_IsNullOp : DB_Op<"isnull", [Pure]> {
     let summary = "Indicate whether a nullable value is null";
 
-    let arguments = (ins NullableType:$val);
-    let results = (outs I1:$result);
-    let assemblyFormat = "$val `:` type($val) attr-dict";
+    let arguments = (ins AnyType:$val);
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "$val `:` type($val) `->` type($result) attr-dict";
+    let builders = [
+        OpBuilder<(ins "Value":$val), [{
+            build($_builder, $_state, $_builder.getI1Type(), val);
+        }]>
+    ];
+    let hasVerifier = 1;
 }
 
 def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
@@ -327,8 +335,15 @@ def DB_Hash : DB_Op<"hash", [Pure]> {
 
 class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_MaySupportInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
+            !listconcat(traits, [Pure,DB_NeedsNullWrap,DB_MaySupportInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
     let results = (outs AnyType:$result);
+    let hasVerifier = 1;
+    let extraClassDeclaration = [{
+        static LogicalResult inferReturnTypes(
+        MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
+        DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
+        SmallVectorImpl<Type>& inferredReturnTypes);
+    }];
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(
         MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
@@ -337,7 +352,7 @@ class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
             return inferReturnType(context,location,operands,inferredReturnTypes);
         }
     }];
-    let assemblyFormat = "$left `:` type($left) `,` $right `:` type($right) attr-dict";
+    let assemblyFormat = "$left `:` type($left) `,` $right `:` type($right) `->` type($result) attr-dict";
 }
 
 def DB_AddOp : DB_BinaryOp<"add"> {
@@ -385,16 +400,9 @@ def DB_ModOp : DB_BinaryOp<"mod"> {
 
 class DB_LogicalOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>])> {
-    let results = (outs AnyBool:$res);
-    let extraClassDefinition = [{
-        LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, std::optional<mlir::Location>, ValueRange operands,
-                DictionaryAttr, OpaqueProperties, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
-            mlir::Type i1 = IntegerType::get(context, 1);
-            inferredReturnTypes.assign({wrapNullableType(context, i1, operands)});
-            return success();
-        }
-    }];
+            !listconcat(traits, [Pure])> {
+    let results = (outs AnyType:$res);
+    let hasVerifier = 1;
 }
 
 def DB_CMP_P_EQ  : I64EnumAttrCase<"eq", 0>;
@@ -413,7 +421,12 @@ def DB_CmpOp : DB_LogicalOp<"compare",
     let summary = "Compare int/Decimal/String";
 
     let arguments = (ins DB_CmpPredicateAttr:$predicate, NullableDBType:$left, NullableDBType:$right);
-    let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) attr-dict";
+    let builders = [
+        OpBuilder<(ins "DBCmpPredicate":$predicate, "Value":$left, "Value":$right), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), ValueRange({left, right})), predicate, left, right);
+        }]>
+    ];
+    let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) `->` type($res) attr-dict";
 }
 
 def DB_BetweenOp : DB_LogicalOp<"between",[DB_NeedsNullWrap]> {
@@ -423,7 +436,12 @@ def DB_BetweenOp : DB_LogicalOp<"between",[DB_NeedsNullWrap]> {
     }];
 
     let arguments = (ins NullableDBType:$val, NullableDBType:$lower, NullableDBType:$upper, I1Attr:$lowerInclusive, I1Attr:$upperInclusive);
-    let assemblyFormat = "$val `:` type ($val) `between` $lower `:` type($lower) `,` $upper `:` type($upper) `,` `lowerInclusive` `:` $lowerInclusive `,` `upperInclusive` `:` $upperInclusive attr-dict";
+    let builders = [
+        OpBuilder<(ins "Value":$val, "Value":$lower, "Value":$upper, "bool":$lowerInclusive, "bool":$upperInclusive), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), ValueRange({val, lower, upper})), val, lower, upper, $_builder.getBoolAttr(lowerInclusive), $_builder.getBoolAttr(upperInclusive));
+        }]>
+    ];
+    let assemblyFormat = "$val `:` type ($val) `between` $lower `:` type($lower) `,` $upper `:` type($upper) `,` `lowerInclusive` `:` $lowerInclusive `,` `upperInclusive` `:` $upperInclusive `->` type($res) attr-dict";
 }
 
 def DB_OneOfOp : DB_LogicalOp<"oneof",[DB_NeedsNullWrap]> {
@@ -433,31 +451,52 @@ def DB_OneOfOp : DB_LogicalOp<"oneof",[DB_NeedsNullWrap]> {
     }];
 
     let arguments = (ins NullableDBType:$val,Variadic<NullableDBType>:$vals );
-    let assemblyFormat = "$val `:` type ($val) `?` $vals `:` type ($vals) attr-dict";
+    let builders = [
+        OpBuilder<(ins "ValueRange":$values), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), values), values.front(), values.drop_front());
+        }]>
+    ];
+    let assemblyFormat = "$val `:` type ($val) `?` $vals `:` type ($vals) `->` type($res) attr-dict";
 }
 
 def AndOp : DB_LogicalOp<"and"> {
     let summary = "Logical And";
 
     let arguments = (ins Variadic<AnyBool>: $vals);
+    let builders = [
+        OpBuilder<(ins "ValueRange":$vals), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), vals), vals);
+        }]>
+    ];
     let hasCanonicalizeMethod = 1;
-    let assemblyFormat = "$vals `:` type($vals) attr-dict";
+    let assemblyFormat = "$vals `:` type($vals) `->` type($res) attr-dict";
 }
 
 def OrOp : DB_LogicalOp<"or"> {
     let summary = "Logical Or";
 
     let arguments = (ins Variadic<AnyType>: $vals);
+    let builders = [
+        OpBuilder<(ins "ValueRange":$vals), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), vals), vals);
+        }]>
+    ];
     let hasCanonicalizeMethod = 1;
-    let assemblyFormat = "$vals `:` type($vals) attr-dict";
+    let assemblyFormat = "$vals `:` type($vals) `->` type($res) attr-dict";
 }
 
-def NotOp : DB_Op<"not", [Pure,SameOperandsAndResultType,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
+def NotOp : DB_Op<"not", [Pure,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
     let summary = "Logical Not";
 
     let arguments = (ins AnyBool: $val);
     let results = (outs AnyBool : $res);
-    let assemblyFormat = "$val `:` type($val) attr-dict";
+    let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
+    let builders = [
+        OpBuilder<(ins "Value":$val), [{
+            build($_builder, $_state, val.getType(), val);
+        }]>
+    ];
+    let hasVerifier = 1;
 }
 
 def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues]> {
@@ -466,6 +505,7 @@ def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues]> {
     let arguments = (ins NullableDBType:$val);
     let results = (outs NullableDBType:$res);
     let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
+    let hasVerifier = 1;
 }
 
 #endif// OPS
