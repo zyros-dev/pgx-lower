@@ -463,11 +463,35 @@ function isSetupStatement(sql: string): boolean {
 }
 
 function firstKeyword(sql: string): string {
-  const cleaned = sql.trimStart();
+  const cleaned = stripLeadingComments(sql);
   if (cleaned.startsWith("\\")) {
     return "\\";
   }
   return /^[A-Za-z_][A-Za-z0-9_]*/u.exec(cleaned)?.[0]?.toLowerCase() ?? "";
+}
+
+function stripLeadingComments(sql: string): string {
+  let i = 0;
+  while (i < sql.length) {
+    while (/\s/.test(sql[i] ?? "")) {
+      i++;
+    }
+    if (sql[i] === "-" && sql[i + 1] === "-") {
+      const end = sql.indexOf("\n", i + 2);
+      i = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+    if (sql[i] === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      if (end === -1) {
+        return sql.slice(i);
+      }
+      i = end + 2;
+      continue;
+    }
+    return sql.slice(i);
+  }
+  return "";
 }
 
 function extractRouteEvents(manifest: SqlManifest, output: string): RouteEvent[] {

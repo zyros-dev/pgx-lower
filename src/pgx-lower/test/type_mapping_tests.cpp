@@ -97,6 +97,9 @@ PGX_TEST_FN(type_mapping_frontend_reverse_mapper_rejects_raw_carriers) {
     EXPECT_OID_EQ(postgresql_ast::PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::Float64Type::get(&ctx())), InvalidOid);
     EXPECT_OID_EQ(postgresql_ast::PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::db::DecimalType::get(&ctx(), 10, 2)),
                   InvalidOid);
+    EXPECT_OID_EQ(postgresql_ast::PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::db::NullableType::get(
+                      &ctx(), mlir::db::PgInt4Type::get(&ctx(), mlir::db::PgNullability::Maybe))),
+                  InvalidOid);
     PG_RETURN_VOID();
 }
 

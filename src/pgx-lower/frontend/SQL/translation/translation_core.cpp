@@ -84,7 +84,10 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
 
 Oid PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::Type mlir_type) {
     if (const auto nullable_type = mlir::dyn_cast<mlir::db::NullableType>(mlir_type)) {
-        mlir_type = nullable_type.getType();
+        if (mlir::db::isPgValueType(nullable_type.getType())) {
+            PGX_WARNING("Legacy NullableType cannot define PostgreSQL identity for PG semantic payloads");
+            return InvalidOid;
+        }
     }
 
     if (mlir::db::isPgValueType(mlir_type)) {
