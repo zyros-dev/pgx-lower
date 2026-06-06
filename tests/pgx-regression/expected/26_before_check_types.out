@@ -6,20 +6,20 @@ LOAD 'pgx_lower.so';
 DROP TABLE IF EXISTS type_test_table;
 NOTICE:  table "type_test_table" does not exist, skipping
 CREATE TABLE type_test_table (
-    bool_col BOOLEAN,           -- BOOLOID 16
-    int2_col SMALLINT,          -- INT2OID 21
-    int4_col INTEGER,           -- INT4OID 23
-    int8_col BIGINT,            -- INT8OID 20
-    float4_col REAL,            -- FLOAT4OID 700
-    float8_col DOUBLE PRECISION, -- FLOAT8OID 701
-    string_col VARCHAR(100),    -- VARCHAROID 1043
-    char_col CHAR(10),          -- BPCHAROID 1042
-    text_col TEXT,              -- TEXTOID 25
-    decimal_col DECIMAL(10, 2), -- NUMERICOID 1700
-    numeric_col NUMERIC(15, 5), -- NUMERICOID 1700
-    date_col DATE,              -- DATEOID 1082
-    timestamp_col TIMESTAMP,    -- TIMESTAMPOID 1114
-    interval_col INTERVAL       -- INTERVALOID 1186
+    bool_col BOOLEAN,
+    int2_col SMALLINT,
+    int4_col INTEGER,
+    int8_col BIGINT,
+    float4_col REAL,
+    float8_col DOUBLE PRECISION,
+    string_col VARCHAR(100),
+    char_col CHAR(10),
+    text_col TEXT,
+    decimal_col DECIMAL(10, 2),
+    numeric_col NUMERIC(15, 5),
+    date_col DATE,
+    timestamp_col TIMESTAMP,
+    interval_col INTERVAL
 );
 INSERT INTO type_test_table VALUES
     (true, 100, 1000, 100000, 3.14, 3.14159265359, 'hello', 'fixed     ', 'longer text here', 1245.67, 9865.43210, '2024-01-15', '2024-01-15 10:30:00', INTERVAL '5 days'),

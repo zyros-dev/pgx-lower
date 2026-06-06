@@ -403,6 +403,18 @@ static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
                                         exprType(const_cast<Node*>(rhs)));
 }
 
+static auto scalarArrayOperatorSignatureIsLowerable(const Oid operatorOid, const Oid lhsType, const Oid rhsType) -> bool {
+    const char* name = get_opname(operatorOid);
+    if (!name) {
+        return false;
+    }
+    const auto supportsEquality = operatorNameMatchesAny(name, equalityOperatorNames, std::size(equalityOperatorNames));
+    pfree(const_cast<char*>(name));
+    return supportsEquality
+           && operatorTypeSignatureMatchesAny(BOOLOID, lhsType, rhsType, supportedEqualityOperatorSignatures,
+                                              std::size(supportedEqualityOperatorSignatures));
+}
+
 static auto scalarArrayElementType(const Node* rightNode) -> Oid {
     if (!rightNode) {
         return InvalidOid;
@@ -752,7 +764,7 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
         const auto leftType = leftNode ? exprType(const_cast<Node*>(leftNode)) : InvalidOid;
         if (!operatorCatalogMatches(scalarArray->opno, BOOLOID, leftType, elementType)
-            || !operatorSignatureIsLowerable(scalarArray->opno, BOOLOID, leftType, elementType))
+            || !scalarArrayOperatorSignatureIsLowerable(scalarArray->opno, leftType, elementType))
         {
             result.addUnsupportedReason(
                 UnsupportedReasonKind::unsupported_operator,

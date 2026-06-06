@@ -1,6 +1,10 @@
 #ifndef PGX_LOWER_CONSTANTS_H
 #define PGX_LOWER_CONSTANTS_H
 
+#include "postgres_ext.h"
+#include "catalog/pg_type_d.h"
+#include "utils/fmgroids.h"
+
 namespace pgx_lower::frontend::sql::constants {
 
 // =============================================================================
@@ -21,8 +25,7 @@ constexpr auto INVALID_TYPMOD = -1;
 
 constexpr auto INVALID_VARNO = 0;
 constexpr auto INVALID_VARATTNO = 0;
-constexpr Oid PG_TEXT_ARRAY_OID = 1009;
-constexpr Oid FIRST_NORMAL_OBJECT_ID = 16384;
+constexpr Oid PG_TEXT_ARRAY_OID = TEXTARRAYOID;
 
 constexpr auto BOOL_AND_EXPR = 0;
 constexpr auto BOOL_OR_EXPR = 1;
@@ -63,8 +66,8 @@ constexpr auto TIMESTAMP_PRECISION_NANO_MAX = 9;
 // =============================================================================
 
 // Aggregate Function OIDs
-constexpr auto PG_COUNT_ANY_OID = 2147; // COUNT(*)
-constexpr auto PG_COUNT_OID = 2803; // COUNT(expr)
+constexpr Oid PG_COUNT_ANY_OID = F_COUNT_ANY;
+constexpr Oid PG_COUNT_OID = F_COUNT_;
 
 constexpr auto UNIT_TEST_TABLE_PREFIX = "test_table_";
 constexpr auto FALLBACK_TABLE_PREFIX = "table_";

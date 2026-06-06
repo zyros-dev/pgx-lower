@@ -1032,13 +1032,13 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
               typeConstant = mlir::db::getPgTypeOid(type);
           }
       } else if (isIntegerType(type, 1)) {
-          typeConstant = BOOLOID; // PostgreSQL bool OID = 16
+          typeConstant = BOOLOID;
       } else if (auto intWidth = getIntegerWidth(type, false)) {
           switch (intWidth) {
-          case 8: typeConstant = INT2OID; break; // 8-bit maps to INT2 (OID 21)
-          case 16: typeConstant = INT2OID; break; // 16-bit is INT2 (OID 21)
-          case 32: typeConstant = INT4OID; break; // 32-bit is INT4 (OID 23)
-          case 64: typeConstant = INT8OID; break; // 64-bit is INT8 (OID 20)
+          case 8: typeConstant = INT2OID; break;
+          case 16: typeConstant = INT2OID; break;
+          case 32: typeConstant = INT4OID; break;
+          case 64: typeConstant = INT8OID; break;
           }
       } else if (auto uIntWidth = getIntegerWidth(type, true)) {
           // PostgreSQL doesn't have unsigned types, map to signed equivalents
@@ -1049,14 +1049,14 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
           case 64: typeConstant = INT8OID; break; // Map to INT8
           }
       } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
-          typeConstant = NUMERICOID; // PostgreSQL numeric OID = 1700
+          typeConstant = NUMERICOID;
           param1 = decimalType.getP();
           param2 = decimalType.getS();
       } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
           switch (floatType.getWidth()) {
           case 16: typeConstant = FLOAT4OID; break; // Map half to float4
-          case 32: typeConstant = FLOAT4OID; break; // float4 OID = 700
-          case 64: typeConstant = FLOAT8OID; break; // float8 OID = 701
+          case 32: typeConstant = FLOAT4OID; break;
+          case 64: typeConstant = FLOAT8OID; break;
           }
       } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
           typeConstant = TEXTOID;

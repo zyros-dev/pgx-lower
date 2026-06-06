@@ -2,6 +2,7 @@ extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_operator_d.h"
 #include "catalog/pg_type.h"
 #include "nodes/primnodes.h"
 #include "utils/builtins.h"
@@ -53,7 +54,6 @@ extern "C" {
 
 namespace {
 
-constexpr Oid kInt4EqOperator = 96;
 constexpr auto kTypmodUnconstrained = -1;
 
 struct Fixture {
@@ -203,7 +203,7 @@ PGX_TEST_FN(pg_sql_expression_scalar_array_returns_sql_pg_bool) {
 
     auto scalarArray = ScalarArrayOpExpr{};
     scalarArray.xpr.type = T_ScalarArrayOpExpr;
-    scalarArray.opno = kInt4EqOperator;
+    scalarArray.opno = Int4EqualOperator;
     scalarArray.useOr = true;
     scalarArray.args = list_make2(&lhs, &arrayExpr);
 

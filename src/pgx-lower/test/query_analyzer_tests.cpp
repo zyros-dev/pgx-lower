@@ -24,8 +24,6 @@ extern "C" {
 
 namespace {
 
-constexpr Oid kInt4EqOperator = 96;
-
 auto makeIntConst() -> Const {
     auto value = Const{};
     value.xpr.type = T_Const;
@@ -160,7 +158,7 @@ PGX_TEST_FN(query_analyzer_accepts_scalar_array_op_expr) {
 
     auto scalarArray = ScalarArrayOpExpr{};
     scalarArray.xpr.type = T_ScalarArrayOpExpr;
-    scalarArray.opno = kInt4EqOperator;
+    scalarArray.opno = Int4EqualOperator;
     scalarArray.opfuncid = InvalidOid;
     scalarArray.useOr = true;
     scalarArray.inputcollid = InvalidOid;
@@ -168,6 +166,30 @@ PGX_TEST_FN(query_analyzer_accepts_scalar_array_op_expr) {
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
     REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_scalar_array_ordering_operator) {
+    auto lhs = makeIntConst();
+    auto elem1 = makeIntConst();
+    auto elem2 = makeIntConst();
+    auto arrayExpr = ArrayExpr{};
+    arrayExpr.xpr.type = T_ArrayExpr;
+    arrayExpr.array_typeid = INT4ARRAYOID;
+    arrayExpr.element_typeid = INT4OID;
+    arrayExpr.elements = list_make2(&elem1, &elem2);
+
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = Int4LessOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = InvalidOid;
+    scalarArray.args = list_make2(&lhs, &arrayExpr);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
     PG_RETURN_VOID();
 }
 

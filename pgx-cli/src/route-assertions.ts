@@ -226,7 +226,7 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
     const ch = sql[i];
     const next = sql[i + 1];
 
-    if (ch === "\\" && current.trim() === "") {
+    if (ch === "\\" && sqlPrefixIsOnlyWhitespaceAndComments(current)) {
       const end = sql.indexOf("\n", i);
       const statement = (end === -1 ? sql.slice(i) : sql.slice(i, end)).trim();
       if (statement) {
@@ -275,9 +275,10 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
       }
       const directiveMatch = directiveRe.exec(text.trim());
       if (directiveMatch) {
-        if (current.trim()) {
+        if (!sqlPrefixIsOnlyWhitespaceAndComments(current)) {
           throw new RouteConfigError(`${path}: route directive appears in the middle of a statement`);
         }
+        current = "";
         items.push({ kind: "directive", text: text.trim() });
       } else {
         current += text;
@@ -298,11 +299,36 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
     }
   }
 
-  if (current.trim()) {
+  if (current.trim() && !sqlPrefixIsOnlyWhitespaceAndComments(current)) {
     items.push({ kind: "statement", text: current.trim() });
   }
 
   return items;
+}
+
+function sqlPrefixIsOnlyWhitespaceAndComments(text: string): boolean {
+  let i = 0;
+  while (i < text.length) {
+    if (/\s/.test(text[i] ?? "")) {
+      i++;
+      continue;
+    }
+    if (text[i] === "-" && text[i + 1] === "-") {
+      const end = text.indexOf("\n", i + 2);
+      i = end === -1 ? text.length : end + 1;
+      continue;
+    }
+    if (text[i] === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      if (end === -1) {
+        return false;
+      }
+      i = end + 2;
+      continue;
+    }
+    return false;
+  }
+  return true;
 }
 
 function parseDirective(text: string, path: string): StatementDirective {

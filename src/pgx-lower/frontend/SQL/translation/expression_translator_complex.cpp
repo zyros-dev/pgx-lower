@@ -406,6 +406,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
     auto arrayElements = std::vector<mlir::Value>{};
+    bool hasNullArrayElement = false;
 
     if (nodeTag(rightNode) == T_ArrayExpr) {
         const auto arrayExpr = reinterpret_cast<ArrayExpr*>(rightNode);
@@ -413,7 +414,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             ListCell* lc = nullptr;
             foreach (lc, elements) {
                 const auto elemNode = static_cast<Node*>(lfirst(lc));
-                if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode))) {
+                if (nodeTag(elemNode) == T_Const && reinterpret_cast<Const*>(elemNode)->constisnull) {
+                    hasNullArrayElement = true;
+                } else if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode))) {
                     arrayElements.push_back(elemValue);
                 }
             }
@@ -428,7 +431,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             deconstruct_array(array, INT4OID, sizeof(int32), true, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i{}; i < nitems; i++) {
-                if (!nulls || !nulls[i]) {
+                if (nulls && nulls[i]) {
+                    hasNullArrayElement = true;
+                } else {
                     auto elemConst = Const{};
                     elemConst.xpr.type = T_Const;
                     elemConst.consttype = INT4OID;
@@ -450,7 +455,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i{}; i < nitems; i++) {
-                if (!nulls || !nulls[i]) {
+                if (nulls && nulls[i]) {
+                    hasNullArrayElement = true;
+                } else {
                     const auto textValue = DatumGetTextP(values[i]);
                     std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
 
@@ -471,7 +478,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             deconstruct_array(array, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
 
             for (int i{}; i < nitems; i++) {
-                if (!nulls || !nulls[i]) {
+                if (nulls && nulls[i]) {
+                    hasNullArrayElement = true;
+                } else {
                     const auto bpcharValue = DatumGetBpCharP(values[i]);
                     std::string str_value(VARDATA_ANY(bpcharValue), VARSIZE_ANY_EXHDR(bpcharValue));
 
@@ -601,7 +610,17 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         throw std::runtime_error("Unsupported ScalarArrayOpExpr operand type");
     }
 
+    const auto nullableBoolType = [&]() -> mlir::Type {
+        if (mlir::db::isPgValueType(leftValue.getType())) {
+            return mlir::db::PgBoolType::get(ctx.builder.getContext(), mlir::db::PgNullability::Maybe);
+        }
+        return mlir::db::NullableType::get(ctx.builder.getContext(), ctx.builder.getI1Type());
+    };
+
     if (arrayElements.empty()) {
+        if (hasNullArrayElement) {
+            return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableBoolType());
+        }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Empty array in IN clause, returning %s",
                 scalar_array_op->useOr ? "false" : "true");
         if (mlir::db::isPgValueType(leftValue.getType())) {
@@ -662,9 +681,8 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::neq,
                                                       normalizedLeft, normalizedElem);
         } else {
-            PGX_WARNING("Unsupported operator '%s' in ScalarArrayOpExpr, defaulting to equality", op.c_str());
-            cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                      normalizedLeft, normalizedElem);
+            PGX_ERROR("Unsupported operator '%s' in ScalarArrayOpExpr const array", op.c_str());
+            throw std::runtime_error("Unsupported ScalarArrayOpExpr operator");
         }
 
         cmp = pgx_lower::frontend::sql::derive_truth_if_needed(ctx.builder, cmp);
@@ -682,6 +700,18 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
                     ctx.builder.getUnknownLoc(), pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, values),
                     values);
             }
+        }
+    }
+
+    if (hasNullArrayElement) {
+        auto nullValue = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableBoolType());
+        llvm::SmallVector<mlir::Value, 2> values{result, nullValue};
+        if (scalar_array_op->useOr) {
+            result = ctx.builder.create<mlir::db::OrOp>(
+                ctx.builder.getUnknownLoc(), pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, values), values);
+        } else {
+            result = ctx.builder.create<mlir::db::AndOp>(
+                ctx.builder.getUnknownLoc(), pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, values), values);
         }
     }
 
