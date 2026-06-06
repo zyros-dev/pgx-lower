@@ -226,6 +226,17 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
     const ch = sql[i];
     const next = sql[i + 1];
 
+    if (ch === "\\" && current.trim() === "") {
+      const end = sql.indexOf("\n", i);
+      const statement = (end === -1 ? sql.slice(i) : sql.slice(i, end)).trim();
+      if (statement) {
+        items.push({ kind: "statement", text: statement });
+      }
+      current = "";
+      i = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+
     if (ch === "'") {
       const [text, end] = readSingleQuoted(sql, i);
       current += text;

@@ -88,6 +88,30 @@ auto find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) -> void {
             find_all_aggrefs(arg, result);
         }
     }
+
+    if (IsA(expr, NullTest)) {
+        const auto* null_test = reinterpret_cast<NullTest*>(expr);
+        find_all_aggrefs(null_test->arg, result);
+    }
+
+    if (IsA(expr, CoalesceExpr)) {
+        const auto* coalesce_expr = reinterpret_cast<CoalesceExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, coalesce_expr->args) {
+            auto* arg = static_cast<Expr*>(lfirst(lc));
+            find_all_aggrefs(arg, result);
+        }
+    }
+
+    if (IsA(expr, RelabelType)) {
+        const auto* relabel = reinterpret_cast<RelabelType*>(expr);
+        find_all_aggrefs(relabel->arg, result);
+    }
+
+    if (IsA(expr, CoerceViaIO)) {
+        const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
+        find_all_aggrefs(coerce->arg, result);
+    }
 }
 
 auto getAggregateFunction(const std::string& funcName) -> mlir::relalg::AggrFunc {
@@ -264,6 +288,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
     auto needs_post_processing = std::set<int>();
     auto post_process_exprs = std::map<int, Expr*>();
+    auto post_process_types = std::map<int, mlir::Type>();
 
     auto process_single_aggregate = [&](const Aggref* aggref, const char* resname = nullptr) -> void {
         char* rawFuncName = get_func_name(aggref->aggfnoid);
@@ -507,6 +532,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 auto postCtx = create_child_context_with_var_mappings(
                     QueryCtxT::createChildContext(ctx, mapBuilder, mapBlock->getArgument(0)), agg_mappings);
                 auto post_value = translate_expression(postCtx, full_expr);
+                post_process_types[resno] = post_value.getType();
 
                 auto colName = "postproc_" + std::to_string(resno);
                 auto colDef = columnManager.createDef(postMapScope, colName);
@@ -604,8 +630,12 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 }
             } else {
                 Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));
+                int32_t exprTypmodValue = exprTypmod(reinterpret_cast<Node*>(te->expr));
                 Oid exprCollationOid = exprCollation(reinterpret_cast<Node*>(te->expr));
-                auto exprMlirType = type_mapper.map_postgre_sqltype(exprTypeOid, -1, exprCollationOid, true);
+                auto exprMlirType = post_process_types.contains(te->resno)
+                                        ? post_process_types[te->resno]
+                                        : type_mapper.map_postgre_sqltype(exprTypeOid, exprTypmodValue,
+                                                                          exprCollationOid, true);
 
                 std::string scopeName{};
                 std::string columnName{};
@@ -626,10 +656,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 result.columns.push_back({.table_name = scopeName,
                                           .column_name = columnName,
                                           .type_oid = exprTypeOid,
-                                          .typmod = -1,
+                                          .typmod = exprTypmodValue,
                                           .collation = exprCollationOid,
                                           .mlir_type = exprMlirType,
-                                          .nullable = true});
+                                          .nullable = pgx_lower::frontend::sql::is_sql_nullable_type(exprMlirType)});
             }
         }
 

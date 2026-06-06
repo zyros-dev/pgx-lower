@@ -77,10 +77,10 @@ SELECT id FROM expr_test_data WHERE NULL IS NULL;
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_022 */
 SELECT id FROM expr_test_data WHERE value1 IS NOT NULL;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_023 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_023 */
 -- Test T_A_Expr - IN operations
 SELECT id FROM expr_test_data WHERE value1 IN (10, 20, 30);
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_024 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_024 */
 SELECT id FROM expr_test_data WHERE value1 NOT IN (15, 25, 35);
 
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_025 */

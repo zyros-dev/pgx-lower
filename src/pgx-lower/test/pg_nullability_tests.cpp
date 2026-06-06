@@ -343,6 +343,24 @@ module {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(pg_nullable_get_val_unwraps_pg_semantic_nullable) {
+    Fixture f;
+    auto module = parseModule(f.ctx, R"mlir(
+module {
+  func.func @unwrap(%value: !db.pg_int4<nullable>) {
+    %unwrapped = db.nullable_get_val %value : !db.pg_int4<nullable>
+    return
+  }
+}
+)mlir");
+    REQUIRE(module);
+    const std::string printed = moduleToString(*module);
+    requireContains(printed, "db.nullable_get_val");
+    requireContains(printed, "!db.pg_int4<nullable>");
+    requireContains(printed, "!db.pg_int4");
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(pg_constant_and_null_pg_type_contract) {
     Fixture f;
 

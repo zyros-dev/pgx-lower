@@ -148,12 +148,11 @@ WHERE years_experience > 3;
     580500.000000000000 | 62857.142857142857
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_011 */
 SELECT
     SUM(salary + COALESCE(bonus, 0)) AS total_with_null_handling,
     AVG(COALESCE(bonus, 0) / COALESCE(years_experience, 1)) AS avg_bonus_per_year
 FROM comprehensive_data;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 38 at Plan.targetlist[0].expr.args[0].expr.args[1]
  total_with_null_handling |  avg_bonus_per_year   
 --------------------------+-----------------------
                 949500.00 | 2284.6428571428571429

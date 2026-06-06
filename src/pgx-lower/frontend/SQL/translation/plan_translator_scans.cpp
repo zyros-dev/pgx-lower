@@ -583,7 +583,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 int32_t typmod = exprTypmod(reinterpret_cast<Node*>(tle->expr));
                 mlir::Type exprType = streamResult.stream.getType();
                 // ReSharper disable once CppDFAUnreadVariable,CppDFAUnusedValue
-                bool nullable = mlir::isa<mlir::db::NullableType>(exprType);
+                bool nullable = pgx_lower::frontend::sql::is_sql_nullable_type(exprType);
 
                 result.columns.push_back({streamResult.table_name, streamResult.column_name, type_oid, typmod,
                                           exprCollation(reinterpret_cast<Node*>(tle->expr)), exprType, nullable});

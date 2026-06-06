@@ -302,7 +302,7 @@ def DB_IsNullOp : DB_Op<"isnull", [Pure]> {
 def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Get value of nullable type";
 
-    let arguments = (ins NullableType: $val);
+    let arguments = (ins AnyType: $val);
     let results = (outs AnyType : $res);
     let assemblyFormat = "$val `:` type($val)  attr-dict";
     let extraClassDefinition = [{
@@ -310,8 +310,18 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethod
                 MLIRContext* context, std::optional<mlir::Location> location,
                 ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
                 RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
-            inferredReturnTypes.assign({operands[0].getType().cast<mlir::db::NullableType>().getType()});
-            return success();
+            auto valueType = operands[0].getType();
+            if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(valueType)) {
+                inferredReturnTypes.assign({nullable.getType()});
+                return success();
+            }
+            if (mlir::db::isPgValueType(valueType)
+                && mlir::db::getPgNullability(valueType) == mlir::db::PgNullability::Maybe)
+            {
+                inferredReturnTypes.assign({mlir::db::withPgNullability(valueType, mlir::db::PgNullability::Never)});
+                return success();
+            }
+            return failure();
         }
     }];
 }

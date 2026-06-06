@@ -689,6 +689,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     auto expressionTypes = std::vector<mlir::Type>();
     auto columnNames = std::vector<std::string>();
     auto expressionOids = std::vector<Oid>();
+    auto expressionTypmods = std::vector<int32_t>();
+    auto expressionCollations = std::vector<Oid>();
+    auto expressionNullables = std::vector<bool>();
     {
         auto placeholderAttrs = std::vector<mlir::Attribute>();
         for (auto i = 0; i < computedEntries.size(); i++) {
@@ -756,8 +759,11 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                     mlir::Type exprMlirType = exprValue.getType();
                     expressionTypes.push_back(exprMlirType);
                     columnNames.push_back(colName);
-                    Oid typeOid = PostgreSQLTypeMapper::map_mlir_type_to_oid(exprMlirType);
+                    Oid typeOid = exprType(reinterpret_cast<Node*>(entry->expr));
                     expressionOids.push_back(typeOid);
+                    expressionTypmods.push_back(exprTypmod(reinterpret_cast<Node*>(entry->expr)));
+                    expressionCollations.push_back(exprCollation(reinterpret_cast<Node*>(entry->expr)));
+                    expressionNullables.push_back(pgx_lower::frontend::sql::is_sql_nullable_type(exprMlirType));
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "MapOp column '%s': MLIR type mapped to OID=%u",
                             colName.c_str(), typeOid);
@@ -819,10 +825,10 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         allColumns.push_back({.table_name = COMPUTED_EXPRESSION_SCOPE,
                               .column_name = columnNames[i],
                               .type_oid = expressionOids[i],
-                              .typmod = -1,
-                              .collation = InvalidOid,
+                              .typmod = expressionTypmods[i],
+                              .collation = expressionCollations[i],
                               .mlir_type = expressionTypes[i],
-                              .nullable = true});
+                              .nullable = expressionNullables[i]});
     }
 
     TranslationResult intermediateResult;

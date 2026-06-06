@@ -292,20 +292,20 @@ bool isPgValueType(mlir::Type type) {
 
 PgOid getPgTypeOid(mlir::Type type) {
     return llvm::TypeSwitch<mlir::Type, PgOid>(type)
-        .Case<PgBoolType>([](auto) { return kPgBoolOid; })
-        .Case<PgInt2Type>([](auto) { return kPgInt2Oid; })
-        .Case<PgInt4Type>([](auto) { return kPgInt4Oid; })
-        .Case<PgInt8Type>([](auto) { return kPgInt8Oid; })
-        .Case<PgFloat4Type>([](auto) { return kPgFloat4Oid; })
-        .Case<PgFloat8Type>([](auto) { return kPgFloat8Oid; })
-        .Case<PgNumericType>([](auto) { return kPgNumericOid; })
-        .Case<PgDateType>([](auto) { return kPgDateOid; })
-        .Case<PgTimestampType>([](auto) { return kPgTimestampOid; })
-        .Case<PgIntervalType>([](auto) { return kPgIntervalOid; })
-        .Case<PgTextType>([](auto) { return kPgTextOid; })
-        .Case<PgVarcharType>([](auto) { return kPgVarcharOid; })
-        .Case<PgBpcharType>([](auto) { return kPgBpcharOid; })
-        .Default([](auto) { return kPgInvalidOid; });
+        .Case<PgBoolType>([](auto) { return BOOLOID; })
+        .Case<PgInt2Type>([](auto) { return INT2OID; })
+        .Case<PgInt4Type>([](auto) { return INT4OID; })
+        .Case<PgInt8Type>([](auto) { return INT8OID; })
+        .Case<PgFloat4Type>([](auto) { return FLOAT4OID; })
+        .Case<PgFloat8Type>([](auto) { return FLOAT8OID; })
+        .Case<PgNumericType>([](auto) { return NUMERICOID; })
+        .Case<PgDateType>([](auto) { return DATEOID; })
+        .Case<PgTimestampType>([](auto) { return TIMESTAMPOID; })
+        .Case<PgIntervalType>([](auto) { return INTERVALOID; })
+        .Case<PgTextType>([](auto) { return TEXTOID; })
+        .Case<PgVarcharType>([](auto) { return VARCHAROID; })
+        .Case<PgBpcharType>([](auto) { return BPCHAROID; })
+        .Default([](auto) { return InvalidOid; });
 }
 
 int32_t getPgTypmod(mlir::Type type) {
@@ -318,7 +318,7 @@ int32_t getPgTypmod(mlir::Type type) {
 PgOid getPgCollation(mlir::Type type) {
     return llvm::TypeSwitch<mlir::Type, PgOid>(type)
         .Case<PgTextType, PgVarcharType, PgBpcharType>([](auto typed) { return typed.getCollation(); })
-        .Default([](auto) { return kPgInvalidOid; });
+        .Default([](auto) { return InvalidOid; });
 }
 
 PgNullability getPgNullability(mlir::Type type) {
@@ -384,35 +384,35 @@ mlir::Type getPgPhysicalCarrierType(mlir::Type type) {
         return kPgTypmodUnconstrained;                                                                                 \
     }                                                                                                                  \
     PgOid TYPE::getCollation() const {                                                                                 \
-        return kPgInvalidOid;                                                                                          \
+        return InvalidOid;                                                                                             \
     }
 
-DEFINE_PG_NO_METADATA_METHODS(PgBoolType, kPgBoolOid)
-DEFINE_PG_NO_METADATA_METHODS(PgInt2Type, kPgInt2Oid)
-DEFINE_PG_NO_METADATA_METHODS(PgInt4Type, kPgInt4Oid)
-DEFINE_PG_NO_METADATA_METHODS(PgInt8Type, kPgInt8Oid)
-DEFINE_PG_NO_METADATA_METHODS(PgFloat4Type, kPgFloat4Oid)
-DEFINE_PG_NO_METADATA_METHODS(PgFloat8Type, kPgFloat8Oid)
-DEFINE_PG_NO_METADATA_METHODS(PgDateType, kPgDateOid)
+DEFINE_PG_NO_METADATA_METHODS(PgBoolType, BOOLOID)
+DEFINE_PG_NO_METADATA_METHODS(PgInt2Type, INT2OID)
+DEFINE_PG_NO_METADATA_METHODS(PgInt4Type, INT4OID)
+DEFINE_PG_NO_METADATA_METHODS(PgInt8Type, INT8OID)
+DEFINE_PG_NO_METADATA_METHODS(PgFloat4Type, FLOAT4OID)
+DEFINE_PG_NO_METADATA_METHODS(PgFloat8Type, FLOAT8OID)
+DEFINE_PG_NO_METADATA_METHODS(PgDateType, DATEOID)
 
-DEFINE_PG_TYPE_OID_METHODS(PgNumericType, kPgNumericOid)
+DEFINE_PG_TYPE_OID_METHODS(PgNumericType, NUMERICOID)
 PgOid PgNumericType::getCollation() const {
-    return kPgInvalidOid;
+    return InvalidOid;
 }
-DEFINE_PG_TYPE_OID_METHODS(PgTimestampType, kPgTimestampOid)
+DEFINE_PG_TYPE_OID_METHODS(PgTimestampType, TIMESTAMPOID)
 PgOid PgTimestampType::getCollation() const {
-    return kPgInvalidOid;
+    return InvalidOid;
 }
-DEFINE_PG_TYPE_OID_METHODS(PgIntervalType, kPgIntervalOid)
+DEFINE_PG_TYPE_OID_METHODS(PgIntervalType, INTERVALOID)
 PgOid PgIntervalType::getCollation() const {
-    return kPgInvalidOid;
+    return InvalidOid;
 }
-DEFINE_PG_TYPE_OID_METHODS(PgTextType, kPgTextOid)
+DEFINE_PG_TYPE_OID_METHODS(PgTextType, TEXTOID)
 int32_t PgTextType::getTypmod() const {
     return kPgTypmodUnconstrained;
 }
-DEFINE_PG_TYPE_OID_METHODS(PgVarcharType, kPgVarcharOid)
-DEFINE_PG_TYPE_OID_METHODS(PgBpcharType, kPgBpcharOid)
+DEFINE_PG_TYPE_OID_METHODS(PgVarcharType, VARCHAROID)
+DEFINE_PG_TYPE_OID_METHODS(PgBpcharType, BPCHAROID)
 
 #undef DEFINE_PG_NO_METADATA_METHODS
 #undef DEFINE_PG_TYPE_OID_METHODS

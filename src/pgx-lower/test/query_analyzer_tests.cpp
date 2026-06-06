@@ -10,6 +10,7 @@ extern "C" {
 }
 
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
+#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/test/pgx_test_fn.h"
 
 #include <string>
@@ -22,6 +23,8 @@ extern "C" {
     } while (0)
 
 namespace {
+
+constexpr Oid kInt4EqOperator = 96;
 
 auto makeIntConst() -> Const {
     auto value = Const{};
@@ -126,6 +129,60 @@ PGX_TEST_FN(query_analyzer_rejects_boolean_test) {
     booleanTest.booltesttype = IS_TRUE;
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&booleanTest));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_coalesce_expr) {
+    auto nullableArg = makeIntConst();
+    auto fallbackArg = makeIntConst();
+    auto coalesce = CoalesceExpr{};
+    coalesce.xpr.type = T_CoalesceExpr;
+    coalesce.coalescetype = INT4OID;
+    coalesce.coalescecollid = InvalidOid;
+    coalesce.args = list_make2(&nullableArg, &fallbackArg);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coalesce));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_scalar_array_op_expr) {
+    auto lhs = makeIntConst();
+    auto elem1 = makeIntConst();
+    auto elem2 = makeIntConst();
+    auto arrayExpr = ArrayExpr{};
+    arrayExpr.xpr.type = T_ArrayExpr;
+    arrayExpr.array_typeid = INT4ARRAYOID;
+    arrayExpr.element_typeid = INT4OID;
+    arrayExpr.elements = list_make2(&elem1, &elem2);
+
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = kInt4EqOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = InvalidOid;
+    scalarArray.args = list_make2(&lhs, &arrayExpr);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_scalar_array_text_const_array) {
+    auto lhs = makeTypedConst(TEXTOID);
+    auto arrayConst = makeTypedConst(pgx_lower::frontend::sql::constants::PG_TEXT_ARRAY_OID);
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = TextEqualOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = DEFAULT_COLLATION_OID;
+    scalarArray.args = list_make2(&lhs, &arrayConst);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
     PG_RETURN_VOID();

@@ -482,13 +482,13 @@ struct SQLTypeInference {
         return -1;
     }
     static mlir::db::PgOid getPgCollationOrInvalid(mlir::Type left, mlir::Type right) {
-        if (mlir::db::isPgValueType(left) && mlir::db::getPgCollation(left) != mlir::db::kPgInvalidOid) {
+        if (mlir::db::isPgValueType(left) && mlir::db::getPgCollation(left) != InvalidOid) {
             return mlir::db::getPgCollation(left);
         }
-        if (mlir::db::isPgValueType(right) && mlir::db::getPgCollation(right) != mlir::db::kPgInvalidOid) {
+        if (mlir::db::isPgValueType(right) && mlir::db::getPgCollation(right) != InvalidOid) {
             return mlir::db::getPgCollation(right);
         }
-        return mlir::db::kPgInvalidOid;
+        return InvalidOid;
     }
     static mlir::Type getPgIntegerType(mlir::MLIRContext* context, unsigned width) {
         if (width <= 16) {

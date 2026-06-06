@@ -99,60 +99,40 @@ void assertPgIdentity(mlir::Type type, llvm::StringRef expectedSpelling, mlir::d
 PGX_TEST_FN(pg_primitive_type_metadata_and_carriers) {
     Fixture f;
 
-    REQUIRE_EQ_U32(mlir::db::kPgInvalidOid, InvalidOid);
-    REQUIRE_EQ_U32(mlir::db::kPgBoolOid, BOOLOID);
-    REQUIRE_EQ_U32(mlir::db::kPgInt2Oid, INT2OID);
-    REQUIRE_EQ_U32(mlir::db::kPgInt4Oid, INT4OID);
-    REQUIRE_EQ_U32(mlir::db::kPgInt8Oid, INT8OID);
-    REQUIRE_EQ_U32(mlir::db::kPgTextOid, TEXTOID);
-    REQUIRE_EQ_U32(mlir::db::kPgFloat4Oid, FLOAT4OID);
-    REQUIRE_EQ_U32(mlir::db::kPgFloat8Oid, FLOAT8OID);
-    REQUIRE_EQ_U32(mlir::db::kPgBpcharOid, BPCHAROID);
-    REQUIRE_EQ_U32(mlir::db::kPgVarcharOid, VARCHAROID);
-    REQUIRE_EQ_U32(mlir::db::kPgDateOid, DATEOID);
-    REQUIRE_EQ_U32(mlir::db::kPgTimestampOid, TIMESTAMPOID);
-    REQUIRE_EQ_U32(mlir::db::kPgIntervalOid, INTERVALOID);
-    REQUIRE_EQ_U32(mlir::db::kPgNumericOid, NUMERICOID);
-
-    assertPgIdentity(mlir::db::PgBoolType::get(&f.ctx), "!db.pg_bool", mlir::db::kPgBoolOid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "i1");
-    assertPgIdentity(mlir::db::PgInt2Type::get(&f.ctx), "!db.pg_int2", mlir::db::kPgInt2Oid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "i16");
-    assertPgIdentity(mlir::db::PgInt4Type::get(&f.ctx), "!db.pg_int4", mlir::db::kPgInt4Oid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "i32");
-    assertPgIdentity(mlir::db::PgInt8Type::get(&f.ctx), "!db.pg_int8", mlir::db::kPgInt8Oid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "i64");
-    assertPgIdentity(mlir::db::PgFloat4Type::get(&f.ctx), "!db.pg_float4", mlir::db::kPgFloat4Oid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "f32");
-    assertPgIdentity(mlir::db::PgFloat8Type::get(&f.ctx), "!db.pg_float8", mlir::db::kPgFloat8Oid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "f64");
+    assertPgIdentity(mlir::db::PgBoolType::get(&f.ctx), "!db.pg_bool", BOOLOID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "i1");
+    assertPgIdentity(mlir::db::PgInt2Type::get(&f.ctx), "!db.pg_int2", INT2OID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "i16");
+    assertPgIdentity(mlir::db::PgInt4Type::get(&f.ctx), "!db.pg_int4", INT4OID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "i32");
+    assertPgIdentity(mlir::db::PgInt8Type::get(&f.ctx), "!db.pg_int8", INT8OID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "i64");
+    assertPgIdentity(mlir::db::PgFloat4Type::get(&f.ctx), "!db.pg_float4", FLOAT4OID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "f32");
+    assertPgIdentity(mlir::db::PgFloat8Type::get(&f.ctx), "!db.pg_float8", FLOAT8OID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "f64");
     assertPgIdentity(mlir::db::PgNumericType::get(&f.ctx, kNumericTypmod), "!db.pg_numeric<typmod = 786438>",
-                     mlir::db::kPgNumericOid, kNumericTypmod, mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never,
-                     "i64");
-    assertPgIdentity(mlir::db::PgDateType::get(&f.ctx), "!db.pg_date", mlir::db::kPgDateOid, kTypmodUnconstrained,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Never, "i64");
+                     NUMERICOID, kNumericTypmod, InvalidOid, mlir::db::PgNullability::Never, "i64");
+    assertPgIdentity(mlir::db::PgDateType::get(&f.ctx), "!db.pg_date", DATEOID, kTypmodUnconstrained, InvalidOid,
+                     mlir::db::PgNullability::Never, "i64");
     assertPgIdentity(mlir::db::PgTimestampType::get(&f.ctx, kTypmodUnconstrained), "!db.pg_timestamp<typmod = -1>",
-                     mlir::db::kPgTimestampOid, kTypmodUnconstrained, mlir::db::kPgInvalidOid,
-                     mlir::db::PgNullability::Never, "i64");
+                     TIMESTAMPOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Never, "i64");
     assertPgIdentity(mlir::db::PgIntervalType::get(&f.ctx, kTypmodUnconstrained), "!db.pg_interval<typmod = -1>",
-                     mlir::db::kPgIntervalOid, kTypmodUnconstrained, mlir::db::kPgInvalidOid,
-                     mlir::db::PgNullability::Never, "i64");
-    assertPgIdentity(mlir::db::PgTextType::get(&f.ctx, kDefaultCollation), "!db.pg_text<collation = 100>",
-                     mlir::db::kPgTextOid, kTypmodUnconstrained, kDefaultCollation, mlir::db::PgNullability::Never,
-                     "!util.varlen32");
+                     INTERVALOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Never, "i64");
+    assertPgIdentity(mlir::db::PgTextType::get(&f.ctx, kDefaultCollation), "!db.pg_text<collation = 100>", TEXTOID,
+                     kTypmodUnconstrained, kDefaultCollation, mlir::db::PgNullability::Never, "!util.varlen32");
     assertPgIdentity(mlir::db::PgVarcharType::get(&f.ctx, kVarcharTypmod, kDefaultCollation),
-                     "!db.pg_varchar<typmod = 14, collation = 100>", mlir::db::kPgVarcharOid, kVarcharTypmod,
-                     kDefaultCollation, mlir::db::PgNullability::Never, "!util.varlen32");
+                     "!db.pg_varchar<typmod = 14, collation = 100>", VARCHAROID, kVarcharTypmod, kDefaultCollation,
+                     mlir::db::PgNullability::Never, "!util.varlen32");
     assertPgIdentity(mlir::db::PgBpcharType::get(&f.ctx, kBpcharTypmod, kDefaultCollation),
-                     "!db.pg_bpchar<typmod = 8, collation = 100>", mlir::db::kPgBpcharOid, kBpcharTypmod,
-                     kDefaultCollation, mlir::db::PgNullability::Never, "!util.varlen32");
+                     "!db.pg_bpchar<typmod = 8, collation = 100>", BPCHAROID, kBpcharTypmod, kDefaultCollation,
+                     mlir::db::PgNullability::Never, "!util.varlen32");
 
     assertPgIdentity(mlir::db::PgInt4Type::get(&f.ctx, mlir::db::PgNullability::Maybe), "!db.pg_int4<nullable>",
-                     mlir::db::kPgInt4Oid, kTypmodUnconstrained, mlir::db::kPgInvalidOid,
-                     mlir::db::PgNullability::Maybe, "i32");
+                     INT4OID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Maybe, "i32");
     assertPgIdentity(mlir::db::PgNumericType::get(&f.ctx, kNumericTypmod, mlir::db::PgNullability::Maybe),
-                     "!db.pg_numeric<typmod = 786438, nullable>", mlir::db::kPgNumericOid, kNumericTypmod,
-                     mlir::db::kPgInvalidOid, mlir::db::PgNullability::Maybe, "i64");
+                     "!db.pg_numeric<typmod = 786438, nullable>", NUMERICOID, kNumericTypmod, InvalidOid,
+                     mlir::db::PgNullability::Maybe, "i64");
 
     PG_RETURN_VOID();
 }
@@ -162,12 +142,12 @@ PGX_TEST_FN(pg_primitive_type_erased_helpers_preserve_identity) {
 
     mlir::Type numeric = mlir::db::PgNumericType::get(&f.ctx, kNumericTypmod);
     mlir::Type nullableNumeric = mlir::db::withPgNullability(numeric, mlir::db::PgNullability::Maybe);
-    assertPgIdentity(nullableNumeric, "!db.pg_numeric<typmod = 786438, nullable>", mlir::db::kPgNumericOid,
-                     kNumericTypmod, mlir::db::kPgInvalidOid, mlir::db::PgNullability::Maybe, "i64");
+    assertPgIdentity(nullableNumeric, "!db.pg_numeric<typmod = 786438, nullable>", NUMERICOID, kNumericTypmod,
+                     InvalidOid, mlir::db::PgNullability::Maybe, "i64");
 
     mlir::Type varchar = mlir::db::PgVarcharType::get(&f.ctx, kVarcharTypmod, kDefaultCollation);
     mlir::Type nullableVarchar = mlir::db::withPgNullability(varchar, mlir::db::PgNullability::Maybe);
-    assertPgIdentity(nullableVarchar, "!db.pg_varchar<typmod = 14, collation = 100, nullable>", mlir::db::kPgVarcharOid,
+    assertPgIdentity(nullableVarchar, "!db.pg_varchar<typmod = 14, collation = 100, nullable>", VARCHAROID,
                      kVarcharTypmod, kDefaultCollation, mlir::db::PgNullability::Maybe, "!util.varlen32");
 
     mlir::Type int8 = mlir::db::PgInt8Type::get(&f.ctx);
@@ -178,9 +158,9 @@ PGX_TEST_FN(pg_primitive_type_erased_helpers_preserve_identity) {
 
     mlir::Type machinery = mlir::IntegerType::get(&f.ctx, 32);
     REQUIRE(!mlir::db::isPgValueType(machinery));
-    REQUIRE_EQ_U32(mlir::db::getPgTypeOid(machinery), mlir::db::kPgInvalidOid);
+    REQUIRE_EQ_U32(mlir::db::getPgTypeOid(machinery), InvalidOid);
     REQUIRE_EQ_I32(mlir::db::getPgTypmod(machinery), kTypmodUnconstrained);
-    REQUIRE_EQ_U32(mlir::db::getPgCollation(machinery), mlir::db::kPgInvalidOid);
+    REQUIRE_EQ_U32(mlir::db::getPgCollation(machinery), InvalidOid);
     REQUIRE(mlir::db::withPgNullability(machinery, mlir::db::PgNullability::Maybe) == mlir::Type{});
     REQUIRE(mlir::db::getPgPhysicalCarrierType(machinery) == mlir::Type{});
 

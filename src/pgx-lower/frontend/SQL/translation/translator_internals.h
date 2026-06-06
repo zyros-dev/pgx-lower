@@ -235,6 +235,11 @@ inline auto is_sql_bool_type(mlir::Type type) -> bool {
     return type.isInteger(1) || mlir::isa<mlir::db::PgBoolType>(type);
 }
 
+inline auto is_sql_nullable_type(mlir::Type type) -> bool {
+    return mlir::isa<mlir::db::NullableType>(type)
+           || (mlir::db::isPgValueType(type) && mlir::db::getPgNullability(type) == mlir::db::PgNullability::Maybe);
+}
+
 inline auto sql_bool_result_type(mlir::OpBuilder& builder, mlir::ValueRange values) -> mlir::Type {
     for (const auto value : values) {
         if (mlir::db::isPgValueType(value.getType())) {
