@@ -24,6 +24,8 @@ extern "C" {
 
 namespace {
 
+constexpr Oid kInvalidTestOperatorOid = 58;
+
 auto makeIntConst() -> Const {
     auto value = Const{};
     value.xpr.type = T_Const;
@@ -269,7 +271,7 @@ PGX_TEST_FN(query_analyzer_rejects_unlisted_operator_signature) {
     auto rhs = makeBoolConst();
     auto op = OpExpr{};
     op.xpr.type = T_OpExpr;
-    op.opno = 58;
+    op.opno = kInvalidTestOperatorOid;
     op.opfuncid = InvalidOid;
     op.opresulttype = BOOLOID;
     op.inputcollid = InvalidOid;
