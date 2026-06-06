@@ -37,9 +37,9 @@ void PgSortState::log_specification(const char* context) const {
 
     for (int32_t i = 0; i < spec->num_columns; i++) {
         const auto& col = spec->columns[i];
-        PGX_LOG(RUNTIME, DEBUG, "  Column[%d]: table='%s', column='%s', type_oid=%u, typmod=%d", i,
+        PGX_LOG(RUNTIME, DEBUG, "  Column[%d]: table='%s', column='%s', type_oid=%u, typmod=%d, collation=%u", i,
                 col.table_name ? col.table_name : "(null)", col.column_name ? col.column_name : "(null)", col.type_oid,
-                col.typmod);
+                col.typmod, col.collation);
     }
 
     for (int32_t i = 0; i < spec->num_sort_keys; i++) {
@@ -66,9 +66,10 @@ void PgSortState::log_specification(const char* context) const {
             }
             PGX_LOG(RUNTIME, DEBUG,
                     "    Layout[%zu]: tuple_offset=%zu, null_flag_offset=%zu, value_offset=%zu, "
-                    "value_size=%zu, phys_type=%s, nullable=%s",
+                    "value_size=%zu, phys_type=%s, nullable=%s, pg_type_oid=%u, pg_typmod=%d, pg_collation=%u",
                     i, layout.tuple_offset, layout.null_flag_offset, layout.value_offset, layout.value_size,
-                    phys_type_name, layout.is_nullable ? "true" : "false");
+                    phys_type_name, layout.is_nullable ? "true" : "false", layout.pg_type_oid, layout.pg_typmod,
+                    layout.pg_collation);
         }
     }
 }
@@ -84,6 +85,8 @@ void PgSortState::compute_column_layouts() {
     for (int32_t i = 0; i < spec->num_columns; i++) {
         ColumnLayout layout{};
         layout.pg_type_oid = spec->columns[i].type_oid;
+        layout.pg_typmod = spec->columns[i].typmod;
+        layout.pg_collation = spec->columns[i].collation;
         layout.phys_type = get_physical_type(layout.pg_type_oid);
         layout.value_size = get_physical_size(layout.pg_type_oid);
         layout.is_nullable = spec->columns[i].is_nullable;
@@ -104,10 +107,10 @@ void PgSortState::compute_column_layouts() {
         column_layouts_.push_back(layout);
 
         PGX_LOG(RUNTIME, DEBUG,
-                "compute_column_layouts: Column[%d] type_oid=%u phys_type=%d tuple_offset=%zu "
+                "compute_column_layouts: Column[%d] type_oid=%u typmod=%d collation=%u phys_type=%d tuple_offset=%zu "
                 "null_flag_offset=%zu value_offset=%zu value_size=%zu",
-                i, layout.pg_type_oid, static_cast<int>(layout.phys_type), layout.tuple_offset, layout.null_flag_offset,
-                layout.value_offset, layout.value_size);
+                i, layout.pg_type_oid, layout.pg_typmod, layout.pg_collation, static_cast<int>(layout.phys_type),
+                layout.tuple_offset, layout.null_flag_offset, layout.value_offset, layout.value_size);
     }
 
     PGX_LOG(RUNTIME, DEBUG, "compute_column_layouts: Total tuple size=%zu bytes (spec says %zu)", current_offset,
@@ -138,9 +141,14 @@ void PgSortState::build_tuple_desc() {
         TupleDescInitEntry(td,
                            static_cast<AttrNumber>(i + 1),
                            spec->columns[i].column_name, tuple_desc_oid, spec->columns[i].typmod, 0);
+        if (OidIsValid(spec->columns[i].collation)) {
+            TupleDescAttr(td, i)->attcollation = spec->columns[i].collation;
+        }
 
-        PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: TupleDesc[%d]: name=%s, type_oid=%u (original=%u), typmod=%d", i,
-                spec->columns[i].column_name, tuple_desc_oid, spec->columns[i].type_oid, spec->columns[i].typmod);
+        PGX_LOG(RUNTIME, DEBUG,
+                "build_tuple_desc: TupleDesc[%d]: name=%s, type_oid=%u (original=%u), typmod=%d, collation=%u", i,
+                spec->columns[i].column_name, tuple_desc_oid, spec->columns[i].type_oid, spec->columns[i].typmod,
+                spec->columns[i].collation);
     }
 
     tupdesc = td;

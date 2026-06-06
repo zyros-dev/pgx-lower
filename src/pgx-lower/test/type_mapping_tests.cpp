@@ -10,6 +10,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "lingodb/mlir/Dialect/util/UtilTypes.h"
 #include "lingodb/utility/mlir_to_postgres.h"
+#include "pgx-lower/frontend/SQL/translation/translator_internals.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
@@ -87,6 +88,15 @@ PGX_TEST_FN(type_mapping_nullable_physical_tuple_is_not_pg_identity) {
 
 PGX_TEST_FN(type_mapping_unsupported) {
     EXPECT_OID_EQ(lingodb::utility::mlir_type_to_pg_oid(mlir::IntegerType::get(&ctx(), 7)), InvalidOid);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(type_mapping_frontend_reverse_mapper_rejects_raw_carriers) {
+    EXPECT_OID_EQ(postgresql_ast::PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::IntegerType::get(&ctx(), 32)),
+                  InvalidOid);
+    EXPECT_OID_EQ(postgresql_ast::PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::Float64Type::get(&ctx())), InvalidOid);
+    EXPECT_OID_EQ(postgresql_ast::PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::db::DecimalType::get(&ctx(), 10, 2)),
+                  InvalidOid);
     PG_RETURN_VOID();
 }
 

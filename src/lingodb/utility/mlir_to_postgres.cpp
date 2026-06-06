@@ -11,7 +11,6 @@ extern "C" {
 #include "catalog/pg_am_d.h"
 #include "access/stratnum.h"
 #include "utils/lsyscache.h"
-#include "catalog/pg_collation.h"
 #include "commands/defrem.h"
 }
 
@@ -48,13 +47,7 @@ SortOperatorSpec get_sort_operator(uint32_t type_oid, bool ascending) {
         return {InvalidOid, InvalidOid};
     }
 
-    // Determine collation (only text types need it)
-    uint32_t collation = InvalidOid;
-    if (type_oid == TEXTOID || type_oid == VARCHAROID || type_oid == BPCHAROID) {
-        collation = DEFAULT_COLLATION_OID;
-    }
-
-    return {sortop, collation};
+    return {sortop, InvalidOid};
 }
 
 } // namespace lingodb::utility

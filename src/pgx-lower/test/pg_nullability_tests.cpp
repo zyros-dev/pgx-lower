@@ -1,12 +1,14 @@
 extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
+#include "catalog/pg_type.h"
 }
 
 #include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
 #include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
@@ -68,6 +70,22 @@ void requireContains(const std::string& haystack, llvm::StringRef needle) {
 void requireNotContains(const std::string& haystack, llvm::StringRef needle) {
     if (haystack.find(needle.str()) != std::string::npos) {
         elog(ERROR, "%s:%d unexpected '%s' present", __FILE__, __LINE__, needle.str().c_str());
+    }
+}
+
+void requireIntArrayAttr(mlir::Operation* op, llvm::StringRef name, llvm::ArrayRef<int64_t> expected) {
+    const auto attr = op->getAttrOfType<mlir::ArrayAttr>(name);
+    REQUIRE(attr);
+    if (attr.size() != expected.size()) {
+        elog(ERROR, "%s:%d expected %zu values in '%s' got %zu", __FILE__, __LINE__, expected.size(),
+             name.str().c_str(), attr.size());
+    }
+    for (size_t index = 0; index < expected.size(); ++index) {
+        const auto value = mlir::cast<mlir::IntegerAttr>(attr[index]).getInt();
+        if (value != expected[index]) {
+            elog(ERROR, "%s:%d expected '%s'[%zu] = %ld got %ld", __FILE__, __LINE__, name.str().c_str(), index,
+                 expected[index], value);
+        }
     }
 }
 
@@ -243,6 +261,58 @@ module {
                                             false);
     REQUIRE(!wrongCastNullability);
 
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(pg_db_to_std_preserves_dsa_pg_metadata_attrs) {
+    Fixture f;
+    auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&f.ctx));
+    auto builder = mlir::OpBuilder(&f.ctx);
+    builder.setInsertionPointToStart(module.getBody());
+    auto func = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), "dsa_metadata",
+                                                   builder.getFunctionType({}, {}));
+    auto* entry = func.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+
+    auto varchar = mlir::db::PgVarcharType::get(&f.ctx, 14, 777);
+    auto numeric = mlir::db::PgNumericType::get(&f.ctx, 786438);
+    auto text = mlir::db::PgTextType::get(&f.ctx, 777);
+    auto keyTuple = mlir::TupleType::get(&f.ctx, {varchar, numeric});
+    auto valTuple = mlir::TupleType::get(&f.ctx, {text});
+
+    auto sortKeys = builder.getArrayAttr(
+        {builder.getArrayAttr({builder.getI32IntegerAttr(0), builder.getI32IntegerAttr(0)})});
+    builder.create<mlir::dsa::CreateDS>(
+        builder.getUnknownLoc(), mlir::dsa::GenericIterableType::get(&f.ctx, keyTuple, "pgsort_iterator"), sortKeys);
+    builder.create<mlir::dsa::CreateDS>(builder.getUnknownLoc(),
+                                        mlir::dsa::JoinHashtableType::get(&f.ctx, keyTuple, valTuple));
+    builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
+
+    REQUIRE(runDBToStd(f.ctx, module));
+
+    mlir::dsa::CreateDS sortCreate;
+    mlir::dsa::CreateDS joinCreate;
+    module.walk([&](mlir::dsa::CreateDS op) {
+        if (const auto generic = mlir::dyn_cast<mlir::dsa::GenericIterableType>(op.getDs().getType());
+            generic && generic.getIteratorName() == "pgsort_iterator")
+        {
+            sortCreate = op;
+        } else if (mlir::isa<mlir::dsa::JoinHashtableType>(op.getDs().getType())) {
+            joinCreate = op;
+        }
+    });
+    REQUIRE(sortCreate);
+    REQUIRE(joinCreate);
+
+    requireIntArrayAttr(sortCreate, "pgx_original_type_oids", {VARCHAROID, NUMERICOID});
+    requireIntArrayAttr(sortCreate, "pgx_original_type_typmods", {14, 786438});
+    requireIntArrayAttr(sortCreate, "pgx_original_type_collations", {777, InvalidOid});
+    requireIntArrayAttr(joinCreate, "pgx_original_key_type_oids", {VARCHAROID, NUMERICOID});
+    requireIntArrayAttr(joinCreate, "pgx_original_key_type_typmods", {14, 786438});
+    requireIntArrayAttr(joinCreate, "pgx_original_key_type_collations", {777, InvalidOid});
+    requireIntArrayAttr(joinCreate, "pgx_original_val_type_oids", {TEXTOID});
+    requireIntArrayAttr(joinCreate, "pgx_original_val_type_typmods", {-1});
+    requireIntArrayAttr(joinCreate, "pgx_original_val_type_collations", {777});
     PG_RETURN_VOID();
 }
 

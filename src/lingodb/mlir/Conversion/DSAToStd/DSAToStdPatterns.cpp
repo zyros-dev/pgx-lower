@@ -7,6 +7,7 @@
 #include "lingodb/mlir-support/parsing.h"
 #include "mlir/Support/LLVM.h"
 
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "runtime-defs/Hashtable.h"
 #include "runtime-defs/LazyJoinHashtable.h"
@@ -17,11 +18,12 @@
 #include "lingodb/utility/mlir_to_postgres.h"
 #include "pgx-lower/utility/logging.h"
 
+#include <string>
+
 extern "C" {
 #include "postgres.h"
 #include "catalog/pg_type.h"
 #include "utils/memutils.h"
-#include "catalog/pg_collation.h"
 }
 
 using namespace mlir;
@@ -37,63 +39,110 @@ static TupleType getHashtableEntryType(MLIRContext* context, Type keyType, Type 
    auto i8PtrType = mlir::util::RefType::get(context, IntegerType::get(context, 8));
    return mlir::TupleType::get(context, {i8PtrType, IndexType::get(context), getHashtableKVType(context, keyType, aggrType)});
 }
-static runtime::HashtableSpecification*
-createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType, mlir::ArrayAttr originalKeyTypeOidsAttr = {},
-                             mlir::ArrayAttr originalValTypeOidsAttr = {}, bool allowInternalValueCarriers = false) {
+
+struct OriginalTypeAttrs {
+    mlir::ArrayAttr oids;
+    mlir::ArrayAttr typmods;
+    mlir::ArrayAttr collations;
+};
+
+static OriginalTypeAttrs getOriginalTypeAttrs(mlir::Operation* op, const char* prefix) {
+    return {op->getAttrOfType<mlir::ArrayAttr>(std::string(prefix) + "_oids"),
+            op->getAttrOfType<mlir::ArrayAttr>(std::string(prefix) + "_typmods"),
+            op->getAttrOfType<mlir::ArrayAttr>(std::string(prefix) + "_collations")};
+}
+
+struct ColumnMetadata {
+    uint32_t oid;
+    int32_t typmod;
+    uint32_t collation;
+    bool is_nullable;
+};
+
+static uint32_t getOriginalOidAttr(mlir::ArrayAttr attr, size_t index) {
+    if (!attr || index >= attr.size()) {
+        return InvalidOid;
+    }
+    return static_cast<uint32_t>(mlir::cast<mlir::IntegerAttr>(attr[index]).getInt());
+}
+
+static int32_t getOriginalTypmodAttr(mlir::ArrayAttr attr, size_t index) {
+    if (!attr || index >= attr.size()) {
+        return -1;
+    }
+    return static_cast<int32_t>(mlir::cast<mlir::IntegerAttr>(attr[index]).getInt());
+}
+
+static mlir::Type unwrapNullableFieldType(mlir::Type fieldType, bool& nullable) {
+    if (auto nullableType = fieldType.dyn_cast<mlir::db::NullableType>()) {
+        nullable = true;
+        return nullableType.getType();
+    }
+    if (auto nestedTuple = fieldType.dyn_cast<mlir::TupleType>()) {
+        auto types = nestedTuple.getTypes();
+        if (types.size() == 2 && types[0].isInteger(1)) {
+            nullable = true;
+            return types[1];
+        }
+    }
+    return fieldType;
+}
+
+static ColumnMetadata getColumnMetadata(mlir::Type fieldType, const OriginalTypeAttrs& originalAttrs, size_t index,
+                                        bool allowInternalCarriers) {
+    bool nullable = false;
+    mlir::Type baseType = unwrapNullableFieldType(fieldType, nullable);
+
+    ColumnMetadata metadata{getOriginalOidAttr(originalAttrs.oids, index),
+                            getOriginalTypmodAttr(originalAttrs.typmods, index),
+                            getOriginalOidAttr(originalAttrs.collations, index), nullable};
+    if (!OidIsValid(metadata.oid) && mlir::db::isPgValueType(baseType)) {
+        metadata.oid = mlir::db::getPgTypeOid(baseType);
+        metadata.typmod = mlir::db::getPgTypmod(baseType);
+        metadata.collation = mlir::db::getPgCollation(baseType);
+    }
+    if (!OidIsValid(metadata.oid) && allowInternalCarriers && baseType.isInteger(64)) {
+        metadata.oid = INT8OID;
+        metadata.typmod = -1;
+        metadata.collation = InvalidOid;
+    }
+    if (!OidIsValid(metadata.oid)) {
+        metadata.oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
+    }
+    return metadata;
+}
+
+static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType,
+                                                                     const OriginalTypeAttrs& originalKeyTypeAttrs = {},
+                                                                     const OriginalTypeAttrs& originalValTypeAttrs = {},
+                                                                     bool allowInternalValueCarriers = false) {
     PGX_IO(DB_LOWER);
 
     PGX_LOG(DB_LOWER, DEBUG, "createHashtableSpecFromTypes called:");
     PGX_LOG(DB_LOWER, DEBUG, "  keyType: %s", pgx_lower::log::type_to_string(keyType).c_str());
     PGX_LOG(DB_LOWER, DEBUG, "  valType: %s", pgx_lower::log::type_to_string(valType).c_str());
 
-    auto extractColumns = [](mlir::Type tupleType, mlir::ArrayAttr originalTypeOidsAttr,
-                             bool allowInternalCarriers) -> std::vector<std::pair<uint32_t, bool>> {
-        std::vector<std::pair<uint32_t, bool>> columns;
+    auto extractColumns = [](mlir::Type tupleType, const OriginalTypeAttrs& originalAttrs,
+                             bool allowInternalCarriers) -> std::vector<ColumnMetadata> {
+        std::vector<ColumnMetadata> columns;
         if (auto tuple = tupleType.dyn_cast<mlir::TupleType>()) {
             size_t i = 0;
             for (auto fieldType : tuple.getTypes()) {
-                bool nullable = false;
-                mlir::Type baseType = fieldType;
-
-                if (auto nullableType = fieldType.dyn_cast<mlir::db::NullableType>()) {
-                    nullable = true;
-                    baseType = nullableType.getType();
-                }
-                else if (auto nestedTuple = fieldType.dyn_cast<mlir::TupleType>()) {
-                    auto types = nestedTuple.getTypes();
-                    if (types.size() == 2 && types[0].isInteger(1)) {
-                        nullable = true;
-                        baseType = types[1];
-                    }
-                }
-
-                uint32_t oid = InvalidOid;
-                if (originalTypeOidsAttr && i < originalTypeOidsAttr.size()) {
-                    const uint32_t originalOid = mlir::cast<mlir::IntegerAttr>(originalTypeOidsAttr[i]).getInt();
-                    if (OidIsValid(originalOid)) {
-                        oid = originalOid;
-                    }
-                }
-                if (!OidIsValid(oid) && allowInternalCarriers && baseType.isInteger(64)) {
-                    oid = INT8OID;
-                }
-                if (!OidIsValid(oid)) {
-                    oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
-                }
-                if (!OidIsValid(oid)) {
+                ColumnMetadata metadata = getColumnMetadata(fieldType, originalAttrs, i, allowInternalCarriers);
+                if (!OidIsValid(metadata.oid)) {
                     PGX_ERROR("Hashtable column type mapping failed: unsupported MLIR type");
                     return columns;
                 }
 
-                columns.push_back({oid, nullable});
+                columns.push_back(metadata);
                 i++;
             }
         }
         return columns;
     };
 
-    auto keyColumns = extractColumns(keyType, originalKeyTypeOidsAttr, false);
-    auto valColumns = extractColumns(valType, originalValTypeOidsAttr, allowInternalValueCarriers);
+    auto keyColumns = extractColumns(keyType, originalKeyTypeAttrs, false);
+    auto valColumns = extractColumns(valType, originalValTypeAttrs, allowInternalValueCarriers);
 
     if (keyColumns.empty() && valColumns.empty()) {
         return nullptr;
@@ -114,17 +163,25 @@ createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType, mlir::Array
         MemoryContextAlloc(CurTransactionContext, valColumns.size() * sizeof(runtime::HashtableColumnInfo)));
 
     for (size_t i = 0; i < keyColumns.size(); i++) {
-        spec->key_columns[i].type_oid = keyColumns[i].first;
-        spec->key_columns[i].is_nullable = keyColumns[i].second;
-        PGX_LOG(DB_LOWER, DEBUG, "DSA: Created hashtable key_column[%zu]: type_oid=%u, nullable=%d",
-                    i, spec->key_columns[i].type_oid, spec->key_columns[i].is_nullable);
+        spec->key_columns[i].type_oid = keyColumns[i].oid;
+        spec->key_columns[i].typmod = keyColumns[i].typmod;
+        spec->key_columns[i].collation = keyColumns[i].collation;
+        spec->key_columns[i].is_nullable = keyColumns[i].is_nullable;
+        PGX_LOG(DB_LOWER, DEBUG,
+                "DSA: Created hashtable key_column[%zu]: type_oid=%u, typmod=%d, collation=%u, nullable=%d", i,
+                spec->key_columns[i].type_oid, spec->key_columns[i].typmod, spec->key_columns[i].collation,
+                spec->key_columns[i].is_nullable);
     }
 
     for (size_t i = 0; i < valColumns.size(); i++) {
-        spec->value_columns[i].type_oid = valColumns[i].first;
-        spec->value_columns[i].is_nullable = valColumns[i].second;
-        PGX_LOG(DB_LOWER, DEBUG, "DSA: Created hashtable value_column[%zu]: type_oid=%u, nullable=%d",
-                    i, spec->value_columns[i].type_oid, spec->value_columns[i].is_nullable);
+        spec->value_columns[i].type_oid = valColumns[i].oid;
+        spec->value_columns[i].typmod = valColumns[i].typmod;
+        spec->value_columns[i].collation = valColumns[i].collation;
+        spec->value_columns[i].is_nullable = valColumns[i].is_nullable;
+        PGX_LOG(DB_LOWER, DEBUG,
+                "DSA: Created hashtable value_column[%zu]: type_oid=%u, typmod=%d, collation=%u, nullable=%d", i,
+                spec->value_columns[i].type_oid, spec->value_columns[i].typmod, spec->value_columns[i].collation,
+                spec->value_columns[i].is_nullable);
     }
 
     PGX_LOG(DB_LOWER, DEBUG, "DSA: Created HashtableSpec at %p: num_keys=%d, num_vals=%d",
@@ -138,7 +195,7 @@ createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType, mlir::Array
 }
 
 static runtime::SortSpecification*
-createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, mlir::ArrayAttr originalTypeOidsAttr) {
+createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, const OriginalTypeAttrs& originalTypeAttrs) {
     auto tuple = tupleType.dyn_cast<mlir::TupleType>();
     if (!tuple || !sortKeysAttr) {
         return nullptr;
@@ -159,31 +216,8 @@ createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, mlir:
     for (int32_t i = 0; i < numColumns; i++) {
         mlir::Type fieldType = tuple.getTypes()[i];
 
-        bool is_nullable = false;
-        mlir::Type baseType = fieldType;
-
-        if (auto nullableType = fieldType.dyn_cast<mlir::db::NullableType>()) {
-            is_nullable = true;
-            baseType = nullableType.getType();
-        } else if (auto tupleTy = fieldType.dyn_cast<mlir::TupleType>()) {
-            if (tupleTy.getTypes().size() == 2 && tupleTy.getTypes()[0].isInteger(1)) {
-                is_nullable = true;
-                baseType = tupleTy.getTypes()[1];
-            }
-        }
-
-        uint32_t pg_type_oid = InvalidOid;
-        if (originalTypeOidsAttr && i < static_cast<int32_t>(originalTypeOidsAttr.size())) {
-            const uint32_t original_oid = mlir::cast<mlir::IntegerAttr>(originalTypeOidsAttr[i]).getInt();
-            if (OidIsValid(original_oid)) {
-                pg_type_oid = original_oid;
-            }
-        }
-        if (!OidIsValid(pg_type_oid)) {
-            pg_type_oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
-        }
-        int32_t typmod = -1;
-        if (!OidIsValid(pg_type_oid)) {
+        ColumnMetadata metadata = getColumnMetadata(fieldType, originalTypeAttrs, i, false);
+        if (!OidIsValid(metadata.oid)) {
             PGX_ERROR("Column %d type mapping failed: unsupported MLIR type", i);
             MemoryContextSwitchTo(oldContext);
             return nullptr;
@@ -191,9 +225,10 @@ createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, mlir:
 
         colInfos[i].table_name = pstrdup("unknown");
         colInfos[i].column_name = pstrdup("col");
-        colInfos[i].type_oid = pg_type_oid;
-        colInfos[i].typmod = typmod;
-        colInfos[i].is_nullable = is_nullable;
+        colInfos[i].type_oid = metadata.oid;
+        colInfos[i].typmod = metadata.typmod;
+        colInfos[i].collation = metadata.collation;
+        colInfos[i].is_nullable = metadata.is_nullable;
     }
 
     auto* sortKeyIdxs = static_cast<int32_t*>(MemoryContextAlloc(CurTransactionContext, numSortKeys * sizeof(int32_t)));
@@ -222,7 +257,7 @@ createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, mlir:
             return nullptr;
         }
         sortOps[i] = spec.comparison_op;
-        collations[i] = spec.collation;
+        collations[i] = OidIsValid(colInfos[colIndex].collation) ? colInfos[colIndex].collation : spec.collation;
     }
 
     auto* spec = static_cast<runtime::SortSpecification*>(
@@ -264,8 +299,8 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
             mlir::Value specPtrValue;
             if (createOp.getInitAttr()) {
                 if (auto sortKeysAttr = createOp.getInitAttr()->dyn_cast<mlir::ArrayAttr>()) {
-                    auto originalTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_type_oids");
-                    auto* spec = createSortSpecFromType(genericType.getElementType(), sortKeysAttr, originalTypeOidsAttr);
+                    OriginalTypeAttrs originalTypeAttrs = getOriginalTypeAttrs(createOp, "pgx_original_type");
+                    auto* spec = createSortSpecFromType(genericType.getElementType(), sortKeysAttr, originalTypeAttrs);
                     if (spec) {
                         PGX_LOG(RUNTIME, DEBUG, "Created SortSpecification: %d columns, %d sort keys",
                                 spec->num_columns, spec->num_sort_keys);
@@ -301,10 +336,10 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
          Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), typeConverter->convertType(tupleType));
 
          Value specPtr;
-         auto originalKeyTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_key_type_oids");
-         auto originalValTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_val_type_oids");
+         OriginalTypeAttrs originalKeyTypeAttrs = getOriginalTypeAttrs(createOp, "pgx_original_key_type");
+         OriginalTypeAttrs originalValTypeAttrs = getOriginalTypeAttrs(createOp, "pgx_original_val_type");
          auto* spec = createHashtableSpecFromTypes(joinHtType.getKeyType(), joinHtType.getValType(),
-                                                   originalKeyTypeOidsAttr, originalValTypeOidsAttr, true);
+                                                   originalKeyTypeAttrs, originalValTypeAttrs, true);
          if (spec) {
             specPtr = rewriter.create<arith::ConstantIndexOp>(loc, reinterpret_cast<uint64_t>(spec));
          } else {
@@ -353,10 +388,10 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
                );
             } else {
                PGX_LOG(DB_LOWER, DEBUG, "No spec_ptr attribute, calling createHashtableSpecFromTypes");
-               auto originalKeyTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_key_type_oids");
-               auto originalValTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_val_type_oids");
-               auto* spec = createHashtableSpecFromTypes(keyType, aggrType, originalKeyTypeOidsAttr,
-                                                         originalValTypeOidsAttr, true);
+               OriginalTypeAttrs originalKeyTypeAttrs = getOriginalTypeAttrs(createOp, "pgx_original_key_type");
+               OriginalTypeAttrs originalValTypeAttrs = getOriginalTypeAttrs(createOp, "pgx_original_val_type");
+               auto* spec = createHashtableSpecFromTypes(keyType, aggrType, originalKeyTypeAttrs, originalValTypeAttrs,
+                                                         true);
                if (spec) {
                   specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
                      loc, rewriter.getIntegerAttr(rewriter.getI64Type(), reinterpret_cast<uint64_t>(spec))

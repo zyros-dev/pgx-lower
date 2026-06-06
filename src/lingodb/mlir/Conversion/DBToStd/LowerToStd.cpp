@@ -34,6 +34,7 @@
 #include <catalog/pg_type_d.h>
 #include <lingodb/mlir/Dialect/util/FunctionHelper.h>
 #include <lingodb/utility/mlir_to_postgres.h>
+#include <string>
 #include <type_traits>
 
 using namespace mlir;
@@ -184,41 +185,61 @@ static NullableOperand unwrapNullableOperand(mlir::OpBuilder& builder, mlir::Loc
     return {value, mlir::Value()};
 }
 
-static uint32_t getOriginalPgTypeOid(mlir::Type type) {
-    mlir::Type baseType = type;
+struct PgTypeSnapshot {
+    uint32_t oid;
+    int32_t typmod;
+    uint32_t collation;
+};
+
+static mlir::Type getOriginalPgBaseType(mlir::Type type) {
     if (auto nullableType = mlir::dyn_cast<mlir::db::NullableType>(type)) {
-        baseType = nullableType.getType();
-    } else if (auto tupleType = mlir::dyn_cast<mlir::TupleType>(type)) {
+        return nullableType.getType();
+    }
+    if (auto tupleType = mlir::dyn_cast<mlir::TupleType>(type)) {
         if (tupleType.getTypes().size() == 2 && tupleType.getTypes()[0].isInteger(1)) {
-            baseType = tupleType.getTypes()[1];
+            return tupleType.getTypes()[1];
         }
     }
-
-    if (mlir::db::isPgValueType(baseType)) {
-        return mlir::db::getPgTypeOid(baseType);
-    }
-    if (baseType.isIntOrIndexOrFloat()) {
-        return InvalidOid;
-    }
-    if (mlir::isa<mlir::db::DecimalType>(baseType)) {
-        return NUMERICOID;
-    }
-    if (mlir::isa<mlir::db::StringType>(baseType)) {
-        return TEXTOID;
-    }
-    if (mlir::isa<mlir::db::CharType>(baseType)) {
-        return BPCHAROID;
-    }
-    return InvalidOid;
+    return type;
 }
 
-static mlir::ArrayAttr getOriginalPgTypeOidAttrs(mlir::TupleType tupleType, mlir::ConversionPatternRewriter& rewriter) {
-    llvm::SmallVector<mlir::Attribute> oidAttrs;
-    oidAttrs.reserve(tupleType.size());
-    for (mlir::Type fieldType : tupleType.getTypes()) {
-        oidAttrs.push_back(rewriter.getI32IntegerAttr(getOriginalPgTypeOid(fieldType)));
+static PgTypeSnapshot getOriginalPgTypeSnapshot(mlir::Type type) {
+    mlir::Type baseType = getOriginalPgBaseType(type);
+    if (mlir::db::isPgValueType(baseType)) {
+        return {mlir::db::getPgTypeOid(baseType), mlir::db::getPgTypmod(baseType), mlir::db::getPgCollation(baseType)};
     }
-    return rewriter.getArrayAttr(oidAttrs);
+    return {InvalidOid, -1, InvalidOid};
+}
+
+struct PgTypeSnapshotAttrs {
+    mlir::ArrayAttr oids;
+    mlir::ArrayAttr typmods;
+    mlir::ArrayAttr collations;
+};
+
+static PgTypeSnapshotAttrs
+getOriginalPgTypeSnapshotAttrs(mlir::TupleType tupleType, mlir::ConversionPatternRewriter& rewriter) {
+    llvm::SmallVector<mlir::Attribute> oidAttrs;
+    llvm::SmallVector<mlir::Attribute> typmodAttrs;
+    llvm::SmallVector<mlir::Attribute> collationAttrs;
+    oidAttrs.reserve(tupleType.size());
+    typmodAttrs.reserve(tupleType.size());
+    collationAttrs.reserve(tupleType.size());
+    for (mlir::Type fieldType : tupleType.getTypes()) {
+        PgTypeSnapshot snapshot = getOriginalPgTypeSnapshot(fieldType);
+        oidAttrs.push_back(rewriter.getI32IntegerAttr(snapshot.oid));
+        typmodAttrs.push_back(rewriter.getI32IntegerAttr(snapshot.typmod));
+        collationAttrs.push_back(rewriter.getI32IntegerAttr(snapshot.collation));
+    }
+    return {rewriter.getArrayAttr(oidAttrs), rewriter.getArrayAttr(typmodAttrs), rewriter.getArrayAttr(collationAttrs)};
+}
+
+static void setOriginalPgTypeAttrs(mlir::Operation* op, const char* prefix, mlir::TupleType tupleType,
+                                   mlir::ConversionPatternRewriter& rewriter) {
+    PgTypeSnapshotAttrs attrs = getOriginalPgTypeSnapshotAttrs(tupleType, rewriter);
+    op->setAttr(std::string(prefix) + "_oids", attrs.oids);
+    op->setAttr(std::string(prefix) + "_typmods", attrs.typmods);
+    op->setAttr(std::string(prefix) + "_collations", attrs.collations);
 }
 
 template <class Op>
@@ -259,16 +280,16 @@ class SimpleTypeConversionPattern : public ConversionPattern {
           if (auto genericType = mlir::dyn_cast<mlir::dsa::GenericIterableType>(createOp.getDs().getType())) {
               if (genericType.getIteratorName() == "pgsort_iterator") {
                   if (auto tupleType = mlir::dyn_cast<mlir::TupleType>(genericType.getElementType())) {
-                      newOp->setAttr("pgx_original_type_oids", getOriginalPgTypeOidAttrs(tupleType, rewriter));
+                      setOriginalPgTypeAttrs(newOp, "pgx_original_type", tupleType, rewriter);
                   }
               }
           } else if (auto joinHtType = mlir::dyn_cast<mlir::dsa::JoinHashtableType>(createOp.getDs().getType())) {
-              newOp->setAttr("pgx_original_key_type_oids", getOriginalPgTypeOidAttrs(joinHtType.getKeyType(), rewriter));
-              newOp->setAttr("pgx_original_val_type_oids", getOriginalPgTypeOidAttrs(joinHtType.getValType(), rewriter));
+              setOriginalPgTypeAttrs(newOp, "pgx_original_key_type", joinHtType.getKeyType(), rewriter);
+              setOriginalPgTypeAttrs(newOp, "pgx_original_val_type", joinHtType.getValType(), rewriter);
           } else if (auto aggrHtType = mlir::dyn_cast<mlir::dsa::AggregationHashtableType>(createOp.getDs().getType()))
           {
-              newOp->setAttr("pgx_original_key_type_oids", getOriginalPgTypeOidAttrs(aggrHtType.getKeyType(), rewriter));
-              newOp->setAttr("pgx_original_val_type_oids", getOriginalPgTypeOidAttrs(aggrHtType.getValType(), rewriter));
+              setOriginalPgTypeAttrs(newOp, "pgx_original_key_type", aggrHtType.getKeyType(), rewriter);
+              setOriginalPgTypeAttrs(newOp, "pgx_original_val_type", aggrHtType.getValType(), rewriter);
           }
       }
       for (size_t i = 0; i < op->getNumRegions(); i++) {
