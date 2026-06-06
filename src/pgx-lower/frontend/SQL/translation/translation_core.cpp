@@ -264,21 +264,6 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         }
 #endif
     }
-    case BYTEAOID: {
-#ifdef POSTGRESQL_EXTENSION
-        if (constNode->constvalue != 0u) {
-            auto* bytea_val = DatumGetByteaP(constNode->constvalue);
-            const char* data = VARDATA(bytea_val);
-            const int len = VARSIZE(bytea_val) - VARHDRSZ;
-            const std::string binary_value(data, len);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA constant: length=%d bytes", len);
-            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
-                                                        builder.getStringAttr(binary_value));
-        }
-#endif
-        PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA constant with null value, creating NULL");
-        return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), mlirType);
-    }
     default:
         PGX_ERROR("Unsupported constant type: %d", constNode->consttype);
         throw std::runtime_error("Unsupported constant type");

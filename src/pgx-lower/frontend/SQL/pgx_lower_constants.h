@@ -25,7 +25,6 @@ constexpr auto INVALID_TYPMOD = -1;
 
 constexpr auto INVALID_VARNO = 0;
 constexpr auto INVALID_VARATTNO = 0;
-constexpr Oid PG_TEXT_ARRAY_OID = TEXTARRAYOID;
 
 constexpr auto BOOL_AND_EXPR = 0;
 constexpr auto BOOL_OR_EXPR = 1;

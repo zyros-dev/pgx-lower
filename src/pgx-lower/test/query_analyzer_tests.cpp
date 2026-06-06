@@ -10,7 +10,6 @@ extern "C" {
 }
 
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
-#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/test/pgx_test_fn.h"
 
 #include <string>
@@ -195,7 +194,7 @@ PGX_TEST_FN(query_analyzer_rejects_scalar_array_ordering_operator) {
 
 PGX_TEST_FN(query_analyzer_rejects_scalar_array_text_const_array) {
     auto lhs = makeTypedConst(TEXTOID);
-    auto arrayConst = makeTypedConst(pgx_lower::frontend::sql::constants::PG_TEXT_ARRAY_OID);
+    auto arrayConst = makeTypedConst(TEXTARRAYOID);
     auto scalarArray = ScalarArrayOpExpr{};
     scalarArray.xpr.type = T_ScalarArrayOpExpr;
     scalarArray.opno = TextEqualOperator;

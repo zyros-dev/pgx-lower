@@ -394,14 +394,6 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         throw std::runtime_error("Failed to translate left operand of IN expression");
     }
 
-    Oid leftTypeOid = exprType(leftNode);
-    int32 leftTypeMod = exprTypmod(leftNode);
-    int bpcharLength{-1};
-    if (leftTypeOid == BPCHAROID && leftTypeMod >= VARHDRSZ) {
-        bpcharLength = leftTypeMod - VARHDRSZ;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Left operand is BPCHAR with length=%d", bpcharLength);
-    }
-
     const auto rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
@@ -455,69 +447,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
                     arrayElements.push_back(translate_const(ctx, &elemConst));
                 }
             }
-        } else if (constNode->consttype == PG_TEXT_ARRAY_OID) {
-            if (constNode->constisnull) {
-                return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableBoolType());
-            }
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems{};
-            Datum* values = nullptr;
-            bool* nulls = nullptr;
-
-            deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
-
-            for (int i{}; i < nitems; i++) {
-                if (nulls && nulls[i]) {
-                    hasNullArrayElement = true;
-                } else {
-                    const auto textValue = DatumGetTextP(values[i]);
-                    std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
-
-                    auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
-                        ctx.builder.getUnknownLoc(), ctx.builder.getType<mlir::db::StringType>(),
-                        ctx.builder.getStringAttr(str_value));
-                    arrayElements.push_back(elemValue);
-                }
-            }
-        } else if (constNode->consttype == BPCHARARRAYOID) {
-            if (constNode->constisnull) {
-                return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableBoolType());
-            }
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Processing BPCHAR array (CHAR/VARCHAR), target column length=%d",
-                    bpcharLength);
-            const auto array = DatumGetArrayTypeP(constNode->constvalue);
-            int nitems{};
-            Datum* values = nullptr;
-            bool* nulls = nullptr;
-
-            deconstruct_array(array, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
-
-            for (int i{}; i < nitems; i++) {
-                if (nulls && nulls[i]) {
-                    hasNullArrayElement = true;
-                } else {
-                    const auto bpcharValue = DatumGetBpCharP(values[i]);
-                    std::string str_value(VARDATA_ANY(bpcharValue), VARSIZE_ANY_EXHDR(bpcharValue));
-
-                    str_value.erase(str_value.find_last_not_of(' ') + 1);
-
-                    if (bpcharLength > 0 && str_value.length() < static_cast<size_t>(bpcharLength)) {
-                        str_value.resize(bpcharLength, ' ');
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "BPCHAR array element[%d]: '%s' (padded to len=%d)", i,
-                                str_value.c_str(), bpcharLength);
-                    } else {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "BPCHAR array element[%d]: '%s' (len=%zu, no padding needed)", i,
-                                str_value.c_str(), str_value.length());
-                    }
-
-                    auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
-                        ctx.builder.getUnknownLoc(), ctx.builder.getType<mlir::db::StringType>(),
-                        ctx.builder.getStringAttr(str_value));
-                    arrayElements.push_back(elemValue);
-                }
-            }
         } else {
-            PGX_WARNING("ScalarArrayOpExpr: Unsupported const array type %u", constNode->consttype);
+            PGX_ERROR("ScalarArrayOpExpr: Unsupported const array type %u", constNode->consttype);
+            throw std::runtime_error("Unsupported ScalarArrayOpExpr const array type");
         }
     } else if (nodeTag(rightNode) == T_SubPlan) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr with SubPlan operand detected (ANY/ALL/IN subquery)");
