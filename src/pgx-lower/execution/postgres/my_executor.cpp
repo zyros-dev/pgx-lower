@@ -116,6 +116,8 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
         const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
 
         Oid columnType = INT4OID;
+        int32_t columnTypmod = -1;
+        Oid columnCollation = InvalidOid;
         int typeLen = sizeof(int32);
         bool typeByVal = true;
         char typeAlign = TYPALIGN_INT;
@@ -139,6 +141,8 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             PGX_LOG(GENERAL, DEBUG, "Column %d: Examining tle->expr nodeTag=%d resname=%s", i,
                                     nodeTag(tle->expr), tle->resname ? tle->resname : "NULL");
                             columnType = exprType((Node*)tle->expr);
+                            columnTypmod = exprTypmod((Node*)tle->expr);
+                            columnCollation = exprCollation((Node*)tle->expr);
 
                             if (columnType == InvalidOid) {
                                 PGX_ERROR("Failed to determine type for expression node type: %d", nodeTag(tle->expr));
@@ -172,7 +176,8 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
         resultAttr->attlen = typeLen;
         resultAttr->attbyval = typeByVal;
         resultAttr->attalign = typeAlign;
-        resultAttr->atttypmod = -1;
+        resultAttr->atttypmod = columnTypmod;
+        resultAttr->attcollation = columnCollation;
         resultAttr->attnotnull = false;
     }
 
@@ -223,8 +228,9 @@ setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, TupleTableSlo
     for (auto i = 0; i < resultTupleDesc->natts; i++) {
         const auto attr = TupleDescAttr(resultTupleDesc, i);
         if (i < g_computed_results.numComputedColumns) {
-            g_computed_results.computedTypes[i] = attr->atttypid;
-            PGX_LOG(GENERAL, DEBUG, "Initialized computed result column %d with type OID %d", i, attr->atttypid);
+            g_computed_results.setMetadata(i, {attr->atttypid, attr->atttypmod, attr->attcollation});
+            PGX_LOG(GENERAL, DEBUG, "Initialized computed result column %d with type OID %d typmod %d collation %d", i,
+                    attr->atttypid, attr->atttypmod, attr->attcollation);
         } else {
             PGX_WARNING("Managed to access a natt out of range");
         }

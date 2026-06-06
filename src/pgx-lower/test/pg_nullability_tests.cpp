@@ -11,6 +11,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
+#include "lingodb/mlir/Dialect/DB/Passes.h"
 #include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -116,6 +117,12 @@ auto parseModule(mlir::MLIRContext& ctx, llvm::StringRef moduleText, bool logDia
 auto runDBToStd(mlir::MLIRContext& ctx, mlir::ModuleOp module) -> bool {
     mlir::PassManager pm(&ctx);
     mlir::db::createLowerDBPipeline(pm);
+    return mlir::succeeded(pm.run(module)) && mlir::succeeded(mlir::verify(module));
+}
+
+auto runInjectDecimalScale(mlir::MLIRContext& ctx, mlir::ModuleOp module) -> bool {
+    mlir::PassManager pm(&ctx);
+    pm.addPass(mlir::db::createInjectDecimalScalePass());
     return mlir::succeeded(pm.run(module)) && mlir::succeeded(mlir::verify(module));
 }
 
@@ -313,6 +320,26 @@ PGX_TEST_FN(pg_db_to_std_preserves_dsa_pg_metadata_attrs) {
     requireIntArrayAttr(joinCreate, "pgx_original_val_type_oids", {TEXTOID});
     requireIntArrayAttr(joinCreate, "pgx_original_val_type_typmods", {-1});
     requireIntArrayAttr(joinCreate, "pgx_original_val_type_collations", {777});
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(pg_numeric_typmod_injects_decimal_scale) {
+    Fixture f;
+    auto module = parseModule(f.ctx, R"mlir(
+module {
+  func.func @append_numeric(%builder: !dsa.table_builder<tuple<!db.pg_numeric<typmod = 786438>>>,
+                            %value: !db.pg_numeric<typmod = 786438>) {
+    %valid = arith.constant true
+    dsa.ds_append %builder : !dsa.table_builder<tuple<!db.pg_numeric<typmod = 786438>>>, %value : !db.pg_numeric<typmod = 786438>, %valid
+    return
+  }
+}
+)mlir");
+    REQUIRE(module);
+    REQUIRE(runInjectDecimalScale(f.ctx, *module));
+    const std::string printed = moduleToString(*module);
+    requireContains(printed, "dsa.set_decimal_scale");
+    requireContains(printed, "arith.constant 2 : i32");
     PG_RETURN_VOID();
 }
 
