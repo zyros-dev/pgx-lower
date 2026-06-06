@@ -83,23 +83,20 @@ static ::mlir::Value constLikeImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRan
          if (pattern[pos] == '\\') {
             currentSubPattern += pattern[pos + 1];
             pos += 2;
-         } else if (pattern[pos] == '.') {
-            //match current pattern
-            lastMatchEnd = matchPart(rewriter, loc, lastMatchEnd, currentSubPattern, str, end);
-            ::mlir::Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-
-            lastMatchEnd = rewriter.create<arith::AddIOp>(loc, lastMatchEnd, one);
-            currentSubPattern = "";
-            //lastMatchEnd+=1
-            pos += 1;
+         } else if (pattern[pos] == '_') {
+             lastMatchEnd = matchPart(rewriter, loc, lastMatchEnd, currentSubPattern, str, end);
+             ::mlir::Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+             lastMatchEnd = rewriter.create<arith::AddIOp>(loc, lastMatchEnd, one);
+             currentSubPattern = "";
+             pos += 1;
          } else if (pattern[pos] == '%') {
-            flexible=true;
-            lastMatchEnd = matchPart(rewriter, loc, lastMatchEnd, currentSubPattern, str, end);
-            currentSubPattern = "";
-            pos += 1;
+             flexible = true;
+             lastMatchEnd = matchPart(rewriter, loc, lastMatchEnd, currentSubPattern, str, end);
+             currentSubPattern = "";
+             pos += 1;
          } else {
-            currentSubPattern += pattern[pos];
-            pos += 1;
+             currentSubPattern += pattern[pos];
+             pos += 1;
          }
       }
       if (!currentSubPattern.empty()) {
@@ -200,7 +197,9 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(64); };
    auto resTypeIsI32 = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(32); };
-   auto resTypeIsBool = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(1); };
+   auto resTypeIsBool = [](::mlir::Type t, ::mlir::TypeRange) {
+       return t.isInteger(1) || mlir::isa<mlir::db::PgBoolType>(t);
+   };
    auto resTypeIsString = [](::mlir::Type t, ::mlir::TypeRange) { return t.isa<mlir::db::StringType>(); };
    builtinRegistry->add("Substring").implementedAs(rt::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
    builtinRegistry->add("Like").implementedAs(rt::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);

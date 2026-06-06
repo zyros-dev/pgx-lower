@@ -81,4 +81,3 @@ void createLowerRelAlgPipeline(mlir::OpPassManager& pm){
 
 } // end namespace relalg
 } // end namespace mlir
-

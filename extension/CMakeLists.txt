@@ -13,6 +13,8 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/accepted_plan_verifier_tests.cpp
             ../src/pgx-lower/test/pg_primitive_type_tests.cpp
             ../src/pgx-lower/test/pg_nullability_tests.cpp
+            ../src/pgx-lower/test/pg_legacy_nullable_cleanup_tests.cpp
+            ../src/pgx-lower/test/postgresql_type_mapper_tests.cpp
         )
     endif()
 

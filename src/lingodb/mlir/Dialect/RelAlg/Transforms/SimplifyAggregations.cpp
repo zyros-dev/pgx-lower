@@ -1,4 +1,5 @@
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 #include "lingodb/mlir/Dialect/RelAlg/Passes.h"
@@ -12,6 +13,16 @@ using mlir::relalg::BinaryOperator;
 using mlir::relalg::UnaryOperator;
 using mlir::relalg::TupleLamdaOperator;
 using mlir::relalg::PredicateOperator;
+
+static mlir::Type getScalarAggregateType(mlir::Type resultType, mlir::MLIRContext* context) {
+    if (mlir::db::isPgValueType(resultType)) {
+        return mlir::db::withPgNullability(resultType, mlir::db::PgNullability::Maybe);
+    }
+    if (mlir::isa<mlir::db::NullableType>(resultType)) {
+        return resultType;
+    }
+    return mlir::db::NullableType::get(context, resultType);
+}
 
 //Pattern that optimizes the join order
 class WrapAggrFuncPattern : public mlir::RewritePattern {
@@ -44,11 +55,12 @@ class WrapAggrFuncPattern : public mlir::RewritePattern {
          auto val = rewriter.create<mlir::relalg::AggrFuncOp>(op->getLoc(), aggrFuncOp.getType(), aggrFuncOp.getFn(), relArgument, aggrFuncOp.getAttr());
          rewriter.create<mlir::relalg::ReturnOp>(op->getLoc(), ::mlir::ValueRange({val}));
       }
-      auto nullableType = aggrFuncOp.getType().dyn_cast_or_null<mlir::db::NullableType>();
-      ::mlir::Value getScalarOp = rewriter.replaceOpWithNewOp<mlir::relalg::GetScalarOp>(op, nullableType, attributeManager.createRef(&def.getColumn()), aggrOp.asRelation());
+      auto scalarType = getScalarAggregateType(aggrFuncOp.getType(), getContext());
+      ::mlir::Value getScalarOp = rewriter.replaceOpWithNewOp<mlir::relalg::GetScalarOp>(
+          op, scalarType, attributeManager.createRef(&def.getColumn()), aggrOp.asRelation());
       ::mlir::Value res = getScalarOp;
-      if (!nullableType) {
-         res = rewriter.create<mlir::db::NullableGetVal>(op->getLoc(), aggrFuncOp.getType(), getScalarOp);
+      if (mlir::isa<mlir::db::NullableType>(scalarType) && !mlir::isa<mlir::db::NullableType>(aggrFuncOp.getType())) {
+          res = rewriter.create<mlir::db::NullableGetVal>(op->getLoc(), aggrFuncOp.getType(), getScalarOp);
       }
       rewriter.replaceOp(op, res);
       return mlir::success(true);
@@ -84,10 +96,7 @@ class WrapCountRowsPattern : public mlir::RewritePattern {
          auto val = rewriter.create<mlir::relalg::CountRowsOp>(op->getLoc(), aggrFuncOp.getType(), relArgument);
          rewriter.create<mlir::relalg::ReturnOp>(op->getLoc(), ::mlir::ValueRange({val}));
       }
-      ::mlir::Type nullableType = aggrFuncOp.getType();
-      if (!nullableType.isa<mlir::db::NullableType>()) {
-         nullableType = mlir::db::NullableType::get(rewriter.getContext(), nullableType);
-      }
+      ::mlir::Type nullableType = getScalarAggregateType(aggrFuncOp.getType(), rewriter.getContext());
       ::mlir::Value getScalarOp = rewriter.create<mlir::relalg::GetScalarOp>(op->getLoc(), nullableType, attributeManager.createRef(&def.getColumn()), aggrOp.asRelation());
       ::mlir::Value res = rewriter.create<mlir::db::AsNullableOp>(op->getLoc(), aggrFuncOp.getType(), getScalarOp);
       rewriter.replaceOp(op, res);
@@ -141,4 +150,3 @@ namespace relalg {
 std::unique_ptr<mlir::Pass> createSimplifyAggregationsPass() { return std::make_unique<SimplifyAggregations>(); }
 } // end namespace relalg
 } // end namespace mlir
-

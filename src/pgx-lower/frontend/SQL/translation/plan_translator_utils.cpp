@@ -39,6 +39,7 @@ extern "C" Oid compatible_oper_opid(List* op, Oid arg1, Oid arg2, bool noError);
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "llvm/ADT/SmallVector.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
@@ -405,6 +406,7 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
                 .column_name = col.column_name,
                 .type_oid = col.type_oid,
                 .typmod = col.typmod,
+                .collation = col.collation,
                 .nullable = col.nullable,
                 .mlir_type = col.mlir_type,
                 .cached_value = initplan_result.op->getResult(0)};
@@ -480,18 +482,16 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
 
                     if (mlir::Value condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode))) {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated HAVING condition %d", i);
-                        if (!condValue.getType().isInteger(1)) {
-                            condValue = predicate_builder.create<mlir::db::DeriveTruth>(
-                                predicate_builder.getUnknownLoc(), condValue);
-                        }
+                        condValue = pgx_lower::frontend::sql::derive_truth_if_needed(predicate_builder, condValue);
 
                         if (!predicateResult) {
                             predicateResult = condValue;
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Set first HAVING predicate");
                         } else {
+                            llvm::SmallVector<mlir::Value, 2> values{predicateResult, condValue};
                             predicateResult = predicate_builder.create<mlir::db::AndOp>(
-                                predicate_builder.getUnknownLoc(), predicate_builder.getI1Type(),
-                                mlir::ValueRange{predicateResult, condValue});
+                                predicate_builder.getUnknownLoc(),
+                                pgx_lower::frontend::sql::sql_bool_result_type(predicate_builder, values), values);
                             PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed HAVING predicate %d", i);
                         }
                     } else {
@@ -504,10 +504,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         if (!predicateResult) {
             throw std::runtime_error("We parsed that there were predicates, but got nothing out of it!");
         }
-        if (!predicateResult.getType().isInteger(1)) { // is boolean
-            predicateResult = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
-                                                                              predicateResult);
-        }
+        predicateResult = pgx_lower::frontend::sql::derive_truth_if_needed(predicate_builder, predicateResult);
 
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(),
                                                          mlir::ValueRange{predicateResult});
@@ -574,17 +571,16 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
                     condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode));
 
                     if (condValue) {
-                        if (!condValue.getType().isInteger(1)) {
-                            condValue = predicate_builder.create<mlir::db::DeriveTruth>(
-                                predicate_builder.getUnknownLoc(), condValue);
-                        }
+                        condValue = pgx_lower::frontend::sql::derive_truth_if_needed(predicate_builder, condValue);
 
                         if (!predicateResult) {
                             predicateResult = condValue;
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Set first join predicate");
                         } else {
+                            llvm::SmallVector<mlir::Value, 2> values{predicateResult, condValue};
                             predicateResult = predicate_builder.create<mlir::db::AndOp>(
-                                predicate_builder.getUnknownLoc(), mlir::ValueRange{predicateResult, condValue});
+                                predicate_builder.getUnknownLoc(),
+                                pgx_lower::frontend::sql::sql_bool_result_type(predicate_builder, values), values);
                             PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed join predicate %d", i);
                         }
                     } else {
@@ -597,10 +593,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
         if (!predicateResult) {
             throw std::runtime_error("We parsed that there were predicates, but got nothing out of it!");
         }
-        if (!predicateResult.getType().isInteger(1)) {
-            predicateResult = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
-                                                                              predicateResult);
-        }
+        predicateResult = pgx_lower::frontend::sql::derive_truth_if_needed(predicate_builder, predicateResult);
 
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(),
                                                          mlir::ValueRange{predicateResult});
@@ -631,12 +624,13 @@ auto PostgreSQLASTTranslator::Impl::build_scan_columns(List* targetlist,
             if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
                 const auto& colInfo = allColumns[var->varattno - 1];
                 const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                            colInfo.nullable);
+                                                                            colInfo.collation, colInfo.nullable);
 
                 columns.push_back({.table_name = table_scope,
                                    .column_name = colInfo.name,
                                    .type_oid = colInfo.type_oid,
                                    .typmod = colInfo.typmod,
+                                   .collation = colInfo.collation,
                                    .mlir_type = mlirType,
                                    .nullable = colInfo.nullable});
             }
@@ -823,11 +817,12 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     std::vector<TranslationResult::ColumnSchema> allColumns = input.columns;
     for (size_t i{}; i < expressionTypes.size(); i++) {
         allColumns.push_back({.table_name = COMPUTED_EXPRESSION_SCOPE,
-                             .column_name = columnNames[i],
-                             .type_oid = expressionOids[i],
-                             .typmod = -1,
-                             .mlir_type = expressionTypes[i],
-                             .nullable = true});
+                              .column_name = columnNames[i],
+                              .type_oid = expressionOids[i],
+                              .typmod = -1,
+                              .collation = InvalidOid,
+                              .mlir_type = expressionTypes[i],
+                              .nullable = true});
     }
 
     TranslationResult intermediateResult;

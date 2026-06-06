@@ -7,9 +7,12 @@ import { NodeCommandRunner } from "./commands.js";
 import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
+import { runLogsCommand } from "./logs.js";
 import { connectMcp } from "./mcp.js";
+import { writeBufferedOutput } from "./output.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
+import { runRgCommand } from "./search.js";
 import { runUnitSqlCommand } from "./unit-sql.js";
 import {
   runQueueCommand,
@@ -61,8 +64,7 @@ try {
       dockerContainer: config.dockerContainer,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -70,8 +72,7 @@ try {
     process.exitCode = await runSyncCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -82,8 +83,7 @@ try {
       remoteProjectPath: config.remoteProjectPath,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -94,8 +94,7 @@ try {
       remoteProjectPath: config.remoteProjectPath,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -107,8 +106,27 @@ try {
       dockerContainer: config.dockerContainer,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
+    process.exit();
+  }
+
+  if (argv[0] === "logs") {
+    process.exitCode = await runLogsCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      dockerContainer: config.dockerContainer,
+      runningOnRemote: config.runningOnRemote
+    });
+    writeBufferedOutput(io);
+    process.exit();
+  }
+
+  if (argv[0] === "rg") {
+    process.exitCode = await runRgCommand(argv.slice(1), runner, io, {
+      localProjectPath: config.localProjectPath
+    });
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -116,29 +134,25 @@ try {
     process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "route-check") {
     process.exitCode = await runRouteCheckCommand(argv.slice(2), runner, io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
     process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "unit-sql") {
     process.exitCode = runUnitSqlCommand(argv.slice(2), io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -156,8 +170,7 @@ try {
       dockerContainer: config.dockerContainer,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -172,8 +185,7 @@ try {
       checkQueue: config.checkQueue,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    writeBufferedOutput(io);
     process.exit();
   }
 
@@ -196,12 +208,10 @@ try {
     sshHost: config.sshHost,
     projectPath: config.projectPath
   });
-  process.stdout.write(io.stdout);
-  process.stderr.write(io.stderr);
+  writeBufferedOutput(io);
   process.exitCode = exitCode;
 } catch (error) {
-  process.stdout.write(io.stdout);
-  process.stderr.write(io.stderr);
+  writeBufferedOutput(io);
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 }

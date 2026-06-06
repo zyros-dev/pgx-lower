@@ -188,7 +188,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     auto& columnManager = dialect->getColumnManager();
 
     const auto type_mapper = PostgreSQLTypeMapper(context_);
-    auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
+    auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, var->varcollid, nullable);
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='%s', column='%s'",
             tableName.c_str(), colName.c_str());

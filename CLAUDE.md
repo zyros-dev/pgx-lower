@@ -29,6 +29,11 @@ Semantic aliases are fine when they clarify the PG meaning, e.g. a
 Avoid aliases that make a PG value look like an arbitrary `uint64_t`/`uintptr_t`
 unless the code is truly doing mechanical ABI packing.
 
+PostgreSQL data values in MLIR use `!db.pg_*` semantic types. PG nullability is
+metadata on those PG types; do not introduce `!db.nullable<T>` for PostgreSQL
+values. Internal compiler machinery such as indexes, hash values, offsets,
+loop counters, and null bits should remain ordinary MLIR/helper types.
+
 ## Merge discipline
 
 Never merge a PR, rebase-merge a PR, squash-merge a PR, delete a PR branch, or
@@ -57,6 +62,17 @@ build, test, lint, queue, Docker, setup, and repo maintenance.
   `pgx-cli dev test tpch`, `pgx-cli dev build compile --profile debug`, and
   `pgx-cli queue status` before reaching for raw `ssh comfy`, `mutagen`, or
   `tsp`.
+- Use `pgx-cli logs errors --lines 50` instead of raw
+  `ssh comfy "docker exec ... tail ... /tmp/pgx_errors.log"` when inspecting
+  PostgreSQL/backend error logs.
+- Use `pgx-cli logs docker --lines 80` instead of raw `docker logs` when
+  inspecting postmaster/container crashes.
+- Use `pgx-cli rg --lines 50 <pattern> [path...]` instead of broad raw `rg`
+  searches. It caps chat output and writes the full search transcript to a temp
+  file when truncated.
+- Keep agent-facing command output small. If a single raw command injects a
+  large stdout/stderr payload into the conversation, add or extend a `pgx-cli`
+  shorthand for that workflow and use the `pgx-cli` form thereafter.
 - Before adding a new script, just recipe, or direct SSH workflow, first add or
   extend a `pgx-cli` command.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow

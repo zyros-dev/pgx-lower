@@ -35,6 +35,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 
 #include <memory>
 #include <unordered_map>
@@ -112,17 +113,22 @@ auto createColumnDef(mlir::relalg::ColumnManager& columnManager, const std::stri
     return colDef;
 }
 
+auto countResultType(const PostgreSQLTypeMapper& type_mapper, const Oid collation) -> mlir::Type {
+    return type_mapper.map_postgre_sqltype(INT8OID, -1, collation, false);
+}
+
 auto processCountStarAggregate(mlir::OpBuilder& aggr_builder, const mlir::Location loc, mlir::Value relation,
                                mlir::relalg::ColumnDefAttr& attrDef, mlir::relalg::ColumnManager& columnManager,
                                const std::string& aggrScopeName, const std::string& aggColumnName,
                                std::map<int, std::pair<std::string, std::string>>& aggregateMappings, const int aggno,
-                               const bool logDebug = true) -> mlir::Value {
+                               const PostgreSQLTypeMapper& type_mapper, const Oid collation, const bool logDebug = true)
+    -> mlir::Value {
     if (logDebug) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Processing COUNT(*) aggregate aggno=%d", aggno);
     }
 
-    auto i64Type = mlir::IntegerType::get(aggr_builder.getContext(), 64);
-    attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, i64Type);
+    auto resultType = countResultType(type_mapper, collation);
+    attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
 
     aggregateMappings[aggno] = std::make_pair(aggrScopeName, aggColumnName);
 
@@ -131,7 +137,7 @@ auto processCountStarAggregate(mlir::OpBuilder& aggr_builder, const mlir::Locati
                 aggColumnName.c_str());
     }
 
-    return aggr_builder.create<mlir::relalg::CountRowsOp>(loc, i64Type, relation);
+    return aggr_builder.create<mlir::relalg::CountRowsOp>(loc, relation);
 }
 
 auto createAggregateOperation(mlir::OpBuilder& aggr_builder, const mlir::Location loc, mlir::Type resultType,
@@ -293,18 +299,22 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 if (stream != childOutput) {
                     childOutput = llvm::cast<mlir::OpResult>(stream);
                     const mlir::Type actual_type = column_ref.getColumn().type;
-                    const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
+                    const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type)
+                                             || (mlir::db::isPgValueType(actual_type)
+                                                 && mlir::db::getPgNullability(actual_type)
+                                                        == mlir::db::PgNullability::Maybe);
 
                     Oid actual_oid = PostgreSQLTypeMapper::map_mlir_type_to_oid(actual_type);
                     childResult.columns.push_back({.table_name = table_name,
                                                    .column_name = column_name,
                                                    .type_oid = actual_oid,
                                                    .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
+                                                   .collation = exprCollation(reinterpret_cast<Node*>(argTE->expr)),
                                                    .mlir_type = actual_type,
                                                    .nullable = is_nullable});
                 }
 
-                auto resultType = ctx.builder.getI64Type();
+                auto resultType = countResultType(type_mapper, aggref->aggcollid);
                 const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
                 aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
                 aggregateTypes[aggref->aggno] = resultType;  // Store for spec creation
@@ -322,7 +332,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 mlir::relalg::ColumnDefAttr attrDef;
                 aggResult = processCountStarAggregate(aggr_builder, ctx.builder.getUnknownLoc(), relation, attrDef,
                                                       columnManager, aggrScopeName, aggColumnName, aggregateMappings,
-                                                      aggref->aggno);
+                                                      aggref->aggno, type_mapper, aggref->aggcollid);
+                aggregateTypes[aggref->aggno] = attrDef.getColumn().type;
                 createdCols.push_back(attrDef);
                 createdValues.push_back(aggResult);
             }
@@ -342,30 +353,33 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             if (stream != childOutput) {
                 childOutput = llvm::cast<mlir::OpResult>(stream);
                 const mlir::Type actual_type = column_ref.getColumn().type;
-                const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
+                const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type)
+                                         || (mlir::db::isPgValueType(actual_type)
+                                             && mlir::db::getPgNullability(actual_type) == mlir::db::PgNullability::Maybe);
 
                 Oid actual_oid = PostgreSQLTypeMapper::map_mlir_type_to_oid(actual_type);
                 childResult.columns.push_back({.table_name = table_name,
                                                .column_name = column_name,
                                                .type_oid = actual_oid,
                                                .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
+                                               .collation = exprCollation(reinterpret_cast<Node*>(argTE->expr)),
                                                .mlir_type = actual_type,
                                                .nullable = is_nullable});
             }
 
             mlir::Type resultType;
             if (funcName == "count") {
-                resultType = ctx.builder.getI64Type();
+                resultType = countResultType(type_mapper, aggref->aggcollid);
             } else if (aggref->aggtype == BYTEAOID && aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
                 // BYTEAOID (17) indicates PostgreSQL is using polymorphic aggregate with internal state
                 // Use the actual argument type for result type (works for SUM/MIN/MAX)
                 Oid argTypeOid = lfirst_oid(list_head(aggref->aggargtypes));
-                resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, true);
+                resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, aggref->aggcollid, true);
                 PGX_LOG(AST_TRANSLATE, DEBUG,
                         "Polymorphic aggregate: using aggargtypes for result type: aggtype=%u -> argtype=%u",
                         aggref->aggtype, argTypeOid);
             } else {
-                resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, aggref->aggcollid, true);
             }
             const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
             aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
@@ -536,9 +550,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             if (IsA(te->expr, Aggref)) {
                 auto* aggref = reinterpret_cast<Aggref*>(te->expr);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Second loop: Processing aggregate aggno=%d", aggref->aggno);
-                auto resultType = (aggref->aggfnoid == 2803 || aggref->aggfnoid == 2147)
-                                      ? ctx.builder.getI64Type()
-                                      : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                auto resultType = aggregateTypes.contains(aggref->aggno)
+                                      ? aggregateTypes[aggref->aggno]
+                                      : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, aggref->aggcollid, true);
 
                 std::string resultColumnName{};
                 if (aggregateMappings.contains(aggref->aggno)) {
@@ -555,12 +569,14 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "About to push_back aggregate column: table='%s', column='%s', type_oid=%u",
                         aggrScopeName.c_str(), resultColumnName.c_str(), aggref->aggtype);
-                result.columns.push_back({.table_name = aggrScopeName,
-                                          .column_name = resultColumnName,
-                                          .type_oid = aggref->aggtype,
-                                          .typmod = -1,
-                                          .mlir_type = resultType,
-                                          .nullable = true});
+                result.columns.push_back(
+                    {.table_name = aggrScopeName,
+                     .column_name = resultColumnName,
+                     .type_oid = aggref->aggtype,
+                     .typmod = -1,
+                     .collation = aggref->aggcollid,
+                     .mlir_type = resultType,
+                     .nullable = mlir::db::getPgNullability(resultType) == mlir::db::PgNullability::Maybe});
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns",
                         result.columns.size());
             } else if (IsA(te->expr, Var)) {
@@ -588,7 +604,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 }
             } else {
                 Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));
-                auto exprMlirType = type_mapper.map_postgre_sqltype(exprTypeOid, -1, true);
+                Oid exprCollationOid = exprCollation(reinterpret_cast<Node*>(te->expr));
+                auto exprMlirType = type_mapper.map_postgre_sqltype(exprTypeOid, -1, exprCollationOid, true);
 
                 std::string scopeName{};
                 std::string columnName{};
@@ -610,6 +627,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                           .column_name = columnName,
                                           .type_oid = exprTypeOid,
                                           .typmod = -1,
+                                          .collation = exprCollationOid,
                                           .mlir_type = exprMlirType,
                                           .nullable = true});
             }

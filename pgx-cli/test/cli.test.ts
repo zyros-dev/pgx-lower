@@ -198,6 +198,8 @@ describe("runCli", () => {
     expect(io.stdout).toContain("setup install");
     expect(io.stdout).toContain("setup doctor");
     expect(io.stdout).toContain("pgx-cli dev status");
+    expect(io.stdout).toContain("pgx-cli dev check diff");
+    expect(io.stdout).toContain("pgx-cli dev format diff");
     expect(io.stdout).toContain("pgx-cli dev lint diff");
     expect(io.stdout).toContain("pgx-cli dev gate batch");
     expect(io.stdout).toContain("pgx-cli dev gate review");
@@ -205,6 +207,10 @@ describe("runCli", () => {
     expect(io.stdout).toContain("pgx-cli docker status");
     expect(io.stdout).toContain("pgx-cli docker build ptest");
     expect(io.stdout).toContain("pgx-cli docker build release");
+    expect(io.stdout).toContain("pgx-cli logs errors [--lines N]");
+    expect(io.stdout).toContain("pgx-cli logs docker [--lines N]");
+    expect(io.stdout).toContain("pgx-cli logs file <path> [--lines N]");
+    expect(io.stdout).toContain("pgx-cli rg [--lines N] [--glob G] <pattern> [path...]");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");
@@ -218,6 +224,5 @@ describe("runCli", () => {
     expect(io.stdout).not.toContain("pgx-cli migrate");
     expect(io.stdout).not.toContain("thor just");
     expect(io.stdout).not.toContain("build compile");
-    expect(io.stdout).not.toContain("check diff");
   });
 });

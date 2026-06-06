@@ -34,6 +34,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <memory>
 #include <unordered_map>
@@ -272,9 +273,10 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
                         .column_name = resolved_var->column_name,
                         .type_oid = paramVar->vartype,
                         .typmod = paramVar->vartypmod,
+                        .collation = paramVar->varcollid,
                         .nullable = resolved_var->nullable,
                         .mlir_type = typeMapper.map_postgre_sqltype(paramVar->vartype, paramVar->vartypmod,
-                                                                    resolved_var->nullable)};
+                                                                    paramVar->varcollid, resolved_var->nullable)};
                     resolved = true;
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved nest param %d via varno_resolution -> %s.%s",
                             nestParam->paramno, resolved_var->table_name.c_str(), resolved_var->column_name.c_str());
@@ -292,6 +294,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
                                 .column_name = col.column_name,
                                 .type_oid = col.type_oid,
                                 .typmod = col.typmod,
+                                .collation = col.collation,
                                 .nullable = col.nullable,
                                 .mlir_type = col.mlir_type};
                             resolved = true;
@@ -416,15 +419,14 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         } else {
             finalCondition = conditions[0];
             for (size_t i = 1; i < conditions.size(); ++i) {
+                llvm::SmallVector<mlir::Value, 2> values{finalCondition, conditions[i]};
                 finalCondition = predicateBuilder.create<mlir::db::AndOp>(
-                    predicateBuilder.getUnknownLoc(), mlir::ValueRange{finalCondition, conditions[i]});
+                    predicateBuilder.getUnknownLoc(),
+                    pgx_lower::frontend::sql::sql_bool_result_type(predicateBuilder, values), values);
             }
         }
 
-        if (!finalCondition.getType().isInteger(1)) {
-            finalCondition = predicateBuilder.create<mlir::db::DeriveTruth>(predicateBuilder.getUnknownLoc(),
-                                                                            finalCondition);
-        }
+        finalCondition = pgx_lower::frontend::sql::derive_truth_if_needed(predicateBuilder, finalCondition);
 
         predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(),
                                                         mlir::ValueRange{finalCondition});
@@ -470,7 +472,9 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             auto nullableCol = col;
             nullableCol.table_name = scope;
             nullableCol.nullable = true;
-            if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
+            if (mlir::db::isPgValueType(col.mlir_type)) {
+                nullableCol.mlir_type = mlir::db::withPgNullability(col.mlir_type, mlir::db::PgNullability::Maybe);
+            } else if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
                 nullableCol.mlir_type = mlir::db::NullableType::get(col.mlir_type);
             }
             nullableColumns.push_back(nullableCol);
@@ -491,9 +495,12 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             PGX_LOG(AST_TRANSLATE, DEBUG, "Creating outer join with scope: @%s", outerJoinScope.c_str());
 
             for (const auto& col : outerTranslation.columns) {
-                const mlir::Type nullableType = mlir::isa<mlir::db::NullableType>(col.mlir_type)
-                                                    ? col.mlir_type
-                                                    : mlir::db::NullableType::get(col.mlir_type);
+                mlir::Type nullableType = col.mlir_type;
+                if (mlir::db::isPgValueType(col.mlir_type)) {
+                    nullableType = mlir::db::withPgNullability(col.mlir_type, mlir::db::PgNullability::Maybe);
+                } else if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
+                    nullableType = mlir::db::NullableType::get(col.mlir_type);
+                }
 
                 auto originalColRef = columnManager.createRef(col.table_name, col.column_name);
                 const auto fromExistingAttr = queryCtx.builder.getArrayAttr({originalColRef});
@@ -576,15 +583,14 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         } else {
             finalCondition = conditions[0];
             for (size_t i = 1; i < conditions.size(); ++i) {
+                llvm::SmallVector<mlir::Value, 2> values{finalCondition, conditions[i]};
                 finalCondition = predicateBuilder.create<mlir::db::AndOp>(
-                    predicateBuilder.getUnknownLoc(), mlir::ValueRange{finalCondition, conditions[i]});
+                    predicateBuilder.getUnknownLoc(),
+                    pgx_lower::frontend::sql::sql_bool_result_type(predicateBuilder, values), values);
             }
         }
 
-        if (!finalCondition.getType().isInteger(1)) {
-            finalCondition = predicateBuilder.create<mlir::db::DeriveTruth>(predicateBuilder.getUnknownLoc(),
-                                                                            finalCondition);
-        }
+        finalCondition = pgx_lower::frontend::sql::derive_truth_if_needed(predicateBuilder, finalCondition);
 
         predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(),
                                                         mlir::ValueRange{finalCondition});

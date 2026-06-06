@@ -38,7 +38,7 @@ FROM type_test_table;
  t        | t       | f        | f
  f        | f       | t        | f
  t        | t       | f        | f
-          |         | t        | t
+          |         |          | t
  f        | f       | t        | f
 (5 rows)
 

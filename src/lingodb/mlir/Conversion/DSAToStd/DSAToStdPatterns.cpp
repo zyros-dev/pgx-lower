@@ -37,16 +37,20 @@ static TupleType getHashtableEntryType(MLIRContext* context, Type keyType, Type 
    auto i8PtrType = mlir::util::RefType::get(context, IntegerType::get(context, 8));
    return mlir::TupleType::get(context, {i8PtrType, IndexType::get(context), getHashtableKVType(context, keyType, aggrType)});
 }
-static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType) {
+static runtime::HashtableSpecification*
+createHashtableSpecFromTypes(mlir::Type keyType, mlir::Type valType, mlir::ArrayAttr originalKeyTypeOidsAttr = {},
+                             mlir::ArrayAttr originalValTypeOidsAttr = {}, bool allowInternalValueCarriers = false) {
     PGX_IO(DB_LOWER);
 
     PGX_LOG(DB_LOWER, DEBUG, "createHashtableSpecFromTypes called:");
     PGX_LOG(DB_LOWER, DEBUG, "  keyType: %s", pgx_lower::log::type_to_string(keyType).c_str());
     PGX_LOG(DB_LOWER, DEBUG, "  valType: %s", pgx_lower::log::type_to_string(valType).c_str());
 
-    auto extractColumns = [](mlir::Type tupleType) -> std::vector<std::pair<uint32_t, bool>> {
+    auto extractColumns = [](mlir::Type tupleType, mlir::ArrayAttr originalTypeOidsAttr,
+                             bool allowInternalCarriers) -> std::vector<std::pair<uint32_t, bool>> {
         std::vector<std::pair<uint32_t, bool>> columns;
         if (auto tuple = tupleType.dyn_cast<mlir::TupleType>()) {
+            size_t i = 0;
             for (auto fieldType : tuple.getTypes()) {
                 bool nullable = false;
                 mlir::Type baseType = fieldType;
@@ -63,20 +67,33 @@ static runtime::HashtableSpecification* createHashtableSpecFromTypes(mlir::Type 
                     }
                 }
 
-                uint32_t oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
+                uint32_t oid = InvalidOid;
+                if (originalTypeOidsAttr && i < originalTypeOidsAttr.size()) {
+                    const uint32_t originalOid = mlir::cast<mlir::IntegerAttr>(originalTypeOidsAttr[i]).getInt();
+                    if (OidIsValid(originalOid)) {
+                        oid = originalOid;
+                    }
+                }
+                if (!OidIsValid(oid) && allowInternalCarriers && baseType.isInteger(64)) {
+                    oid = INT8OID;
+                }
+                if (!OidIsValid(oid)) {
+                    oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
+                }
                 if (!OidIsValid(oid)) {
                     PGX_ERROR("Hashtable column type mapping failed: unsupported MLIR type");
                     return columns;
                 }
 
                 columns.push_back({oid, nullable});
+                i++;
             }
         }
         return columns;
     };
 
-    auto keyColumns = extractColumns(keyType);
-    auto valColumns = extractColumns(valType);
+    auto keyColumns = extractColumns(keyType, originalKeyTypeOidsAttr, false);
+    auto valColumns = extractColumns(valType, originalValTypeOidsAttr, allowInternalValueCarriers);
 
     if (keyColumns.empty() && valColumns.empty()) {
         return nullptr;
@@ -155,12 +172,15 @@ createSortSpecFromType(mlir::Type tupleType, mlir::ArrayAttr sortKeysAttr, mlir:
             }
         }
 
-        uint32_t pg_type_oid = lingodb::utility::mlir_type_to_pg_oid(fieldType);
+        uint32_t pg_type_oid = InvalidOid;
         if (originalTypeOidsAttr && i < static_cast<int32_t>(originalTypeOidsAttr.size())) {
-            const uint32_t original_oid = originalTypeOidsAttr[i].cast<mlir::IntegerAttr>().getInt();
+            const uint32_t original_oid = mlir::cast<mlir::IntegerAttr>(originalTypeOidsAttr[i]).getInt();
             if (OidIsValid(original_oid)) {
                 pg_type_oid = original_oid;
             }
+        }
+        if (!OidIsValid(pg_type_oid)) {
+            pg_type_oid = lingodb::utility::mlir_type_to_pg_oid(baseType);
         }
         int32_t typmod = -1;
         if (!OidIsValid(pg_type_oid)) {
@@ -281,7 +301,10 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
          Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), typeConverter->convertType(tupleType));
 
          Value specPtr;
-         auto* spec = createHashtableSpecFromTypes(joinHtType.getKeyType(), joinHtType.getValType());
+         auto originalKeyTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_key_type_oids");
+         auto originalValTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_val_type_oids");
+         auto* spec = createHashtableSpecFromTypes(joinHtType.getKeyType(), joinHtType.getValType(),
+                                                   originalKeyTypeOidsAttr, originalValTypeOidsAttr, true);
          if (spec) {
             specPtr = rewriter.create<arith::ConstantIndexOp>(loc, reinterpret_cast<uint64_t>(spec));
          } else {
@@ -330,7 +353,10 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
                );
             } else {
                PGX_LOG(DB_LOWER, DEBUG, "No spec_ptr attribute, calling createHashtableSpecFromTypes");
-               auto* spec = createHashtableSpecFromTypes(keyType, aggrType);
+               auto originalKeyTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_key_type_oids");
+               auto originalValTypeOidsAttr = createOp->getAttrOfType<mlir::ArrayAttr>("pgx_original_val_type_oids");
+               auto* spec = createHashtableSpecFromTypes(keyType, aggrType, originalKeyTypeOidsAttr,
+                                                         originalValTypeOidsAttr, true);
                if (spec) {
                   specPtrValue = rewriter.create<mlir::arith::ConstantOp>(
                      loc, rewriter.getIntegerAttr(rewriter.getI64Type(), reinterpret_cast<uint64_t>(spec))
@@ -760,6 +786,15 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
       auto loc = appendOp->getLoc();
       if (!isValid) {
          isValid = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 1);
+      }
+      if (auto tupleType = mlir::dyn_cast<mlir::TupleType>(val.getType())) {
+          if (tupleType.size() == 2 && tupleType.getType(0).isInteger(1)) {
+              auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, val);
+              auto trueValue = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
+              auto notNull = rewriter.create<arith::XOrIOp>(loc, unpacked.getVals()[0], trueValue);
+              isValid = rewriter.create<arith::AndIOp>(loc, isValid, notNull);
+              val = unpacked.getVals()[1];
+          }
       }
       mlir::Type type = getBaseType(val.getType());
       mlir::Type originalType = getBaseType(appendOp.getVal().getType());

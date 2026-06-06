@@ -16,6 +16,25 @@ namespace mlir { namespace db {
 namespace {
 constexpr int32_t kPgTypmodUnconstrained = -1;
 
+auto parseNonPgNullablePayload(AsmParser& parser) -> Type {
+    if (parser.parseLess()) {
+        return {};
+    }
+    auto payload = FieldParser<Type>::parse(parser);
+    if (failed(payload)) {
+        parser.emitError(parser.getCurrentLocation(), "failed to parse NullableType payload type");
+        return {};
+    }
+    if (mlir::db::isPgValueType(*payload)) {
+        parser.emitError(parser.getCurrentLocation(), "legacy nullable cannot wrap PostgreSQL semantic types");
+        return {};
+    }
+    if (parser.parseGreater()) {
+        return {};
+    }
+    return *payload;
+}
+
 auto parseNullableKeyword(AsmParser& parser) -> FailureOr<PgNullability> {
     StringRef keyword;
     if (parser.parseKeyword(&keyword)) {
@@ -158,6 +177,20 @@ void printStringTypmodPgType(TypeT type, AsmPrinter& printer) {
 }
 
 } // namespace
+
+Type NullableType::parse(AsmParser& parser) {
+    auto payload = parseNonPgNullablePayload(parser);
+    if (!payload) {
+        return {};
+    }
+    return NullableType::get(parser.getContext(), payload);
+}
+
+void NullableType::print(AsmPrinter& printer) const {
+    printer << "<";
+    printer.printStrippedAttrOrType(getType());
+    printer << ">";
+}
 
 Type PgBoolType::parse(AsmParser& parser) {
     return parseNoMetadataPgType<PgBoolType>(parser);

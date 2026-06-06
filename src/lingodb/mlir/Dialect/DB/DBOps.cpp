@@ -32,6 +32,9 @@ static Type wrapNullableType(MLIRContext* context, Type type, ValueRange values)
    return type;
 }
 static Type inferLegacyLogicalResultType(MLIRContext* context, ValueRange values) {
+    if (hasPgValue(values)) {
+        return mlir::db::PgBoolType::get(context, mlir::db::combineSqlNullability(values));
+    }
     return wrapNullableType(context, IntegerType::get(context, 1), values);
 }
 mlir::Type getBaseType(mlir::Type t) {
@@ -61,6 +64,9 @@ mlir::db::PgNullability mlir::db::combineSqlNullability(mlir::ValueRange values)
 }
 mlir::db::PgNullability mlir::db::combineSqlNullability(llvm::ArrayRef<mlir::Type> types) {
     for (mlir::Type type : types) {
+        if (mlir::isa<mlir::db::NullableType>(type)) {
+            return mlir::db::PgNullability::Maybe;
+        }
         if (mlir::db::isPgValueType(type) && mlir::db::getPgNullability(type) == mlir::db::PgNullability::Maybe) {
             return mlir::db::PgNullability::Maybe;
         }
@@ -76,6 +82,10 @@ static bool isPgBoolType(mlir::Type type) {
 }
 static bool isPgBoolWithNullability(mlir::Type type, mlir::db::PgNullability nullability) {
     return isPgBoolType(type) && mlir::db::getPgNullability(type) == nullability;
+}
+static bool isLegacyNullablePgWrapper(mlir::Type type) {
+    auto nullableType = mlir::dyn_cast_or_null<mlir::db::NullableType>(type);
+    return nullableType && mlir::db::isPgValueType(nullableType.getType());
 }
 static mlir::LogicalResult
 verifyPgValueResult(mlir::Operation* op, mlir::Type resultType, mlir::db::PgNullability nullability) {
@@ -249,7 +259,7 @@ LogicalResult mlir::db::NullOp::verify() {
     mlir::Type resultType = getRes().getType();
     if (auto nullableType = mlir::dyn_cast_or_null<mlir::db::NullableType>(resultType)) {
         if (mlir::db::isPgValueType(nullableType.getType())) {
-            return emitOpError("must not wrap a PostgreSQL semantic type in db.nullable");
+            return emitOpError("legacy nullable cannot wrap PostgreSQL semantic types");
         }
         return success();
     }
@@ -258,6 +268,32 @@ LogicalResult mlir::db::NullOp::verify() {
     }
     if (mlir::db::getPgNullability(resultType) != mlir::db::PgNullability::Maybe) {
         return emitOpError("PostgreSQL nulls must use a nullable PostgreSQL result type");
+    }
+    return success();
+}
+
+LogicalResult mlir::db::AsNullableOp::verify() {
+    mlir::Type resultType = getRes().getType();
+    if (auto nullableType = mlir::dyn_cast_or_null<mlir::db::NullableType>(resultType)) {
+        if (mlir::db::isPgValueType(nullableType.getType())) {
+            return emitOpError("legacy nullable cannot wrap PostgreSQL semantic types");
+        }
+        return success();
+    }
+
+    if (!mlir::db::isPgValueType(resultType)) {
+        return emitOpError("requires a legacy nullable or nullable PostgreSQL result type");
+    }
+    if (mlir::db::getPgNullability(resultType) != mlir::db::PgNullability::Maybe) {
+        return emitOpError("PostgreSQL result must be nullable");
+    }
+
+    mlir::Type valueType = getVal().getType();
+    if (!mlir::db::isPgValueType(valueType)) {
+        return emitOpError("requires a PostgreSQL operand for a PostgreSQL result type");
+    }
+    if (mlir::db::withPgNullability(valueType, mlir::db::PgNullability::Maybe) != resultType) {
+        return emitOpError("PostgreSQL result type must match the operand type except for nullability");
     }
     return success();
 }
@@ -276,6 +312,9 @@ LogicalResult mlir::db::IsNullOp::verify() {
 
 LogicalResult mlir::db::CastOp::verify() {
     mlir::Type valueType = getVal().getType();
+    if (isLegacyNullablePgWrapper(valueType) || isLegacyNullablePgWrapper(getResult().getType())) {
+        return emitOpError("legacy nullable cannot wrap PostgreSQL semantic types");
+    }
     if (!mlir::db::isPgValueType(valueType)) {
         return success();
     }

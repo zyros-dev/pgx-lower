@@ -56,7 +56,7 @@ def NullableType : DB_Type<"Nullable","nullable"> {
     let summary = "nullable";
 
     let parameters = (ins "Type":$type);
-    let assemblyFormat = " `<` $type `>`";
+    let hasCustomAssemblyFormat = 1;
 
     let builders = [
         TypeBuilderWithInferredContext<(ins "Type":$type), [{
@@ -280,8 +280,9 @@ def DB_AsNullableOp : DB_Op<"as_nullable", [Pure]> {
     let summary = "Convert to nullable type";
 
     let arguments = (ins AnyType: $val,Optional<I1>: $null);
-    let results = (outs NullableType : $res);
+    let results = (outs AnyType:$res);
     let assemblyFormat = "$val `:` type($val) ( `,` $null^ )?  `->` type($res) attr-dict";
+    let hasVerifier = 1;
 }
 
 def DB_IsNullOp : DB_Op<"isnull", [Pure]> {

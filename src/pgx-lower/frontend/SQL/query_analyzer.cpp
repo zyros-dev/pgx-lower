@@ -675,7 +675,8 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_Aggref: {
         const auto* agg = reinterpret_cast<const Aggref*>(expr);
-        if (!isAggregateSupported(agg)) {
+        const auto aggregateSupported = isAggregateSupported(agg);
+        if (!aggregateSupported) {
             const auto functionName = postgresFunctionName(agg->aggfnoid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
                                         functionName.empty()
@@ -684,7 +685,9 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
                                         location);
         }
         mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
-        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        if (!aggregateSupported || agg->aggtype != BYTEAOID) {
+            mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        }
         return supportedOrUnsupported(result);
     }
 

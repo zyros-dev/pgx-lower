@@ -93,7 +93,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
             PostgreSQLTypeMapper type_mapper(context_);
             const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                        colInfo.nullable);
+                                                                        colInfo.collation, colInfo.nullable);
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(ctx.builder.getNamedAttr(colInfo.name, colDef));
@@ -201,7 +201,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
 
             PostgreSQLTypeMapper type_mapper(context_);
             const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                        colInfo.nullable);
+                                                                        colInfo.collation, colInfo.nullable);
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(ctx.builder.getNamedAttr(colInfo.name, colDef));
@@ -315,7 +315,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_only_scan(QueryCtxT& ctx, In
 
             PostgreSQLTypeMapper type_mapper(context_);
             const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                        colInfo.nullable);
+                                                                        colInfo.collation, colInfo.nullable);
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(ctx.builder.getNamedAttr(colInfo.name, colDef));
@@ -439,7 +439,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bitmap_heap_scan(QueryCtxT& ctx, B
 
             PostgreSQLTypeMapper type_mapper(context_);
             const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                        colInfo.nullable);
+                                                                        colInfo.collation, colInfo.nullable);
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(ctx.builder.getNamedAttr(colInfo.name, colDef));
@@ -585,8 +585,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 // ReSharper disable once CppDFAUnreadVariable,CppDFAUnusedValue
                 bool nullable = mlir::isa<mlir::db::NullableType>(exprType);
 
-                result.columns.push_back(
-                    {streamResult.table_name, streamResult.column_name, type_oid, typmod, exprType, nullable});
+                result.columns.push_back({streamResult.table_name, streamResult.column_name, type_oid, typmod,
+                                          exprCollation(reinterpret_cast<Node*>(tle->expr)), exprType, nullable});
 
                 ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
                     streamResult.table_name, streamResult.column_name);
@@ -673,7 +673,8 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
                     colRef.getColumn().type = col.mlir_type;
                     projectionColumns.push_back(colRef);
 
-                    newColumns.push_back({cte_alias, new_col_name, col.type_oid, col.typmod, col.mlir_type, col.nullable});
+                    newColumns.push_back({cte_alias, new_col_name, col.type_oid, col.typmod, col.collation,
+                                          col.mlir_type, col.nullable});
 
                     ctx.varno_resolution[std::make_pair(scanrelid, var->varattno)] = std::make_pair(cte_alias,
                                                                                                       new_col_name);
