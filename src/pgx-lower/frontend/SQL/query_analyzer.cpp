@@ -139,6 +139,15 @@ static auto postgresTypeIsMLIRSupported(const Oid postgresType) -> bool {
     }
 }
 
+static auto postgresTypeIsStringType(const Oid postgresType) -> bool {
+    switch (postgresType) {
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return true;
+    default: return false;
+    }
+}
+
 struct PgFunctionSignature {
     const char* name;
     char kind;
@@ -668,7 +677,34 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
+        if (!isCollationSupported(relabel->resultcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported relabel collation",
+                                        location);
+        }
         mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), location + ".arg"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_CoerceViaIO: {
+        const auto* coerce = reinterpret_cast<const CoerceViaIO*>(expr);
+        if (!isCollationSupported(coerce->resultcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                        "unsupported CoerceViaIO collation", location);
+        }
+        if (coerce->arg) {
+            const auto inputType = exprType(reinterpret_cast<Node*>(coerce->arg));
+            if (!postgresTypeIsStringType(inputType) || !postgresTypeIsStringType(coerce->resulttype)) {
+                result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node,
+                                            "unsupported CoerceViaIO from type OID " + std::to_string(inputType)
+                                                + " to type OID " + std::to_string(coerce->resulttype),
+                                            location);
+            }
+            mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(coerce->arg), location + ".arg"));
+        } else {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "CoerceViaIO argument is null",
+                                        location + ".arg");
+        }
         mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
         return supportedOrUnsupported(result);
     }
@@ -698,12 +734,9 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
         return supportedOrUnsupported(result);
     }
 
-    case T_BooleanTest: {
-        const auto* booleanTest = reinterpret_cast<const BooleanTest*>(expr);
-        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(booleanTest->arg), location + ".arg"));
-        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
-        return supportedOrUnsupported(result);
-    }
+    case T_BooleanTest:
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_expr_node,
+                                           "unsupported expression node BooleanTest", location);
 
     default:
         return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_expr_node,

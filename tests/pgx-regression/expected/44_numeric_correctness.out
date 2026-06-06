@@ -112,7 +112,7 @@ SELECT id,
        n::TEXT AS as_text
 FROM numeric_untyped
 ORDER BY id;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 28 at Plan.lefttree.targetlist[4].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported CoerceViaIO from type OID 1700 to type OID 25 at Plan.lefttree.targetlist[4].expr
  id |                         n                         |                      plus_1e_minus_18                      |                      triple                       |                      as_text                      
 ----+---------------------------------------------------+------------------------------------------------------------+---------------------------------------------------+---------------------------------------------------
   1 |                                               1.2 |                                       1.200000000000000001 |                                               3.6 | 1.2

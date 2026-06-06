@@ -118,6 +118,19 @@ PGX_TEST_FN(query_analyzer_rejects_unknown_expr_node) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_boolean_test) {
+    auto arg = makeBoolConst();
+    auto booleanTest = BooleanTest{};
+    booleanTest.xpr.type = T_BooleanTest;
+    booleanTest.arg = reinterpret_cast<Expr*>(&arg);
+    booleanTest.booltesttype = IS_TRUE;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&booleanTest));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_translator_unsupported_result_plan) {
     auto plan = Plan{};
     plan.type = T_Result;
@@ -217,6 +230,35 @@ PGX_TEST_FN(query_analyzer_accepts_bytea_typed_supported_aggregate) {
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
     REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_string_coerce_via_io) {
+    auto arg = makeTypedConst(TEXTOID);
+    auto coerce = CoerceViaIO{};
+    coerce.xpr.type = T_CoerceViaIO;
+    coerce.arg = reinterpret_cast<Expr*>(&arg);
+    coerce.resulttype = VARCHAROID;
+    coerce.resultcollid = DEFAULT_COLLATION_OID;
+    coerce.coerceformat = COERCE_IMPLICIT_CAST;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coerce));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_non_string_coerce_via_io) {
+    auto arg = makeIntConst();
+    auto coerce = CoerceViaIO{};
+    coerce.xpr.type = T_CoerceViaIO;
+    coerce.arg = reinterpret_cast<Expr*>(&arg);
+    coerce.resulttype = TEXTOID;
+    coerce.resultcollid = DEFAULT_COLLATION_OID;
+    coerce.coerceformat = COERCE_EXPLICIT_CAST;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coerce));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
     PG_RETURN_VOID();
 }
 

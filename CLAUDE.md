@@ -73,6 +73,11 @@ build, test, lint, queue, Docker, setup, and repo maintenance.
 - Keep agent-facing command output small. If a single raw command injects a
   large stdout/stderr payload into the conversation, add or extend a `pgx-cli`
   shorthand for that workflow and use the `pgx-cli` form thereafter.
+- Long-running commands are context too. For known slow commands such as
+  `pgx-cli dev gate review`, full compile/test gates, and benchmarks, print one
+  start note and then wait silently until completion. Do not emit repeated
+  "still running" heartbeat updates unless there is new information, abnormal
+  duration, or the user asks for status.
 - Before adding a new script, just recipe, or direct SSH workflow, first add or
   extend a `pgx-cli` command.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow
