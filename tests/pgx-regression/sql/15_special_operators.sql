@@ -34,16 +34,16 @@ FROM test_special;
 SELECT (value NOT BETWEEN 40 AND 70) AS not_in_range
 FROM test_special;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_005 */
 SELECT (value IN (15, 25, 35)) AS in_low_values
 FROM test_special;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_006 */
 SELECT (value IN (45, 55, 65, 75)) AS in_high_values
 FROM test_special;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_007 */
 SELECT (category IN (1, 2)) AS in_categories_ab
 FROM test_special;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_008 */
 SELECT (value NOT IN (25, 45, 65)) AS not_in_specific
 FROM test_special;
 

@@ -30,6 +30,8 @@ struct ColumnLayout {
     PhysicalType phys_type;
     bool is_nullable;
     uint32_t pg_type_oid;
+    int32_t pg_typmod;
+    uint32_t pg_collation;
 };
 
 size_t get_physical_size(uint32_t type_oid);
@@ -49,6 +51,7 @@ struct SortColumnInfo {
     const char* column_name;
     uint32_t type_oid;
     int32_t typmod;
+    uint32_t collation;
     bool is_nullable;
 };
 
@@ -67,6 +70,7 @@ struct HashtableColumnInfo {
     const char* column_name;
     uint32_t type_oid;
     int32_t typmod;
+    uint32_t collation;
     bool is_nullable;
 };
 

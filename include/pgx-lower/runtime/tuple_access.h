@@ -37,16 +37,22 @@ struct ColumnMetadata {
     int32_t attnum;
 };
 
+struct PgResultMetadata {
+    Oid type_oid;
+    int32_t typmod;
+    Oid collation;
+};
+
 struct ComputedResultStorage {
     std::vector<Datum> computedValues;
     std::vector<bool> computedNulls;
-    std::vector<Oid> computedTypes;
+    std::vector<PgResultMetadata> computedMetadata;
     int numComputedColumns = 0;
 
     void clear() {
         computedValues.clear();
         computedNulls.clear();
-        computedTypes.clear();
+        computedMetadata.clear();
         numComputedColumns = 0;
     }
 
@@ -55,18 +61,35 @@ struct ComputedResultStorage {
         numComputedColumns = numColumns;
         computedValues.resize(numColumns, 0);
         computedNulls.resize(numColumns, true);
-        computedTypes.resize(numColumns, InvalidOid);
+        computedMetadata.resize(numColumns, {InvalidOid, -1, InvalidOid});
         PGX_LOG(RUNTIME, DEBUG, "ComputedResultStorage::resize completed, numComputedColumns=%zu", numComputedColumns);
     }
 
-    void setResult(const int columnIndex, const Datum value, const bool isNull, const Oid typeOid) {
+    void setMetadata(const int columnIndex, const PgResultMetadata metadata) {
+        if (columnIndex >= 0 && columnIndex < numComputedColumns) {
+            computedMetadata[columnIndex] = metadata;
+        }
+    }
+
+    void setResult(const int columnIndex, const Datum value, const bool isNull, PgResultMetadata metadata) {
         if (columnIndex >= 0 && columnIndex < numComputedColumns) {
             computedValues[columnIndex] = value;
             computedNulls[columnIndex] = isNull;
-            if (computedTypes[columnIndex] == InvalidOid || computedTypes[columnIndex] == NUMERICOID) {
-                computedTypes[columnIndex] = typeOid;
+            PgResultMetadata current = computedMetadata[columnIndex];
+            if (current.type_oid == InvalidOid || current.type_oid == NUMERICOID) {
+                if (metadata.typmod == -1) {
+                    metadata.typmod = current.typmod;
+                }
+                if (metadata.collation == InvalidOid) {
+                    metadata.collation = current.collation;
+                }
+                computedMetadata[columnIndex] = metadata;
             }
         }
+    }
+
+    void setResult(const int columnIndex, const Datum value, const bool isNull, const Oid typeOid) {
+        setResult(columnIndex, value, isNull, {typeOid, -1, InvalidOid});
     }
 };
 

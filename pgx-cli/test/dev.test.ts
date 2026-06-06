@@ -105,6 +105,8 @@ describe("dev commands", () => {
   });
 
   test.each([
+    [["check", "diff"], "bash", "clang-format-diff-20"],
+    [["format", "diff"], "bash", "clang-format-diff-20"],
     [["lint", "diff"], "bash", "clang-tidy-diff-20"],
     [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "clang-tidy-20"],
     [["lint", "files", "a.cpp", "b.cpp"], "ssh", "clang-tidy-20"],

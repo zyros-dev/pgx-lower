@@ -92,7 +92,7 @@ FROM (
     WHERE r.region_name IN ('Asia', 'Europe')
 ) sub
 ORDER BY country_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.lefttree.righttree.lefttree.qual[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.righttree.lefttree.qual[0].right
  country_name 
 --------------
  China

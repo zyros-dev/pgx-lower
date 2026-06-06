@@ -17,6 +17,7 @@ const allowedExact = new Set([
   "pgx-cli/clion-wrappers/container-clang++",
   "pgx-cli/clion-wrappers/container-compiler",
   "pgx-cli/dist/index.js",
+  "tests/workloads.yaml",
 ]);
 
 export async function runRepoCommand(
@@ -54,7 +55,7 @@ function walk(root: string, relativeDir: string): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      if (ignoredDirs.has(entry.name) || relativePath === "pgx-cli/node_modules") continue;
+      if (shouldIgnoreDir(entry.name, relativePath)) continue;
       results.push(...walk(root, relativePath));
       continue;
     }
@@ -63,6 +64,13 @@ function walk(root: string, relativeDir: string): string[] {
     }
   }
   return results;
+}
+
+function shouldIgnoreDir(name: string, relativePath: string): boolean {
+  if (ignoredDirs.has(name) || relativePath === "pgx-cli/node_modules") return true;
+  if (name === "_deps" || name.startsWith("cmake-build-")) return true;
+  if (name === "benchmark" || name === "build" || name.startsWith("build-docker-")) return true;
+  return false;
 }
 
 function isUnexpectedTool(root: string, relativePath: string): boolean {

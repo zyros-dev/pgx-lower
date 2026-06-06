@@ -242,10 +242,9 @@ SELECT id FROM expr_test_data WHERE value1 IS NOT NULL;
   5
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_023 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_023 */
 -- Test T_A_Expr - IN operations
 SELECT id FROM expr_test_data WHERE value1 IN (10, 20, 30);
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.qual[0]
  id 
 ----
   1
@@ -253,9 +252,8 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
   3
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_024 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_024 */
 SELECT id FROM expr_test_data WHERE value1 NOT IN (15, 25, 35);
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.qual[0]
  id 
 ----
   1
@@ -364,7 +362,7 @@ SELECT CAST(value1 AS DECIMAL(10,2)) AS decimal_value FROM expr_test_data;
 
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_033 */
 SELECT CAST(value1 AS VARCHAR(10)) AS string_value FROM expr_test_data;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 28 at Plan.targetlist[0].expr.args[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported CoerceViaIO from type OID 23 to type OID 1043 at Plan.targetlist[0].expr.args[0]
  string_value 
 --------------
  10
@@ -398,7 +396,7 @@ SELECT value2::decimal(5,1) AS decimal_cast FROM expr_test_data;
 
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_036 */
 SELECT id::text AS text_cast FROM expr_test_data;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 28 at Plan.targetlist[0].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported CoerceViaIO from type OID 23 to type OID 25 at Plan.targetlist[0].expr
  text_cast 
 -----------
  1

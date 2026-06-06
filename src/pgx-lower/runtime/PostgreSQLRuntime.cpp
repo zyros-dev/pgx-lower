@@ -36,6 +36,7 @@ extern "C" {
 #include "utils/datum.h"
 #include "utils/memutils.h"
 #include "fmgr.h"
+#include "utils/fmgrprotos.h"
 #include "utils/builtins.h"
 }
 
@@ -249,8 +250,9 @@ TableBuilder* TableBuilder::build() {
     if (g_computed_results.numComputedColumns > 0) {
         PGX_LOG(RUNTIME, DEBUG, "\t- computed columns: %d", g_computed_results.numComputedColumns);
         for (int i{}; i < g_computed_results.numComputedColumns && i < 10; i++) {
-            PGX_LOG(RUNTIME, DEBUG, "\t\t- col[%d]: type=%d, null=%d", i, g_computed_results.computedTypes[i],
-                    g_computed_results.computedNulls[i]);
+            const auto metadata = g_computed_results.computedMetadata[i];
+            PGX_LOG(RUNTIME, DEBUG, "\t\t- col[%d]: type=%d, typmod=%d, collation=%d, null=%d", i, metadata.type_oid,
+                    metadata.typmod, metadata.collation, g_computed_results.computedNulls[i]);
         }
     }
 
@@ -320,8 +322,12 @@ void TableBuilder::addNumericDatum(const bool is_valid, const ::runtime::Numeric
 
     if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
+        this->next_decimal_scale = std::nullopt;
     } else {
-        const Datum numeric_datum = ::runtime::numeric_datum_from_carrier(value);
+        Datum numeric_datum = ::runtime::numeric_datum_from_carrier(value);
+        if (this->next_decimal_scale) {
+            numeric_datum = DirectFunctionCall2(numeric_round, numeric_datum, Int32GetDatum(*this->next_decimal_scale));
+        }
         const auto numeric_value = DatumGetNumeric(numeric_datum);
 
         PGX_LOG(RUNTIME, DEBUG, "addNumericDatum: passthrough Numeric datum at %p", numeric_value);

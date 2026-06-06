@@ -29,12 +29,8 @@ class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::
       mapping.map(higher.getPredicateArgument(), lower.getPredicateArgument());
       builder.setInsertionPointToEnd(&lower.getPredicateBlock());
       mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
-      auto nullable = higherPredVal.getType().isa<mlir::db::NullableType>() || lowerPredVal.getType().isa<mlir::db::NullableType>();
-      ::mlir::Type restype = builder.getI1Type();
-      if (nullable) {
-         restype = mlir::db::NullableType::get(builder.getContext(), restype);
-      }
-      ::mlir::Value combined = builder.create<mlir::db::AndOp>(higher->getLoc(), restype, ValueRange{lowerPredVal, mapping.lookup(higherPredVal)});
+      ::mlir::Value combined = builder.create<mlir::db::AndOp>(higher->getLoc(),
+                                                               ValueRange{lowerPredVal, mapping.lookup(higherPredVal)});
       builder.create<mlir::relalg::ReturnOp>(higher->getLoc(), combined);
       lowerTerminator->erase();
    }
@@ -58,4 +54,3 @@ namespace relalg {
 std::unique_ptr<mlir::Pass> createCombinePredicatesPass() { return std::make_unique<CombinePredicates>(); }
 } // end namespace relalg
 } // end namespace mlir
-

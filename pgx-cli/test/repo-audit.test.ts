@@ -29,6 +29,17 @@ describe("repo tooling audit", () => {
     writeFileSync(join(root, "pgx-cli.yaml"), "project: {}\n");
     writeExecutable(join(root, "pgx-cli/clion-wrappers/container-clang"));
     writeExecutable(join(root, "pgx-cli/dist/index.js"));
+    mkdirSync(join(root, "tests"), { recursive: true });
+    writeFileSync(join(root, "tests/workloads.yaml"), "workloads: []\n");
+
+    expect(auditToolSurface(root)).toEqual([]);
+  });
+
+  test("ignores generated build and benchmark trees", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-audit-"));
+    writeExecutable(join(root, "build-docker-lint/tool.py"));
+    writeExecutable(join(root, "benchmark/tpch/run.py"));
+    writeExecutable(join(root, "cmake-build-debug/tool.py"));
 
     expect(auditToolSurface(root)).toEqual([]);
   });

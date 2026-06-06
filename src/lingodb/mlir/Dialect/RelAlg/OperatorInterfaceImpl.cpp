@@ -17,6 +17,12 @@ static operator_list getChildOperators(::mlir::Operation* parent) {
    }
    return children;
 }
+static bool isPgNullabilityWideningCast(::mlir::Value value, ::mlir::Type targetType) {
+    ::mlir::Type valueType = value.getType();
+    return mlir::db::isPgValueType(valueType) && mlir::db::isPgValueType(targetType)
+           && mlir::db::getPgNullability(valueType) == mlir::db::PgNullability::Never
+           && mlir::db::withPgNullability(valueType, mlir::db::PgNullability::Maybe) == targetType;
+}
 
 static ColumnSet collectColumns(operator_list operators, std::function<ColumnSet(mlir::relalg::Operator)> fn) {
    ColumnSet collected;
@@ -298,12 +304,7 @@ void mlir::relalg::detail::addPredicate(::mlir::Operation* op, std::function<::m
    auto additionalPred = predicateProducer(lambdaOperator.getPredicateArgument(), builder);
    if (terminator->getNumOperands() > 0) {
       ::mlir::Value oldValue = terminator->getOperand(0);
-      bool nullable = oldValue.getType().isa<mlir::db::NullableType>() || additionalPred.getType().isa<mlir::db::NullableType>();
-      ::mlir::Type restype = builder.getI1Type();
-      if (nullable) {
-         restype = mlir::db::NullableType::get(builder.getContext(), restype);
-      }
-      ::mlir::Value anded = builder.create<mlir::db::AndOp>(op->getLoc(), restype, ::mlir::ValueRange({oldValue, additionalPred}));
+      ::mlir::Value anded = builder.create<mlir::db::AndOp>(op->getLoc(), ::mlir::ValueRange({oldValue, additionalPred}));
       builder.create<mlir::relalg::ReturnOp>(op->getLoc(), anded);
    } else {
       builder.create<mlir::relalg::ReturnOp>(op->getLoc(), additionalPred);
@@ -356,6 +357,21 @@ void mlir::relalg::detail::inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Ope
    builder.setInsertionPointToStart(newBlock);
    first = first ? first : (newBlock->empty() ? nullptr : &newBlock->front());
    for (auto* op : extracted) {
+       if (auto castOp = mlir::dyn_cast<mlir::db::CastOp>(op)) {
+           ::mlir::Value mappedValue = mapping.lookupOrNull(castOp.getVal());
+           if (mappedValue && isPgNullabilityWideningCast(mappedValue, castOp.getResult().getType())) {
+               auto asNullable = builder.create<mlir::db::AsNullableOp>(castOp.getLoc(), castOp.getResult().getType(),
+                                                                        mappedValue);
+               if (first) {
+                   asNullable->moveBefore(first);
+               } else {
+                   asNullable->moveBefore(newBlock, newBlock->begin());
+                   first = asNullable;
+               }
+               mapping.map(castOp.getResult(), asNullable.getResult());
+               continue;
+           }
+       }
       auto* cloneOp = builder.clone(*op, mapping);
       if (first) {
          cloneOp->moveBefore(first);

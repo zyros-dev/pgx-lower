@@ -72,7 +72,7 @@ SELECT id, name, status
 FROM test_where_patterns
 WHERE status IN ('active', 'pending');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_013 */
 SELECT id, name
 FROM test_where_patterns
 WHERE salary IN (75000, 80000, 85000);

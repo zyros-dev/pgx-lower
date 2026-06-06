@@ -218,7 +218,7 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
     std::vector<pgx_lower::frontend::sql::ColumnInfo> columns;
 
 #ifdef BUILDING_UNIT_TESTS
-    columns.emplace_back("id", INT4OID, INVALID_TYPMOD, UNIT_TEST_COLUMN_NOT_NULL);
+    columns.emplace_back("id", INT4OID, INVALID_TYPMOD, InvalidOid, UNIT_TEST_COLUMN_NOT_NULL);
     return columns;
 #else
     if (!current_planned_stmt || !current_planned_stmt->rtable || scanrelid <= 0) {
@@ -262,9 +262,10 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
         std::string colName = NameStr(attr->attname);
         Oid colType = attr->atttypid;
         int32_t typmod = attr->atttypmod;
+        Oid collation = attr->attcollation;
         bool nullable = !attr->attnotnull;
 
-        columns.emplace_back(colName, colType, typmod, nullable);
+        columns.emplace_back(colName, colType, typmod, collation, nullable);
     }
 
     table_close(rel, AccessShareLock);

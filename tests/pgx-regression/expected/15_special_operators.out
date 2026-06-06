@@ -74,10 +74,9 @@ FROM test_special;
  t
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_005 */
 SELECT (value IN (15, 25, 35)) AS in_low_values
 FROM test_special;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.targetlist[0].expr
  in_low_values 
 ---------------
  t
@@ -89,10 +88,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  f
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_006 */
 SELECT (value IN (45, 55, 65, 75)) AS in_high_values
 FROM test_special;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.targetlist[0].expr
  in_high_values 
 ----------------
  f
@@ -104,10 +102,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  t
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_007 */
 SELECT (category IN (1, 2)) AS in_categories_ab
 FROM test_special;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.targetlist[0].expr
  in_categories_ab 
 ------------------
  t
@@ -119,10 +116,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  f
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_15_special_operators_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_15_special_operators_008 */
 SELECT (value NOT IN (25, 45, 65)) AS not_in_specific
 FROM test_special;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.targetlist[0].expr
  not_in_specific 
 -----------------
  t

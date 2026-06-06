@@ -1,5 +1,6 @@
 #include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/Passes.h"
@@ -92,8 +93,10 @@ class ImplicitToExplicitJoins : public ::mlir::PassWrapper<ImplicitToExplicitJoi
 
             auto newAttrType = getscalarop.getType();
             auto newDef = attributeManager.createDef(scopeName, attributeName, fromExisting);
-            if (!newAttrType.isa<mlir::db::NullableType>()) {
-               newAttrType = mlir::db::NullableType::get(builder.getContext(), newAttrType);
+            if (mlir::db::isPgValueType(newAttrType)) {
+                newAttrType = mlir::db::withPgNullability(newAttrType, mlir::db::PgNullability::Maybe);
+            } else if (!newAttrType.isa<mlir::db::NullableType>()) {
+                newAttrType = mlir::db::NullableType::get(builder.getContext(), newAttrType);
             }
             newDef.getColumn().type = newAttrType;
 
@@ -154,4 +157,3 @@ namespace relalg {
 std::unique_ptr<mlir::Pass> createImplicitToExplicitJoinsPass() { return std::make_unique<ImplicitToExplicitJoins>(); }
 } // end namespace relalg
 } // end namespace mlir
-

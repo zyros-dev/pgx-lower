@@ -140,11 +140,10 @@ WHERE score IS NULL
   6 | Frank
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_19_where_null_patterns_012 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_19_where_null_patterns_012 */
 SELECT id, name, age
 FROM test_where_nulls
 WHERE COALESCE(age, 0) > 25;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 38 at Plan.qual[0].args[0]
  id | name  | age 
 ----+-------+-----
   3 | Carol |  30
@@ -153,11 +152,10 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
   7 | Grace |  32
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_19_where_null_patterns_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_19_where_null_patterns_013 */
 SELECT id, name, score
 FROM test_where_nulls
 WHERE COALESCE(score, 0) >= 85;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 38 at Plan.qual[0].args[0]
  id | name  | score 
 ----+-------+-------
   1 | Alice |    85

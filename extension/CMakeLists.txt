@@ -7,10 +7,20 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/type_mapping_tests.cpp
             ../src/pgx-lower/test/boolean_lowering_tests.cpp
             ../src/pgx-lower/test/ast_const_translation_tests.cpp
+            ../src/pgx-lower/test/expression_metadata_translation_tests.cpp
             ../src/pgx-lower/test/standalone_mlir_runner.cpp
             ../src/pgx-lower/test/pipeline_phases_tests.cpp
             ../src/pgx-lower/test/query_analyzer_tests.cpp
             ../src/pgx-lower/test/accepted_plan_verifier_tests.cpp
+            ../src/pgx-lower/test/pg_primitive_type_tests.cpp
+            ../src/pgx-lower/test/pg_sql_expression_nullability_tests.cpp
+            ../src/pgx-lower/test/pg_bool_predicate_truth_tests.cpp
+            ../src/pgx-lower/test/pg_physicalization_tests.cpp
+            ../src/pgx-lower/test/pg_relalg_nullability_tests.cpp
+            ../src/pgx-lower/test/pg_runtime_function_type_tests.cpp
+            ../src/pgx-lower/test/pg_nullability_tests.cpp
+            ../src/pgx-lower/test/pg_legacy_nullable_cleanup_tests.cpp
+            ../src/pgx-lower/test/postgresql_type_mapper_tests.cpp
         )
     endif()
 
@@ -107,6 +117,8 @@ if(NOT BUILDING_UNIT_TESTS)
             43_decode_at_scan
             44_numeric_correctness
             45_route_notices
+            46_sql_3vl_expressions
+            47_pg_bool_predicate_truth
 )
 
 

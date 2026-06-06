@@ -1,6 +1,7 @@
 #include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
@@ -23,6 +24,50 @@ class AggregationTranslator : public mlir::relalg::Translator {
    std::vector<mlir::Value> defaultValues;
    std::vector<mlir::Type> aggrTypes;
 
+   static bool isNullableInput(mlir::Type type) {
+       return mlir::isa<mlir::db::NullableType>(type)
+              || (mlir::db::isPgValueType(type) && mlir::db::getPgNullability(type) == mlir::db::PgNullability::Maybe);
+   }
+   static mlir::Type getAggregationBaseType(mlir::Type type) {
+       if (auto nullableType = mlir::dyn_cast<mlir::db::NullableType>(type)) {
+           return nullableType.getType();
+       }
+       if (mlir::db::isPgValueType(type)) {
+           return mlir::db::withPgNullability(type, mlir::db::PgNullability::Never);
+       }
+       return type;
+   }
+   static mlir::Value isNullPredicate(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value value) {
+       mlir::Type resultType = builder.getI1Type();
+       if (mlir::db::isPgValueType(value.getType())) {
+           resultType = mlir::db::PgBoolType::get(builder.getContext(), mlir::db::PgNullability::Never);
+       }
+       mlir::Value isNull = builder.create<mlir::db::IsNullOp>(loc, resultType, value);
+       if (!isNull.getType().isInteger(1)) {
+           return builder.create<mlir::db::DeriveTruth>(loc, isNull);
+       }
+       return isNull;
+   }
+   static mlir::Value
+   castFinalAggregationResult(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value value, mlir::Type resultType) {
+       if (value.getType() == resultType) {
+           return value;
+       }
+
+       mlir::Value casted = value;
+       auto baseResultType = getAggregationBaseType(resultType);
+       if (getAggregationBaseType(value.getType()) != baseResultType) {
+           casted = builder.create<mlir::db::CastOp>(loc, baseResultType, value);
+       }
+       if (casted.getType() == resultType) {
+           return casted;
+       }
+       if (isNullableInput(resultType)) {
+           return builder.create<mlir::db::AsNullableOp>(loc, resultType, casted);
+       }
+       return builder.create<mlir::db::CastOp>(loc, resultType, casted);
+   }
+
    public:
    AggregationTranslator(mlir::relalg::AggregationOp aggregationOp) : mlir::relalg::Translator(aggregationOp), aggregationOp(aggregationOp) {
    }
@@ -37,25 +82,20 @@ class AggregationTranslator : public mlir::relalg::Translator {
            return sourceVal;
        }
 
-       auto getBaseType = [](mlir::Type type) -> mlir::Type {
-           if (const auto nullableType = type.dyn_cast<mlir::db::NullableType>()) {
-               return nullableType.getType();
-           }
-           return type;
-       };
-
-       auto baseResultType = getBaseType(resultingType);
-       const auto baseSourceType = getBaseType(sourceVal.getType());
-       const auto sourceIsNullable = sourceVal.getType().isa<mlir::db::NullableType>();
-       const auto resultIsNullable = resultingType.isa<mlir::db::NullableType>();
+       auto baseResultType = getAggregationBaseType(resultingType);
+       const auto baseSourceType = getAggregationBaseType(sourceVal.getType());
+       const auto sourceIsNullable = isNullableInput(sourceVal.getType());
+       const auto resultIsNullable = isNullableInput(resultingType);
        auto castVal = sourceVal;
 
        if (baseResultType != baseSourceType) {
-           if (sourceIsNullable) {
+           if (mlir::isa<mlir::db::NullableType>(sourceVal.getType())) {
                auto extracted = builder.create<mlir::db::NullableGetVal>(loc, sourceVal);
                auto casted = builder.create<mlir::db::CastOp>(loc, baseResultType, extracted);
-               auto isNull = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), sourceVal);
+               auto isNull = isNullPredicate(builder, loc, sourceVal);
                castVal = builder.create<mlir::db::AsNullableOp>(loc, resultingType, casted, isNull);
+           } else if (sourceIsNullable) {
+               castVal = builder.create<mlir::db::CastOp>(loc, resultingType, sourceVal);
            } else {
                castVal = builder.create<mlir::db::CastOp>(loc, baseResultType, sourceVal);
                if (resultIsNullable) {
@@ -80,19 +120,19 @@ class AggregationTranslator : public mlir::relalg::Translator {
          auto currLeftNullableType = currLeftType.dyn_cast_or_null<mlir::db::NullableType>();
          auto currRightNullableType = currRightType.dyn_cast_or_null<mlir::db::NullableType>();
          if (currLeftNullableType || currRightNullableType) {
-            ::mlir::Value isNull1 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), leftUnpacked->getResult(i));
-            ::mlir::Value isNull2 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), rightUnpacked->getResult(i));
-            ::mlir::Value anyNull = rewriter.create<mlir::arith::OrIOp>(loc, isNull1, isNull2);
-            ::mlir::Value bothNull = rewriter.create<mlir::arith::AndIOp>(loc, isNull1, isNull2);
-            auto ifOp = rewriter.create<mlir::scf::IfOp>(loc, mlir::TypeRange{rewriter.getI1Type()}, anyNull);
-            ifOp.getThenRegion().emplaceBlock();
-            ifOp.getElseRegion().emplaceBlock();
-            {
-               mlir::OpBuilder::InsertionGuard guard(rewriter);
-               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
-               // Then branch
-               rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{bothNull});
-            }
+             ::mlir::Value isNull1 = isNullPredicate(rewriter, loc, leftUnpacked->getResult(i));
+             ::mlir::Value isNull2 = isNullPredicate(rewriter, loc, rightUnpacked->getResult(i));
+             ::mlir::Value anyNull = rewriter.create<mlir::arith::OrIOp>(loc, isNull1, isNull2);
+             ::mlir::Value bothNull = rewriter.create<mlir::arith::AndIOp>(loc, isNull1, isNull2);
+             auto ifOp = rewriter.create<mlir::scf::IfOp>(loc, mlir::TypeRange{rewriter.getI1Type()}, anyNull);
+             ifOp.getThenRegion().emplaceBlock();
+             ifOp.getElseRegion().emplaceBlock();
+             {
+                 mlir::OpBuilder::InsertionGuard guard(rewriter);
+                 rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+                 // Then branch
+                 rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{bothNull});
+             }
             {
                mlir::OpBuilder::InsertionGuard guard(rewriter);
                rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
@@ -105,6 +145,9 @@ class AggregationTranslator : public mlir::relalg::Translator {
             compared = ifOp.getResult(0);
          } else {
             compared = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i), rightUnpacked.getResult(i));
+         }
+         if (!compared.getType().isInteger(1)) {
+             compared = rewriter.create<mlir::db::DeriveTruth>(loc, compared);
          }
          mlir::Value localEqual = rewriter.create<mlir::arith::AndIOp>(loc, rewriter.getI1Type(), mlir::ValueRange({equal, compared}));
          equal = localEqual;
@@ -200,7 +243,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
          if (auto aggrFn = mlir::dyn_cast_or_null<mlir::relalg::AggrFuncOp>(computedVal.getDefiningOp())) {
             auto loc = aggrFn->getLoc();
             auto* attr = &aggrFn.getAttr().getColumn();
-            auto attrIsNullable = attr->type.isa<mlir::db::NullableType>();
+            auto attrIsNullable = isNullableInput(attr->type);
             size_t currValIdx = val.insert(attr);
             mlir::Type resultingType = destAttr->type;
             size_t currDestIdx = aggrTypes.size();
@@ -209,126 +252,152 @@ class AggregationTranslator : public mlir::relalg::Translator {
                finalizeFunctions.push_back([currDestIdx = currDestIdx, destAttr = destAttr](mlir::ValueRange range, mlir::OpBuilder& builder) { return std::make_pair(destAttr, range[currDestIdx]); });
                aggrTypes.push_back(resultingType);
                mlir::Value initVal;
-               if (resultingType.isa<mlir::db::NullableType>()) {
-                  initVal = builder.create<mlir::db::NullOp>(loc, resultingType);
+               auto resultIsNullable = isNullableInput(resultingType);
+               if (resultIsNullable) {
+                   initVal = builder.create<mlir::db::NullOp>(loc, resultingType);
                } else {
-                  initVal = builder.create<mlir::db::ConstantOp>(loc, getBaseType(resultingType), builder.getI64IntegerAttr(0));
+                   initVal = builder.create<mlir::db::ConstantOp>(loc, getAggregationBaseType(resultingType),
+                                                                  builder.getI64IntegerAttr(0));
                }
                defaultValues.push_back(initVal);
-               aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, currValIdx = currValIdx, attrIsNullable, resultingType = resultingType](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
-                  std::vector<mlir::Value> res;
-                  mlir::Value currVal = aggr[currDestIdx];
-                  mlir::Value newVal = val[currValIdx];
+               aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, currValIdx = currValIdx, attrIsNullable,
+                                               resultIsNullable, resultingType = resultingType](
+                                                  mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
+                   std::vector<mlir::Value> res;
+                   mlir::Value currVal = aggr[currDestIdx];
+                   mlir::Value newVal = val[currValIdx];
 
-                  const auto castNewVal = castToAggregationType(builder, loc, newVal, currVal, resultingType);
-                  mlir::Value added = builder.create<mlir::db::AddOp>(loc, resultingType, currVal, castNewVal);
-                  mlir::Value updatedVal = added;
-                  if (attrIsNullable) {
-                     mlir::Value isNull1 = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), castNewVal);
-                     updatedVal = builder.create<mlir::arith::SelectOp>(loc, isNull1, currVal, added);
-                  }
-                  if (resultingType.isa<mlir::db::NullableType>()) {
-                     mlir::Value isNull = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), currVal);
-                     res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull, castNewVal, updatedVal));
-                  } else {
-                     res.push_back(updatedVal);
-                  }
-                  return res;
+                   const auto castNewVal = castToAggregationType(builder, loc, newVal, currVal, resultingType);
+                   mlir::Value added = builder.create<mlir::db::AddOp>(loc, resultingType, currVal, castNewVal);
+                   mlir::Value updatedVal = added;
+                   if (attrIsNullable) {
+                       mlir::Value isNull1 = isNullPredicate(builder, loc, castNewVal);
+                       updatedVal = builder.create<mlir::arith::SelectOp>(loc, isNull1, currVal, added);
+                   }
+                   if (resultIsNullable) {
+                       mlir::Value isNull = isNullPredicate(builder, loc, currVal);
+                       res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull, castNewVal, updatedVal));
+                   } else {
+                       res.push_back(updatedVal);
+                   }
+                   return res;
                });
             } else if (aggrFn.getFn() == mlir::relalg::AggrFunc::min) {
                finalizeFunctions.push_back([currDestIdx = currDestIdx, destAttr = destAttr](mlir::ValueRange range, mlir::OpBuilder& builder) { return std::make_pair(destAttr, range[currDestIdx]); });
                aggrTypes.push_back(resultingType);
                mlir::Value initVal;
-               if (resultingType.isa<mlir::db::NullableType>()) {
-                  initVal = builder.create<mlir::db::NullOp>(aggregationOp.getLoc(), resultingType);
+               auto resultIsNullable = isNullableInput(resultingType);
+               if (resultIsNullable) {
+                   initVal = builder.create<mlir::db::NullOp>(aggregationOp.getLoc(), resultingType);
                } else {
-                  initVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), getBaseType(resultingType), getMaxValueAttr(resultingType));
+                   auto baseType = getAggregationBaseType(resultingType);
+                   initVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), baseType,
+                                                                  getMaxValueAttr(baseType));
                }
                defaultValues.push_back(initVal);
-               aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, resultingType = resultingType, currValIdx = currValIdx](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
-                  std::vector<mlir::Value> res;
-                  mlir::Value currVal = aggr[currDestIdx];
-                  mlir::Value newVal = val[currValIdx];
+               aggregationFunctions.push_back(
+                   [loc, currDestIdx = currDestIdx, resultIsNullable, resultingType = resultingType,
+                    currValIdx = currValIdx](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
+                       std::vector<mlir::Value> res;
+                       mlir::Value currVal = aggr[currDestIdx];
+                       mlir::Value newVal = val[currValIdx];
 
-                  auto castNewVal = castToAggregationType(builder, loc, newVal, currVal, resultingType);
-                  mlir::Value newLtCurr = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::lt, castNewVal, currVal);
-                  mlir::Value newLtCurrT = builder.create<mlir::db::DeriveTruth>(loc, newLtCurr);
-                  mlir::Value selected = builder.create<mlir::arith::SelectOp>(loc, newLtCurrT, castNewVal, currVal);
+                       auto castNewVal = castToAggregationType(builder, loc, newVal, currVal, resultingType);
+                       mlir::Value newLtCurr = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::lt,
+                                                                               castNewVal, currVal);
+                       mlir::Value newLtCurrT = builder.create<mlir::db::DeriveTruth>(loc, newLtCurr);
+                       mlir::Value selected = builder.create<mlir::arith::SelectOp>(loc, newLtCurrT, castNewVal, currVal);
 
-                  if (resultingType.isa<mlir::db::NullableType>()) {
-                     mlir::Value isNull = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), currVal);
-                     res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull, castNewVal, selected));
-                  } else {
-                     res.push_back(selected);
-                  }
-                  return res;
-               });
+                       if (resultIsNullable) {
+                           mlir::Value isNull = isNullPredicate(builder, loc, currVal);
+                           res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull, castNewVal, selected));
+                       } else {
+                           res.push_back(selected);
+                       }
+                       return res;
+                   });
             } else if (aggrFn.getFn() == mlir::relalg::AggrFunc::max) {
                finalizeFunctions.push_back([currDestIdx = currDestIdx, destAttr = destAttr](mlir::ValueRange range, mlir::OpBuilder& builder) { return std::make_pair(destAttr, range[currDestIdx]); });
                aggrTypes.push_back(resultingType);
                mlir::Value initVal;
-               if (resultingType.isa<mlir::db::NullableType>()) {
-                  initVal = builder.create<mlir::db::NullOp>(aggregationOp.getLoc(), resultingType);
+               auto resultIsNullable = isNullableInput(resultingType);
+               if (resultIsNullable) {
+                   initVal = builder.create<mlir::db::NullOp>(aggregationOp.getLoc(), resultingType);
                } else {
-                  initVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), getBaseType(resultingType), builder.getI64IntegerAttr(0));
+                   initVal = builder.create<mlir::db::ConstantOp>(
+                       aggregationOp.getLoc(), getAggregationBaseType(resultingType), builder.getI64IntegerAttr(0));
                }
                defaultValues.push_back(initVal);
-               aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, attrIsNullable, resultingType = resultingType, currValIdx = currValIdx](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
-                  std::vector<mlir::Value> res;
-                  mlir::Value currVal = aggr[currDestIdx];
-                  mlir::Value newVal = val[currValIdx];
+               aggregationFunctions.push_back(
+                   [loc, currDestIdx = currDestIdx, attrIsNullable, resultIsNullable, resultingType = resultingType,
+                    currValIdx = currValIdx](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
+                       std::vector<mlir::Value> res;
+                       mlir::Value currVal = aggr[currDestIdx];
+                       mlir::Value newVal = val[currValIdx];
 
-                  auto castNewVal = castToAggregationType(builder, loc, newVal, currVal, resultingType);
-                  mlir::Value currGtNew = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::gt, currVal, castNewVal);
-                  mlir::Value currGTNewT = builder.create<mlir::db::DeriveTruth>(loc, currGtNew);
-                  mlir::Value selected = builder.create<mlir::arith::SelectOp>(loc, currGTNewT, currVal, castNewVal);
-                  mlir::Value updatedVal = selected;
+                       auto castNewVal = castToAggregationType(builder, loc, newVal, currVal, resultingType);
+                       mlir::Value currGtNew = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::gt,
+                                                                               currVal, castNewVal);
+                       mlir::Value currGTNewT = builder.create<mlir::db::DeriveTruth>(loc, currGtNew);
+                       mlir::Value selected = builder.create<mlir::arith::SelectOp>(loc, currGTNewT, currVal, castNewVal);
+                       mlir::Value updatedVal = selected;
 
-                  if (attrIsNullable) {
-                     mlir::Value isNull1 = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), castNewVal);
-                     updatedVal = builder.create<mlir::arith::SelectOp>(loc, isNull1, currVal, selected);
-                  }
-                  if (resultingType.isa<mlir::db::NullableType>()) {
-                     mlir::Value isNull = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), currVal);
-                     res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull, castNewVal, updatedVal));
-                  } else {
-                     res.push_back(updatedVal);
-                  }
-                  return res;
-               });
+                       if (attrIsNullable) {
+                           mlir::Value isNull1 = isNullPredicate(builder, loc, castNewVal);
+                           updatedVal = builder.create<mlir::arith::SelectOp>(loc, isNull1, currVal, selected);
+                       }
+                       if (resultIsNullable) {
+                           mlir::Value isNull = isNullPredicate(builder, loc, currVal);
+                           res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull, castNewVal, updatedVal));
+                       } else {
+                           res.push_back(updatedVal);
+                       }
+                       return res;
+                   });
             } else if (aggrFn.getFn() == mlir::relalg::AggrFunc::avg) {
                aggrTypes.push_back(resultingType);
                aggrTypes.push_back(counterType);
                 // PGX-LOWER: Using a proper base constant here instead of only an int64
                auto zeroAttr = mlir::Attribute();
-               auto baseType = getBaseType(resultingType);
-               if (baseType.isa<mlir::db::DecimalType>()) {
+               auto baseType = getAggregationBaseType(resultingType);
+               auto resultIsNullable = isNullableInput(resultingType);
+               if (mlir::isa<mlir::db::DecimalType, mlir::db::PgNumericType>(baseType)) {
                    zeroAttr = builder.getI64IntegerAttr(0);
-               } else if (baseType.isa<mlir::FloatType>()) {
-                  auto floatType = baseType.cast<mlir::FloatType>();
-                  if (floatType.getWidth() == 32) {
-                     zeroAttr = builder.getF32FloatAttr(0.0f);
-                  } else {
-                     zeroAttr = builder.getF64FloatAttr(0.0);
-                  }
-               } else if (baseType.isa<mlir::IntegerType>()) {
-                  zeroAttr = builder.getI64IntegerAttr(0);
+               } else if (auto floatType = mlir::dyn_cast<mlir::FloatType>(baseType)) {
+                   if (floatType.getWidth() == 32) {
+                       zeroAttr = builder.getF32FloatAttr(0.0f);
+                   } else {
+                       zeroAttr = builder.getF64FloatAttr(0.0);
+                   }
+               } else if (mlir::isa<mlir::db::PgFloat4Type>(baseType)) {
+                   zeroAttr = builder.getF32FloatAttr(0.0f);
+               } else if (mlir::isa<mlir::db::PgFloat8Type>(baseType)) {
+                   zeroAttr = builder.getF64FloatAttr(0.0);
+               } else if (mlir::isa<mlir::IntegerType, mlir::db::PgInt2Type, mlir::db::PgInt4Type, mlir::db::PgInt8Type>(
+                              baseType))
+               {
+                   zeroAttr = builder.getI64IntegerAttr(0);
                } else {
                    PGX_WARNING("Unsupported base type in averaging operation");
                }
                // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                mlir::Value initVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), baseType, zeroAttr);
                mlir::Value initCounterVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), counterType, builder.getI64IntegerAttr(0));
-               mlir::Value defaultVal = resultingType.isa<mlir::db::NullableType>() ? builder.create<mlir::db::AsNullableOp>(aggregationOp.getLoc(), resultingType, initVal) : initVal;
+               mlir::Value defaultVal = resultIsNullable ? builder.create<mlir::db::AsNullableOp>(
+                                                               aggregationOp.getLoc(), resultingType, initVal)
+                                                         : initVal;
                defaultValues.push_back(defaultVal);
                defaultValues.push_back(initCounterVal);
-               finalizeFunctions.push_back([loc, currDestIdx = currDestIdx, destAttr = destAttr, resultingType = resultingType](mlir::ValueRange range, mlir::OpBuilder builder) {
-                  mlir::Value casted=builder.create<mlir::db::CastOp>(loc, getBaseType(resultingType), range[currDestIdx+1]);
-                  if(resultingType.isa<mlir::db::NullableType>()&&casted.getType()!=resultingType){
-                     casted=builder.create<mlir::db::AsNullableOp>(loc, resultingType, casted);
-                  }
-                  mlir::Value average=builder.create<mlir::db::DivOp>(loc, resultingType, range[currDestIdx], casted);
-                  return std::make_pair(destAttr, average); });
+               finalizeFunctions.push_back([loc, currDestIdx = currDestIdx, destAttr = destAttr, baseType,
+                                            resultIsNullable, resultingType = resultingType](mlir::ValueRange range,
+                                                                                             mlir::OpBuilder builder) {
+                   mlir::Value casted = builder.create<mlir::db::CastOp>(loc, baseType, range[currDestIdx + 1]);
+                   if (resultIsNullable && casted.getType() != resultingType) {
+                       casted = builder.create<mlir::db::AsNullableOp>(loc, resultingType, casted);
+                   }
+                   mlir::Value average = builder.create<mlir::db::DivOp>(loc, resultingType, range[currDestIdx], casted);
+                   return std::make_pair(destAttr, average);
+               });
                aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, currValIdx = currValIdx, attrIsNullable, resultingType = resultingType, counterType = counterType](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
                   std::vector<mlir::Value> res;
                   auto one = builder.create<mlir::db::ConstantOp>(loc, counterType, builder.getI64IntegerAttr(1));
@@ -339,9 +408,9 @@ class AggregationTranslator : public mlir::relalg::Translator {
                   mlir::Value added1 = builder.create<mlir::db::AddOp>(loc, resultingType, currVal, castNewVal);
                   mlir::Value added2 = builder.create<mlir::db::AddOp>(loc, counterType, aggr[currDestIdx + 1], one);
                   if (attrIsNullable) {
-                     mlir::Value isNull1 = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), castNewVal);
-                     res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull1, currVal, added1));
-                     res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull1, aggr[currDestIdx + 1], added2));
+                      mlir::Value isNull1 = isNullPredicate(builder, loc, castNewVal);
+                      res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull1, currVal, added1));
+                      res.push_back(builder.create<mlir::arith::SelectOp>(loc, isNull1, aggr[currDestIdx + 1], added2));
                   } else {
                      res.push_back(added1);
                      res.push_back(added2);
@@ -351,23 +420,31 @@ class AggregationTranslator : public mlir::relalg::Translator {
                });
             } else if (aggrFn.getFn() == mlir::relalg::AggrFunc::count) {
                size_t currDestIdx = aggrTypes.size();
-               auto initCounterVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), counterType, builder.getI64IntegerAttr(0));
+               auto initCounterVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), counterType,
+                                                                          builder.getI64IntegerAttr(0));
                defaultValues.push_back(initCounterVal);
-               aggrTypes.push_back(resultingType);
-               finalizeFunctions.push_back([currDestIdx = currDestIdx, destAttr = destAttr](mlir::ValueRange range, mlir::OpBuilder& builder) { return std::make_pair(destAttr, range[currDestIdx]); });
+               aggrTypes.push_back(counterType);
+               finalizeFunctions.push_back(
+                   [loc, currDestIdx = currDestIdx, destAttr = destAttr,
+                    resultingType = resultingType](mlir::ValueRange range, mlir::OpBuilder& builder) {
+                       auto result = castFinalAggregationResult(builder, loc, range[currDestIdx], resultingType);
+                       return std::make_pair(destAttr, result);
+                   });
 
-               aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, attrIsNullable, currValIdx = currValIdx, counterType = counterType, resultingType = resultingType](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
-                  std::vector<mlir::Value> res;
-                  auto one = builder.create<mlir::db::ConstantOp>(loc, counterType, builder.getI64IntegerAttr(1));
-                  mlir::Value value = builder.create<mlir::db::AddOp>(loc, resultingType, aggr[currDestIdx], one);
-                  if (attrIsNullable) {
-                     mlir::Value isNull2 = builder.create<mlir::db::IsNullOp>(loc, builder.getI1Type(), val[currValIdx]);
-                     mlir::Value tmp = builder.create<mlir::arith::SelectOp>(loc, isNull2, aggr[currDestIdx], value);
-                     value = tmp;
-                  }
+               aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, attrIsNullable, currValIdx = currValIdx,
+                                               counterType](mlir::ValueRange aggr, mlir::ValueRange val,
+                                                            mlir::OpBuilder& builder) {
+                   std::vector<mlir::Value> res;
+                   auto one = builder.create<mlir::db::ConstantOp>(loc, counterType, builder.getI64IntegerAttr(1));
+                   mlir::Value value = builder.create<mlir::db::AddOp>(loc, counterType, aggr[currDestIdx], one);
+                   if (attrIsNullable) {
+                       mlir::Value isNull2 = isNullPredicate(builder, loc, val[currValIdx]);
+                       mlir::Value tmp = builder.create<mlir::arith::SelectOp>(loc, isNull2, aggr[currDestIdx], value);
+                       value = tmp;
+                   }
 
-                  res.push_back(value);
-                  return res;
+                   res.push_back(value);
+                   return res;
                });
             } else if (aggrFn.getFn() == mlir::relalg::AggrFunc::any) {
                size_t currDestIdx = aggrTypes.size();
@@ -387,17 +464,24 @@ class AggregationTranslator : public mlir::relalg::Translator {
             auto loc = countOp->getLoc();
 
             size_t currDestIdx = aggrTypes.size();
+            mlir::Type resultType = destAttr->type;
             aggrTypes.push_back(counterType);
-            auto initCounterVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), counterType, builder.getI64IntegerAttr(0));
+            auto initCounterVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), counterType,
+                                                                       builder.getI64IntegerAttr(0));
             defaultValues.push_back(initCounterVal);
-            finalizeFunctions.push_back([currDestIdx = currDestIdx, destAttr = destAttr](mlir::ValueRange range, mlir::OpBuilder& builder) { return std::make_pair(destAttr, range[currDestIdx]); });
+            finalizeFunctions.push_back([loc, currDestIdx = currDestIdx, destAttr = destAttr,
+                                         resultType = resultType](mlir::ValueRange range, mlir::OpBuilder& builder) {
+                auto result = castFinalAggregationResult(builder, loc, range[currDestIdx], resultType);
+                return std::make_pair(destAttr, result);
+            });
 
-            aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, counterType = counterType](mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
-               std::vector<mlir::Value> res;
-               auto one = builder.create<mlir::db::ConstantOp>(loc, counterType, builder.getI64IntegerAttr(1));
-               mlir::Value added2 = builder.create<mlir::db::AddOp>(loc, counterType, aggr[currDestIdx], one);
-               res.push_back(added2);
-               return res;
+            aggregationFunctions.push_back([loc, currDestIdx = currDestIdx, counterType](
+                                               mlir::ValueRange aggr, mlir::ValueRange val, mlir::OpBuilder& builder) {
+                std::vector<mlir::Value> res;
+                auto one = builder.create<mlir::db::ConstantOp>(loc, counterType, builder.getI64IntegerAttr(1));
+                mlir::Value added2 = builder.create<mlir::db::AddOp>(loc, counterType, aggr[currDestIdx], one);
+                res.push_back(added2);
+                return res;
             });
          }
       };
