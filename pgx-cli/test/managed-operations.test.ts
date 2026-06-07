@@ -233,6 +233,45 @@ describe("managed operations", () => {
     }
   });
 
+  test("managed runs use configured transcript directory for artifacts and logs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-managed-transcripts-"));
+    try {
+      const runner = new FakeRunner();
+      runner.results = [
+        { exitCode: 0, stdout: healthyJson() },
+        { exitCode: 0, stdout: "" },
+        { exitCode: 0, stdout: healthyJson() },
+        { exitCode: 0, stdout: "ok\n" }
+      ];
+      const output = { stdout: "", stderr: "" };
+      const config = {
+        ...makeConfig(root),
+        output: {
+          ...makeConfig(root).output,
+          transcript_dir: "custom-runs"
+        }
+      };
+
+      const result = await runManagedRemoteShell({
+        runner,
+        output,
+        config,
+        commandName: "run-thor-true",
+        shellCommand: "true",
+        requireMutagenProof: false
+      });
+
+      expect(result.workflowExitCode).toBe(0);
+      expect(result.artifact.runDir).toBe(join(root, "custom-runs", result.artifact.runId));
+      const logsOutput = { stdout: "", stderr: "" };
+      const logsExit = await runLogsCommand(["show", result.artifact.runId, "--tail", "5"], runner, logsOutput, config);
+      expect(logsExit).toBe(0);
+      expect(logsOutput.stdout).toContain("ok");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("running on remote skips ssh and mutagen", async () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-managed-remote-"));
     try {

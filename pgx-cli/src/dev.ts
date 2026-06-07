@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { StreamingCommandRunner } from "./commands.js";
 import { fullLintShellCommand, targetedLintShellCommand } from "./lint.js";
 import { detectCtestFailure, evaluatePgRegressBaseline, hasPgRegressBaselineInput } from "./pg-regress-baseline.js";
+import { appendLiveStdout } from "./operations.js";
 import type { OperationOutput } from "./operations.js";
 import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
@@ -188,7 +189,8 @@ async function runWorkflow(
   steps: Array<{ name: string; command: string[]; logPath?: string; run: (stepOutput: OperationOutput) => Promise<number> }>
 ): Promise<number> {
   const results: WorkflowStep[] = [];
-  const parts = [`pgx-cli: starting ${workflowName}\n`];
+  appendLiveStdout(output, `pgx-cli: starting ${workflowName}\n`);
+  const parts: string[] = [];
   for (const step of steps) {
     const stepOutput = { stdout: "", stderr: "" };
     const exitCode = await step.run(stepOutput);

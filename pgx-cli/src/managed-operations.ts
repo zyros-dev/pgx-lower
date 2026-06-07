@@ -6,6 +6,7 @@ import { applyTotalOutputBudget } from "./managed-runner.js";
 import type { ManagedRunPostprocessor, OutputBudget, PreviewSelection } from "./managed-runner.js";
 import { runMutagenPreflight } from "./mutagen-preflight.js";
 import type { StreamingCommandRunner } from "./commands.js";
+import { appendLiveStdout } from "./operations.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 import type { ResolvedOutputConfig, ResolvedSyncConfig } from "./project-config.js";
 import type { RunArtifactPaths } from "./run-artifacts.js";
@@ -44,10 +45,11 @@ export async function runManagedRemoteShell(input: {
 }): Promise<ManagedOperationResult> {
   const artifact = createRunArtifactPaths({
     root: input.config.localProjectPath,
-    commandName: input.commandName
+    commandName: input.commandName,
+    transcriptDir: input.config.output.transcript_dir
   });
-  input.output.stdout += `pgx-cli: starting ${input.commandName}\n`;
-  input.output.stdout += `run id: ${artifact.runId}\n`;
+  appendLiveStdout(input.output, `pgx-cli: starting ${input.commandName}\n`);
+  appendLiveStdout(input.output, `run id: ${artifact.runId}\n`);
   const startedAt = new Date();
   const artifactPaths = input.artifactPaths ?? [];
   for (const path of artifactPaths) {

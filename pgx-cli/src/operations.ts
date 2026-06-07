@@ -6,7 +6,44 @@ import type { ManagedOperationConfig } from "./managed-operations.js";
 export type OperationOutput = {
   stdout: string;
   stderr: string;
+  liveStdout?: (text: string) => void;
+  liveStderr?: (text: string) => void;
+  flushedStdoutLength?: number;
+  flushedStderrLength?: number;
 };
+
+export function appendLiveStdout(output: OperationOutput, text: string): void {
+  output.stdout += text;
+  if (!output.liveStdout) return;
+  const start = output.flushedStdoutLength ?? 0;
+  const pending = output.stdout.slice(start);
+  output.liveStdout(pending);
+  output.flushedStdoutLength = output.stdout.length;
+}
+
+export function appendLiveStderr(output: OperationOutput, text: string): void {
+  output.stderr += text;
+  if (!output.liveStderr) return;
+  const start = output.flushedStderrLength ?? 0;
+  const pending = output.stderr.slice(start);
+  output.liveStderr(pending);
+  output.flushedStderrLength = output.stderr.length;
+}
+
+export function flushRemainingOutput(
+  output: OperationOutput,
+  writeStdout: (text: string) => void,
+  writeStderr: (text: string) => void
+): void {
+  const stdoutStart = output.flushedStdoutLength ?? 0;
+  const stderrStart = output.flushedStderrLength ?? 0;
+  const stdout = output.stdout.slice(stdoutStart);
+  const stderr = output.stderr.slice(stderrStart);
+  if (stdout) writeStdout(stdout);
+  if (stderr) writeStderr(stderr);
+  output.flushedStdoutLength = output.stdout.length;
+  output.flushedStderrLength = output.stderr.length;
+}
 
 export type OperationConfig = {
   mutagenSession: string;

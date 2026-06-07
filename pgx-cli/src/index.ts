@@ -16,11 +16,13 @@ import { runUnitSqlCommand } from "./unit-sql.js";
 import { runGatewayCommand } from "./run.js";
 import { runCodexPolicyCommand } from "./codex-policy.js";
 import {
+  flushRemainingOutput,
   runQueueCommand,
   runSetupCommand,
   runSyncCommand,
   runThorCommand
 } from "./operations.js";
+import type { OperationOutput } from "./operations.js";
 import { loadProjectConfig, resolveProfile } from "./project-config.js";
 import { DEFAULT_REQUEST_DIR, writeRequest } from "./requests.js";
 import { runRepoCommand } from "./repo-audit.js";
@@ -34,7 +36,12 @@ const config = loadConfig({ env: process.env, argvUrl: url });
 incrementUsage(DEFAULT_USAGE_PATH, argv);
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const io = { stdout: "", stderr: "" };
+const io: OperationOutput = {
+  stdout: "",
+  stderr: "",
+  liveStdout: (text) => process.stdout.write(text),
+  liveStderr: (text) => process.stderr.write(text)
+};
 
 try {
   if (!argv[0] || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
@@ -65,8 +72,7 @@ try {
       dockerContainer: config.dockerContainer,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -74,8 +80,7 @@ try {
     process.exitCode = await runSyncCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -89,8 +94,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -104,8 +108,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -120,8 +123,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -136,8 +138,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -152,8 +153,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -168,15 +168,13 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "codex-policy") {
     process.exitCode = runCodexPolicyCommand(argv.slice(1), io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -184,29 +182,25 @@ try {
     process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "route-check") {
     process.exitCode = await runRouteCheckCommand(argv.slice(2), runner, io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
     process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "unit-sql") {
     process.exitCode = runUnitSqlCommand(argv.slice(2), io);
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -227,8 +221,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -245,8 +238,7 @@ try {
       output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    process.stdout.write(io.stdout);
-    process.stderr.write(io.stderr);
+    flushIo();
     process.exit();
   }
 
@@ -269,14 +261,20 @@ try {
     sshHost: config.sshHost,
     projectPath: config.projectPath
   });
-  process.stdout.write(io.stdout);
-  process.stderr.write(io.stderr);
+  flushIo();
   process.exitCode = exitCode;
 } catch (error) {
-  process.stdout.write(io.stdout);
-  process.stderr.write(io.stderr);
+  flushIo();
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
+}
+
+function flushIo(): void {
+  flushRemainingOutput(
+    io,
+    (text) => process.stdout.write(text),
+    (text) => process.stderr.write(text)
+  );
 }
 
 function parseGlobalArgs(args: string[]): { url?: string; argv: string[] } {

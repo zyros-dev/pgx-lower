@@ -54,6 +54,20 @@ describe("run artifacts", () => {
     });
   });
 
+  test("honors configured transcript directory", () => {
+    withTempRoot((root) => {
+      const paths = createRunArtifactPaths({
+        root,
+        commandName: "dev-test",
+        transcriptDir: "custom/runs",
+        randomSuffix: "000001"
+      });
+
+      expect(paths.runDir).toBe(join(root, "custom", "runs", paths.runId));
+      expect(existsSync(paths.runDir)).toBe(true);
+    });
+  });
+
   test("sanitizes punctuation to a compact run name", () => {
     expect(sanitizeRunName("a/b c_D.e:f!")).toBe("a-b-c-d-e-f");
   });

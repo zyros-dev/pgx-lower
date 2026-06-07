@@ -26,13 +26,14 @@ export function sanitizeRunName(value: string): string {
 export function createRunArtifactPaths(input: {
   root: string;
   commandName: string;
+  transcriptDir?: string;
   now?: Date;
   randomSuffix?: string;
 }): RunArtifactPaths {
   const timestamp = (input.now ?? new Date()).toISOString().replace(/[:.]/g, "-");
   const suffix = input.randomSuffix ?? randomBytes(3).toString("hex");
   const runId = `${timestamp}-${sanitizeRunName(input.commandName)}-${suffix}`;
-  const runDir = join(input.root, ".pgx-cli", "runs", runId);
+  const runDir = join(input.root, input.transcriptDir ?? ".pgx-cli/runs", runId);
   mkdirSync(runDir, { recursive: true });
   return {
     runId,
