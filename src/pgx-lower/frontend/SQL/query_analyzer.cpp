@@ -139,6 +139,15 @@ static auto postgresTypeIsMLIRSupported(const Oid postgresType) -> bool {
     }
 }
 
+static auto postgresTypeIsStringType(const Oid postgresType) -> bool {
+    switch (postgresType) {
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return true;
+    default: return false;
+    }
+}
+
 struct PgFunctionSignature {
     const char* name;
     char kind;
@@ -277,6 +286,24 @@ static auto operatorTypeSignatureMatchesAny(const Oid resultType, const Oid left
     return false;
 }
 
+static auto operatorCatalogMatches(const Oid operatorOid, const Oid resultType, const Oid leftType, const Oid rightType)
+    -> bool {
+    if (operatorOid == InvalidOid || resultType == InvalidOid || leftType == InvalidOid || rightType == InvalidOid) {
+        return false;
+    }
+
+    const auto tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(operatorOid));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+
+    const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
+                         && oper->oprresult == resultType && oper->oprleft == leftType && oper->oprright == rightType;
+    ReleaseSysCache(tuple);
+    return matches;
+}
+
 static constexpr const char* equalityOperatorNames[] = {"=", "<>"};
 static constexpr const char* orderingOperatorNames[] = {"<", "<=", ">", ">="};
 static constexpr const char* arithmeticOperatorNames[] = {"+", "-", "*", "/"};
@@ -333,8 +360,9 @@ static constexpr PgOperatorTypeSignature supportedLikeOperatorSignatures[] = {
     {BOOLOID, BPCHAROID, TEXTOID},
 };
 
-static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
-    const char* name = get_opname(op->opno);
+static auto
+operatorSignatureIsLowerable(const Oid operatorOid, const Oid resultType, const Oid lhsType, const Oid rhsType) -> bool {
+    const char* name = get_opname(operatorOid);
     if (!name) {
         return false;
     }
@@ -345,32 +373,64 @@ static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
     const auto supportsLike = operatorNameMatchesAny(name, likeOperatorNames, std::size(likeOperatorNames));
     pfree(const_cast<char*>(name));
 
-    const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
-    const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
-    const auto lhsType = exprType(const_cast<Node*>(lhs));
-    const auto rhsType = exprType(const_cast<Node*>(rhs));
-
     if (supportsEquality
-        && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedEqualityOperatorSignatures,
+        && operatorTypeSignatureMatchesAny(resultType, lhsType, rhsType, supportedEqualityOperatorSignatures,
                                            std::size(supportedEqualityOperatorSignatures)))
     {
         return true;
     }
     if (supportsOrdering
-        && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedOrderingOperatorSignatures,
+        && operatorTypeSignatureMatchesAny(resultType, lhsType, rhsType, supportedOrderingOperatorSignatures,
                                            std::size(supportedOrderingOperatorSignatures)))
     {
         return true;
     }
     if (supportsArithmetic
-        && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedArithmeticOperatorSignatures,
+        && operatorTypeSignatureMatchesAny(resultType, lhsType, rhsType, supportedArithmeticOperatorSignatures,
                                            std::size(supportedArithmeticOperatorSignatures)))
     {
         return true;
     }
     return supportsLike
-           && operatorTypeSignatureMatchesAny(op->opresulttype, lhsType, rhsType, supportedLikeOperatorSignatures,
+           && operatorTypeSignatureMatchesAny(resultType, lhsType, rhsType, supportedLikeOperatorSignatures,
                                               std::size(supportedLikeOperatorSignatures));
+}
+
+static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
+    const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+    const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+    return operatorSignatureIsLowerable(op->opno, op->opresulttype, exprType(const_cast<Node*>(lhs)),
+                                        exprType(const_cast<Node*>(rhs)));
+}
+
+static auto scalarArrayOperatorSignatureIsLowerable(const Oid operatorOid, const Oid lhsType, const Oid rhsType) -> bool {
+    const char* name = get_opname(operatorOid);
+    if (!name) {
+        return false;
+    }
+    const auto supportsEquality = operatorNameMatchesAny(name, equalityOperatorNames, std::size(equalityOperatorNames));
+    pfree(const_cast<char*>(name));
+    return supportsEquality
+           && operatorTypeSignatureMatchesAny(BOOLOID, lhsType, rhsType, supportedEqualityOperatorSignatures,
+                                              std::size(supportedEqualityOperatorSignatures));
+}
+
+static auto scalarArrayElementType(const Node* rightNode) -> Oid {
+    if (!rightNode) {
+        return InvalidOid;
+    }
+    if (nodeTag(rightNode) == T_ArrayExpr) {
+        const auto* arrayExpr = reinterpret_cast<const ArrayExpr*>(rightNode);
+        return arrayExpr->element_typeid;
+    }
+    if (nodeTag(rightNode) == T_Const) {
+        const auto* constExpr = reinterpret_cast<const Const*>(rightNode);
+        switch (constExpr->consttype) {
+        case INT4ARRAYOID: return INT4OID;
+        default: return InvalidOid;
+        }
+    }
+    return InvalidOid;
 }
 
 static constexpr PgFunctionSignature supportedScalarFunctions[] = {
@@ -666,16 +726,92 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
         return supportedOrUnsupported(result);
     }
 
+    case T_CoalesceExpr: {
+        const auto* coalesce = reinterpret_cast<const CoalesceExpr*>(expr);
+        if (!isCollationSupported(coalesce->coalescecollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported COALESCE collation",
+                                        location);
+        }
+        mergeAnalyzerResult(result, analyzeExprList(coalesce->args, location + ".args"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_ScalarArrayOpExpr: {
+        const auto* scalarArray = reinterpret_cast<const ScalarArrayOpExpr*>(expr);
+        if (!isCollationSupported(scalarArray->inputcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                        "unsupported ScalarArrayOpExpr collation", location);
+        }
+        if (!scalarArray->args || list_length(scalarArray->args) != 2) {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
+                                        "ScalarArrayOpExpr requires two arguments", location);
+            return supportedOrUnsupported(result);
+        }
+
+        const auto* leftNode = static_cast<const Node*>(lfirst(list_nth_cell(scalarArray->args, 0)));
+        const auto* rightNode = static_cast<const Node*>(lfirst(list_nth_cell(scalarArray->args, 1)));
+        mergeAnalyzerResult(result, analyzeExpr(leftNode, location + ".left"));
+
+        const auto elementType = scalarArrayElementType(rightNode);
+        if (elementType == InvalidOid) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node,
+                                        "unsupported ScalarArrayOpExpr array operand", location + ".right");
+        } else if (nodeTag(rightNode) == T_ArrayExpr) {
+            const auto* arrayExpr = reinterpret_cast<const ArrayExpr*>(rightNode);
+            mergeAnalyzerResult(result, analyzeExprList(arrayExpr->elements, location + ".right.elements"));
+        }
+
+        const auto leftType = leftNode ? exprType(const_cast<Node*>(leftNode)) : InvalidOid;
+        if (!operatorCatalogMatches(scalarArray->opno, BOOLOID, leftType, elementType)
+            || !scalarArrayOperatorSignatureIsLowerable(scalarArray->opno, leftType, elementType))
+        {
+            result.addUnsupportedReason(
+                UnsupportedReasonKind::unsupported_operator,
+                "unsupported ScalarArrayOpExpr operator OID " + std::to_string(scalarArray->opno), location);
+        }
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
+        if (!isCollationSupported(relabel->resultcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported relabel collation",
+                                        location);
+        }
         mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), location + ".arg"));
+        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        return supportedOrUnsupported(result);
+    }
+
+    case T_CoerceViaIO: {
+        const auto* coerce = reinterpret_cast<const CoerceViaIO*>(expr);
+        if (!isCollationSupported(coerce->resultcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                        "unsupported CoerceViaIO collation", location);
+        }
+        if (coerce->arg) {
+            const auto inputType = exprType(reinterpret_cast<Node*>(coerce->arg));
+            if (!postgresTypeIsStringType(inputType) || !postgresTypeIsStringType(coerce->resulttype)) {
+                result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node,
+                                            "unsupported CoerceViaIO from type OID " + std::to_string(inputType)
+                                                + " to type OID " + std::to_string(coerce->resulttype),
+                                            location);
+            }
+            mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(coerce->arg), location + ".arg"));
+        } else {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "CoerceViaIO argument is null",
+                                        location + ".arg");
+        }
         mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
         return supportedOrUnsupported(result);
     }
 
     case T_Aggref: {
         const auto* agg = reinterpret_cast<const Aggref*>(expr);
-        if (!isAggregateSupported(agg)) {
+        const auto aggregateSupported = isAggregateSupported(agg);
+        if (!aggregateSupported) {
             const auto functionName = postgresFunctionName(agg->aggfnoid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
                                         functionName.empty()
@@ -684,7 +820,9 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
                                         location);
         }
         mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
-        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        if (!aggregateSupported || agg->aggtype != BYTEAOID) {
+            mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
+        }
         return supportedOrUnsupported(result);
     }
 
@@ -695,12 +833,9 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
         return supportedOrUnsupported(result);
     }
 
-    case T_BooleanTest: {
-        const auto* booleanTest = reinterpret_cast<const BooleanTest*>(expr);
-        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(booleanTest->arg), location + ".arg"));
-        mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
-        return supportedOrUnsupported(result);
-    }
+    case T_BooleanTest:
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_expr_node,
+                                           "unsupported expression node BooleanTest", location);
 
     default:
         return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_expr_node,

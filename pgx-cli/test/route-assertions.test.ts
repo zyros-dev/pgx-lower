@@ -78,6 +78,17 @@ describe("route directive parsing", () => {
     ).toThrow(/requires an id/);
   });
 
+  test("requires directives for comment-prefixed query statements", () => {
+    expect(() =>
+      parseSqlManifest({
+        path: "commented-query.sql",
+        sql: "-- query label\nSELECT 1;",
+        defaultRoute: "lower",
+        requireRouteDirectives: true
+      })
+    ).toThrow(/missing route directive/);
+  });
+
   test("defaults setup statements to ignore without directives", () => {
     const manifest = parseSqlManifest({
       path: "setup.sql",
@@ -223,6 +234,25 @@ describe("route notice assertions", () => {
 
     expect(fallback.failures[0]?.reason).toBe("expected fallback but no fallback notice was observed");
     expect(lower.failures[0]?.reason).toContain("expected lower but observed fallback");
+  });
+
+  test("force modes override comment-prefixed query statements", () => {
+    const manifest = parseSqlManifest({
+      path: "queries.sql",
+      sql: "/* <<pgx-lower-config>>: auto_should_route_to=not_asserted id=q */\n-- query label\nSELECT 1;",
+      defaultRoute: "not_asserted",
+      requireRouteDirectives: true
+    });
+
+    const report = assertRoutes({
+      runName: "route-test",
+      profile: "debug",
+      executionMode: "force-fallback",
+      manifests: [manifest],
+      outputsByPath: new Map([["queries.sql", "-- query label\nSELECT 1;"]])
+    });
+
+    expect(report.failures[0]?.reason).toBe("expected fallback but no fallback notice was observed");
   });
 
   test("writes a compact markdown summary", () => {

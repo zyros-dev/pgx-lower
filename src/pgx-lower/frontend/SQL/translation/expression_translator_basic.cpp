@@ -30,6 +30,8 @@ extern "C" {
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
@@ -48,6 +50,15 @@ class GetColumnOp;
 
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
+
+namespace {
+
+auto isNullableSqlValue(mlir::Type type) -> bool {
+    return mlir::isa<mlir::db::NullableType>(type)
+           || (mlir::db::isPgValueType(type) && mlir::db::getPgNullability(type) == mlir::db::PgNullability::Maybe);
+}
+
+} // namespace
 
 auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
@@ -94,10 +105,20 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CoerceViaIO");
         return translate_coerce_via_io(ctx, expr);
     case T_RelabelType: {
-        const auto* relabel = reinterpret_cast<RelabelType*>(expr);
+        const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_RelabelType");
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
-        return translate_expression(ctx, relabel->arg);
+        auto argValue = translate_expression(ctx, relabel->arg);
+        if (!argValue) {
+            PGX_ERROR("Failed to translate RelabelType argument");
+            throw std::runtime_error("Failed to translate RelabelType argument");
+        }
+        const auto type_mapper = PostgreSQLTypeMapper(context_);
+        auto targetType = type_mapper.map_postgre_sqltype(
+            relabel->resulttype, relabel->resulttypmod, relabel->resultcollid, isNullableSqlValue(argValue.getType()));
+        if (argValue.getType() == targetType) {
+            return argValue;
+        }
+        return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, argValue);
     }
     case T_SubPlan: return translate_subplan(ctx, reinterpret_cast<SubPlan*>(expr));
     case T_Param: return translate_param(ctx, reinterpret_cast<Param*>(expr));
@@ -188,7 +209,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     auto& columnManager = dialect->getColumnManager();
 
     const auto type_mapper = PostgreSQLTypeMapper(context_);
-    auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
+    auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, var->varcollid, nullable);
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='%s', column='%s'",
             tableName.c_str(), colName.c_str());

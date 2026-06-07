@@ -60,12 +60,14 @@ struct ColumnInfo {
     std::string name{};
     unsigned int type_oid{};
     int32_t typmod{};
+    Oid collation{};
     bool nullable{};
 
-    ColumnInfo(std::string n, const unsigned int T, const int32_t TYPEMOD, const bool nullable)
+    ColumnInfo(std::string n, const unsigned int T, const int32_t TYPEMOD, const Oid collation, const bool nullable)
     : name(std::move(n))
     , type_oid(T)
     , typmod(TYPEMOD)
+    , collation(collation)
     , nullable(nullable) {}
 };
 
@@ -77,12 +79,13 @@ struct TranslationResult {
         std::string column_name{};
         Oid type_oid{};
         int32_t typmod{};
+        Oid collation{};
         mlir::Type mlir_type;
         bool nullable{};
         [[nodiscard]] auto toString() const -> std::string {
             return "ColumnSchema(table='" + table_name + "', column='" + column_name
                    + "', oid=" + std::to_string(type_oid) + ", typmod=" + std::to_string(typmod)
-                   + ", nullable=" + (nullable ? "true" : "false") + ")";
+                   + ", collation=" + std::to_string(collation) + ", nullable=" + (nullable ? "true" : "false") + ")";
         }
     };
 
@@ -115,6 +118,7 @@ struct ResolvedParam {
     std::string column_name{};
     Oid type_oid{};
     int32 typmod{};
+    Oid collation{};
     bool nullable{};
     mlir::Type mlir_type;
     std::optional<mlir::Value> cached_value;
@@ -210,6 +214,7 @@ struct TranslationContext {
                                                    .column_name = it->second.second,
                                                    .type_oid = 0,
                                                    .typmod = -1,
+                                                   .collation = InvalidOid,
                                                    .mlir_type = mlir::Type(),
                                                    .nullable = nullable};
         }
@@ -225,6 +230,36 @@ struct StreamExpressionResult {
     std::string column_name{};
     std::string table_name{};
 };
+
+inline auto is_sql_bool_type(mlir::Type type) -> bool {
+    return type.isInteger(1) || mlir::isa<mlir::db::PgBoolType>(type);
+}
+
+inline auto is_sql_nullable_type(mlir::Type type) -> bool {
+    return mlir::isa<mlir::db::NullableType>(type)
+           || (mlir::db::isPgValueType(type) && mlir::db::getPgNullability(type) == mlir::db::PgNullability::Maybe);
+}
+
+inline auto sql_bool_result_type(mlir::OpBuilder& builder, mlir::ValueRange values) -> mlir::Type {
+    for (const auto value : values) {
+        if (mlir::db::isPgValueType(value.getType())) {
+            return mlir::db::PgBoolType::get(builder.getContext(), mlir::db::combineSqlNullability(values));
+        }
+    }
+    for (const auto value : values) {
+        if (mlir::isa<mlir::db::NullableType>(value.getType())) {
+            return mlir::db::NullableType::get(builder.getContext(), builder.getI1Type());
+        }
+    }
+    return builder.getI1Type();
+}
+
+inline auto derive_truth_if_needed(mlir::OpBuilder& builder, mlir::Value value) -> mlir::Value {
+    if (is_sql_bool_type(value.getType())) {
+        return value;
+    }
+    return builder.create<mlir::db::DeriveTruth>(builder.getUnknownLoc(), value);
+}
 
 } // namespace pgx_lower::frontend::sql
 
@@ -353,7 +388,8 @@ class PostgreSQLTypeMapper {
     explicit PostgreSQLTypeMapper(mlir::MLIRContext& context)
     : context_(context) {}
 
-    [[nodiscard]] auto map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable = false) const -> mlir::Type;
+    [[nodiscard]] auto map_postgre_sqltype(Oid type_oid, int32_t typmod, Oid collation, bool nullable = false) const
+        -> mlir::Type;
     [[nodiscard]] static auto map_mlir_type_to_oid(mlir::Type mlir_type) -> Oid;
 
     // Type modifier extraction functions

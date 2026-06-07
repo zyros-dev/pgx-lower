@@ -152,6 +152,8 @@ describe("dev commands", () => {
 
   test.each([
     [["lint", "diff"], "ssh", "clang-tidy-diff-20"],
+    [["check", "diff"], "ssh", "clang-format-diff-20"],
+    [["format", "diff"], "ssh", "clang-format-diff-20"],
     [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "clang-tidy-20"],
     [["lint", "files", "a.cpp", "b.cpp"], "ssh", "clang-tidy-20"],
     [["test", "unit", "type_mapping"], "ssh", "type_mapping.sql"],
@@ -171,6 +173,19 @@ describe("dev commands", () => {
     expect(commands).not.toContain(oldLintScript);
     expect(commands).not.toContain(oldBaselineScript);
     expect(commands).not.toContain("just");
+  });
+
+  test("dev format diff flushes formatted remote changes back locally", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runDevCommand(["format", "diff"], runner, output, makeDevConfig());
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" "));
+    const formatIndex = commands.findIndex((command) => command.startsWith("ssh ") && command.includes("clang-format-diff-20"));
+    const lastFlushIndex = commands.findLastIndex((command) => command === "mutagen sync flush pgx-lower");
+    expect(formatIndex).toBeGreaterThan(-1);
+    expect(lastFlushIndex).toBeGreaterThan(formatIndex);
   });
 
 

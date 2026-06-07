@@ -45,11 +45,18 @@ class DB_Type<string name, string typeMnemonic> : TypeDef<DB_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
+def DB_PgNullability_Never : I64EnumAttrCase<"Never", 0, "never">;
+def DB_PgNullability_Maybe : I64EnumAttrCase<"Maybe", 1, "maybe">;
+def DB_PgNullabilityAttr : I64EnumAttr<"PgNullability", "",
+        [DB_PgNullability_Never, DB_PgNullability_Maybe]> {
+    let cppNamespace = "::mlir::db";
+}
+
 def NullableType : DB_Type<"Nullable","nullable"> {
     let summary = "nullable";
 
     let parameters = (ins "Type":$type);
-    let assemblyFormat = " `<` $type `>`";
+    let hasCustomAssemblyFormat = 1;
 
     let builders = [
         TypeBuilderWithInferredContext<(ins "Type":$type), [{
@@ -124,7 +131,120 @@ def DB_StringType : DB_Type<"String","string"> {
     }];
 }
 
-def AnyBool: AnyTypeOf<[I1,NullableType]>;
+class DB_PgType<string name, string typeMnemonic> : DB_Type<name, typeMnemonic> {
+    let hasCustomAssemblyFormat = 1;
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+class DB_PgNoMetadataType<string name, string typeMnemonic> : DB_PgType<name, typeMnemonic> {
+    let parameters = (ins "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins), [{
+            return $_get($_ctxt, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        int32_t getTypmod() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgBoolType : DB_PgNoMetadataType<"PgBool", "pg_bool">;
+def DB_PgInt2Type : DB_PgNoMetadataType<"PgInt2", "pg_int2">;
+def DB_PgInt4Type : DB_PgNoMetadataType<"PgInt4", "pg_int4">;
+def DB_PgInt8Type : DB_PgNoMetadataType<"PgInt8", "pg_int8">;
+def DB_PgFloat4Type : DB_PgNoMetadataType<"PgFloat4", "pg_float4">;
+def DB_PgFloat8Type : DB_PgNoMetadataType<"PgFloat8", "pg_float8">;
+def DB_PgDateType : DB_PgNoMetadataType<"PgDate", "pg_date">;
+
+def DB_PgNumericType : DB_PgType<"PgNumeric", "pg_numeric"> {
+    let parameters = (ins "int32_t":$typmod, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod), [{
+            return $_get($_ctxt, typmod, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgTimestampType : DB_PgType<"PgTimestamp", "pg_timestamp"> {
+    let parameters = (ins "int32_t":$typmod, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod), [{
+            return $_get($_ctxt, typmod, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgIntervalType : DB_PgType<"PgInterval", "pg_interval"> {
+    let parameters = (ins "int32_t":$typmod, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod), [{
+            return $_get($_ctxt, typmod, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        PgOid getCollation() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgTextType : DB_PgType<"PgText", "pg_text"> {
+    let parameters = (ins "PgOid":$collation, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "PgOid":$collation), [{
+            return $_get($_ctxt, collation, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        int32_t getTypmod() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgVarcharType : DB_PgType<"PgVarchar", "pg_varchar"> {
+    let parameters = (ins "int32_t":$typmod, "PgOid":$collation, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod, "PgOid":$collation), [{
+            return $_get($_ctxt, typmod, collation, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def DB_PgBpcharType : DB_PgType<"PgBpchar", "pg_bpchar"> {
+    let parameters = (ins "int32_t":$typmod, "PgOid":$collation, "PgNullability":$nullability);
+    let builders = [
+        TypeBuilder<(ins "int32_t":$typmod, "PgOid":$collation), [{
+            return $_get($_ctxt, typmod, collation, PgNullability::Never);
+        }]>
+    ];
+    let extraClassDeclaration = [{
+        PgOid getPgTypeOid() const;
+        ::mlir::Type getPhysicalCarrierType() const;
+    }];
+}
+
+def AnyBool: AnyTypeOf<[I1,NullableType,DB_PgBoolType]>;
 def NullableDBType: AnyTypeOf<[AnyType,NullableType]>;
 
 def DB_ConstantOp : DB_Op<"constant", [Pure]> {
@@ -133,6 +253,7 @@ def DB_ConstantOp : DB_Op<"constant", [Pure]> {
     let arguments = (ins AnyAttr:$value);
     let results = (outs AnyType:$result);
     let assemblyFormat = "`(` $value `)` `:` type($result) attr-dict";
+    let hasVerifier = 1;
 
     let extraClassDeclaration = [{
         Attribute getConstantValue() { return (*this)->getAttr("value"); }
@@ -142,8 +263,9 @@ def DB_ConstantOp : DB_Op<"constant", [Pure]> {
 def DB_NullOp : DB_Op<"null", [Pure]> {
     let summary = "Create null value";
 
-    let results = (outs NullableType:$res);
+    let results = (outs AnyType:$res);
     let assemblyFormat = "`:` type($res) attr-dict";
+    let hasVerifier = 1;
 }
 
 def DB_DeriveTruth : DB_Op<"derive_truth", [Pure]> {
@@ -158,22 +280,29 @@ def DB_AsNullableOp : DB_Op<"as_nullable", [Pure]> {
     let summary = "Convert to nullable type";
 
     let arguments = (ins AnyType: $val,Optional<I1>: $null);
-    let results = (outs NullableType : $res);
+    let results = (outs AnyType:$res);
     let assemblyFormat = "$val `:` type($val) ( `,` $null^ )?  `->` type($res) attr-dict";
+    let hasVerifier = 1;
 }
 
 def DB_IsNullOp : DB_Op<"isnull", [Pure]> {
     let summary = "Indicate whether a nullable value is null";
 
-    let arguments = (ins NullableType:$val);
-    let results = (outs I1:$result);
-    let assemblyFormat = "$val `:` type($val) attr-dict";
+    let arguments = (ins AnyType:$val);
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "$val `:` type($val) `->` type($result) attr-dict";
+    let builders = [
+        OpBuilder<(ins "Value":$val), [{
+            build($_builder, $_state, $_builder.getI1Type(), val);
+        }]>
+    ];
+    let hasVerifier = 1;
 }
 
 def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Get value of nullable type";
 
-    let arguments = (ins NullableType: $val);
+    let arguments = (ins AnyType: $val);
     let results = (outs AnyType : $res);
     let assemblyFormat = "$val `:` type($val)  attr-dict";
     let extraClassDefinition = [{
@@ -181,8 +310,18 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethod
                 MLIRContext* context, std::optional<mlir::Location> location,
                 ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
                 RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
-            inferredReturnTypes.assign({operands[0].getType().cast<mlir::db::NullableType>().getType()});
-            return success();
+            auto valueType = operands[0].getType();
+            if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(valueType)) {
+                inferredReturnTypes.assign({nullable.getType()});
+                return success();
+            }
+            if (mlir::db::isPgValueType(valueType)
+                && mlir::db::getPgNullability(valueType) == mlir::db::PgNullability::Maybe)
+            {
+                inferredReturnTypes.assign({mlir::db::withPgNullability(valueType, mlir::db::PgNullability::Never)});
+                return success();
+            }
+            return failure();
         }
     }];
 }
@@ -207,8 +346,15 @@ def DB_Hash : DB_Op<"hash", [Pure]> {
 
 class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_MaySupportInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
+            !listconcat(traits, [Pure,DB_NeedsNullWrap,DB_MaySupportInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
     let results = (outs AnyType:$result);
+    let hasVerifier = 1;
+    let extraClassDeclaration = [{
+        static LogicalResult inferReturnTypes(
+        MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
+        DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
+        SmallVectorImpl<Type>& inferredReturnTypes);
+    }];
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(
         MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
@@ -217,7 +363,7 @@ class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
             return inferReturnType(context,location,operands,inferredReturnTypes);
         }
     }];
-    let assemblyFormat = "$left `:` type($left) `,` $right `:` type($right) attr-dict";
+    let assemblyFormat = "$left `:` type($left) `,` $right `:` type($right) `->` type($result) attr-dict";
 }
 
 def DB_AddOp : DB_BinaryOp<"add"> {
@@ -265,16 +411,9 @@ def DB_ModOp : DB_BinaryOp<"mod"> {
 
 class DB_LogicalOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>])> {
-    let results = (outs AnyBool:$res);
-    let extraClassDefinition = [{
-        LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, std::optional<mlir::Location>, ValueRange operands,
-                DictionaryAttr, OpaqueProperties, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
-            mlir::Type i1 = IntegerType::get(context, 1);
-            inferredReturnTypes.assign({wrapNullableType(context, i1, operands)});
-            return success();
-        }
-    }];
+            !listconcat(traits, [Pure])> {
+    let results = (outs AnyType:$res);
+    let hasVerifier = 1;
 }
 
 def DB_CMP_P_EQ  : I64EnumAttrCase<"eq", 0>;
@@ -293,7 +432,12 @@ def DB_CmpOp : DB_LogicalOp<"compare",
     let summary = "Compare int/Decimal/String";
 
     let arguments = (ins DB_CmpPredicateAttr:$predicate, NullableDBType:$left, NullableDBType:$right);
-    let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) attr-dict";
+    let builders = [
+        OpBuilder<(ins "DBCmpPredicate":$predicate, "Value":$left, "Value":$right), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), ValueRange({left, right})), predicate, left, right);
+        }]>
+    ];
+    let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) `->` type($res) attr-dict";
 }
 
 def DB_BetweenOp : DB_LogicalOp<"between",[DB_NeedsNullWrap]> {
@@ -303,7 +447,12 @@ def DB_BetweenOp : DB_LogicalOp<"between",[DB_NeedsNullWrap]> {
     }];
 
     let arguments = (ins NullableDBType:$val, NullableDBType:$lower, NullableDBType:$upper, I1Attr:$lowerInclusive, I1Attr:$upperInclusive);
-    let assemblyFormat = "$val `:` type ($val) `between` $lower `:` type($lower) `,` $upper `:` type($upper) `,` `lowerInclusive` `:` $lowerInclusive `,` `upperInclusive` `:` $upperInclusive attr-dict";
+    let builders = [
+        OpBuilder<(ins "Value":$val, "Value":$lower, "Value":$upper, "bool":$lowerInclusive, "bool":$upperInclusive), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), ValueRange({val, lower, upper})), val, lower, upper, $_builder.getBoolAttr(lowerInclusive), $_builder.getBoolAttr(upperInclusive));
+        }]>
+    ];
+    let assemblyFormat = "$val `:` type ($val) `between` $lower `:` type($lower) `,` $upper `:` type($upper) `,` `lowerInclusive` `:` $lowerInclusive `,` `upperInclusive` `:` $upperInclusive `->` type($res) attr-dict";
 }
 
 def DB_OneOfOp : DB_LogicalOp<"oneof",[DB_NeedsNullWrap]> {
@@ -313,31 +462,52 @@ def DB_OneOfOp : DB_LogicalOp<"oneof",[DB_NeedsNullWrap]> {
     }];
 
     let arguments = (ins NullableDBType:$val,Variadic<NullableDBType>:$vals );
-    let assemblyFormat = "$val `:` type ($val) `?` $vals `:` type ($vals) attr-dict";
+    let builders = [
+        OpBuilder<(ins "ValueRange":$values), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), values), values.front(), values.drop_front());
+        }]>
+    ];
+    let assemblyFormat = "$val `:` type ($val) `?` $vals `:` type ($vals) `->` type($res) attr-dict";
 }
 
 def AndOp : DB_LogicalOp<"and"> {
     let summary = "Logical And";
 
     let arguments = (ins Variadic<AnyBool>: $vals);
+    let builders = [
+        OpBuilder<(ins "ValueRange":$vals), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), vals), vals);
+        }]>
+    ];
     let hasCanonicalizeMethod = 1;
-    let assemblyFormat = "$vals `:` type($vals) attr-dict";
+    let assemblyFormat = "$vals `:` type($vals) `->` type($res) attr-dict";
 }
 
 def OrOp : DB_LogicalOp<"or"> {
     let summary = "Logical Or";
 
     let arguments = (ins Variadic<AnyType>: $vals);
+    let builders = [
+        OpBuilder<(ins "ValueRange":$vals), [{
+            build($_builder, $_state, inferLegacyLogicalResultType($_builder.getContext(), vals), vals);
+        }]>
+    ];
     let hasCanonicalizeMethod = 1;
-    let assemblyFormat = "$vals `:` type($vals) attr-dict";
+    let assemblyFormat = "$vals `:` type($vals) `->` type($res) attr-dict";
 }
 
-def NotOp : DB_Op<"not", [Pure,SameOperandsAndResultType,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
+def NotOp : DB_Op<"not", [Pure,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
     let summary = "Logical Not";
 
     let arguments = (ins AnyBool: $val);
     let results = (outs AnyBool : $res);
-    let assemblyFormat = "$val `:` type($val) attr-dict";
+    let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
+    let builders = [
+        OpBuilder<(ins "Value":$val), [{
+            build($_builder, $_state, val.getType(), val);
+        }]>
+    ];
+    let hasVerifier = 1;
 }
 
 def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues]> {
@@ -346,6 +516,7 @@ def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues]> {
     let arguments = (ins NullableDBType:$val);
     let results = (outs NullableDBType:$res);
     let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
+    let hasVerifier = 1;
 }
 
 #endif// OPS

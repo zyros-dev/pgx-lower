@@ -30,13 +30,13 @@ FROM test_nulls;
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_12_null_handling_004 */
 SELECT (backup_value IS NOT NULL) AS backup_is_not_null
 FROM test_nulls;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_12_null_handling_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_12_null_handling_005 */
 SELECT COALESCE(nullable_value, backup_value) AS coalesced_value
 FROM test_nulls;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_12_null_handling_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_12_null_handling_006 */
 SELECT COALESCE(nullable_value, backup_value, third_value) AS triple_coalesce
 FROM test_nulls;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_12_null_handling_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_12_null_handling_007 */
 SELECT COALESCE(nullable_value, -1) AS coalesce_with_constant
 FROM test_nulls;
 
@@ -45,10 +45,10 @@ SELECT COALESCE(10, 20) AS coalesce_non_nullable_constants;
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_12_null_handling_009 */
 SELECT COALESCE(100, 200, 300) AS coalesce_triple_non_nullable;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_12_null_handling_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_12_null_handling_010 */
 SELECT COALESCE(id, 999) AS coalesce_non_null_column
 FROM test_nulls;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_12_null_handling_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_12_null_handling_011 */
 SELECT COALESCE(id, id + 1000) AS coalesce_non_null_expr
 FROM test_nulls;
 

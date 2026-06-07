@@ -105,7 +105,7 @@ SELECT
 FROM comprehensive_data
 WHERE years_experience > 3;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_011 */
 SELECT
     SUM(salary + COALESCE(bonus, 0)) AS total_with_null_handling,
     AVG(COALESCE(bonus, 0) / COALESCE(years_experience, 1)) AS avg_bonus_per_year

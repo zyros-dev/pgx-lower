@@ -26,11 +26,26 @@ struct RuntimeFunction {
    using TypeMatcher = std::function<bool(mlir::Type)>;
    using ResTypeMatcher = std::function<bool(mlir::Type, mlir::TypeRange)>;
    static inline auto anyType = [](mlir::Type) { return true; };
-   static inline auto intLike = [](mlir::Type t) { return getBaseType(t).isIntOrIndex(); };
-   static inline auto decimalLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::DecimalType>(); };
-   static inline auto stringLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::StringType,mlir::db::CharType>(); };
-   static inline auto dateLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::DateType>(); };
-   static inline auto dateInterval = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::IntervalType>(); };
+   static inline auto intLike = [](mlir::Type t) {
+       t = getBaseType(t);
+       return t.isIntOrIndex() || mlir::isa<mlir::db::PgInt2Type, mlir::db::PgInt4Type, mlir::db::PgInt8Type>(t);
+   };
+   static inline auto decimalLike = [](mlir::Type t) {
+       t = getBaseType(t);
+       return t.isa<mlir::db::DecimalType>() || mlir::isa<mlir::db::PgNumericType>(t);
+   };
+   static inline auto stringLike = [](mlir::Type t) {
+       return mlir::isa<mlir::db::StringType, mlir::db::CharType, mlir::db::PgTextType, mlir::db::PgVarcharType,
+                        mlir::db::PgBpcharType>(getBaseType(t));
+   };
+   static inline auto dateLike = [](mlir::Type t) {
+       t = getBaseType(t);
+       return t.isa<mlir::db::DateType>() || mlir::isa<mlir::db::PgDateType>(t);
+   };
+   static inline auto dateInterval = [](mlir::Type t) {
+       t = getBaseType(t);
+       return t.isa<mlir::db::IntervalType>() || mlir::isa<mlir::db::PgIntervalType>(t);
+   };
    static inline auto noReturnType = [](mlir::Type t,mlir::TypeRange){return !t;};
    static ResTypeMatcher matchesArgument(size_t argIdx = 0) {
       return [](mlir::Type resType, mlir::TypeRange types) {

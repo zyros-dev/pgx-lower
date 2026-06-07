@@ -37,6 +37,15 @@ describe("repo tooling audit", () => {
     expect(auditToolSurface(root)).toEqual([]);
   });
 
+  test("ignores generated build and benchmark trees", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-audit-"));
+    writeExecutable(join(root, "build-docker-lint/tool.py"));
+    writeExecutable(join(root, "benchmark/tpch/run.py"));
+    writeExecutable(join(root, "cmake-build-debug/tool.py"));
+
+    expect(auditToolSurface(root)).toEqual([]);
+  });
+
   test("reports loose helper scripts", () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-audit-"));
     writeExecutable(join(root, "scratch/random.sh"));

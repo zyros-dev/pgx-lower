@@ -114,6 +114,20 @@ export async function runDevCommand(
     return 1;
   }
 
+  if (command === "check") {
+    const [checkCommand] = rest;
+    if (checkCommand === "diff") return runCheckDiff(runner, output, config);
+    output.stderr += "Usage: dev check diff\n";
+    return 1;
+  }
+
+  if (command === "format") {
+    const [formatCommand] = rest;
+    if (formatCommand === "diff") return runFormatDiff(runner, output, config);
+    output.stderr += "Usage: dev format diff\n";
+    return 1;
+  }
+
   if (command === "test") {
     const [testCommand, testArg] = rest;
     if (testCommand === "unit" && testArg) return runPostgresUnitTests(runner, output, config, testArg);
@@ -178,7 +192,7 @@ export async function runDevCommand(
     return 1;
   }
 
-  output.stderr += "Usage: dev <status|lint|test|gate|logs>\n";
+  output.stderr += "Usage: dev <status|check|format|lint|test|gate|logs>\n";
   return 1;
 }
 
@@ -251,6 +265,22 @@ async function runLintDiff(runner: StreamingCommandRunner, output: OperationOutp
     shellCommand: lintDiffScript({ ...config, runningOnRemote: true }),
     requireMutagenProof: true
   });
+}
+
+async function runFormatDiff(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  const format = await runRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-format-diff",
+    shellCommand: formatDiffScript({ ...config, runningOnRemote: true }),
+    requireMutagenProof: true
+  });
+  if (format !== 0 || config.runningOnRemote) return format;
+  const flush = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
+  output.stdout += flush.stdout;
+  output.stderr += flush.stderr;
+  return flush.exitCode;
 }
 
 async function runLintFiles(
@@ -445,6 +475,19 @@ function checkDiffScript(config: DevConfig): string {
     "echo",
     `echo "check-diff: your hunks need reformatting. Hand-edit the specific lines above."`,
     "exit 1"
+  ].join("\n");
+}
+
+function formatDiffScript(config: DevConfig): string {
+  const dockerPipe = dockerPipeCommand(config, "cd /workspace && clang-format-diff-20 -p1 -style=file -i");
+  return [
+    "set -eo pipefail",
+    "git fetch origin main --quiet",
+    "base=$(git merge-base origin/main HEAD)",
+    `diff=$(git diff -U0 "$base" -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.h' 'src/*.hpp' 'tests/*.c' 'tests/*.cc' 'tests/*.cpp' 'tests/*.h' 'tests/*.hpp' 'extension/*.c' 'extension/*.h' 2>/dev/null || true)`,
+    `if [ -z "$diff" ]; then echo "format-diff: no C/C++ hunks changed vs origin/main."; exit 0; fi`,
+    `printf '%s\n' "$diff" | ${dockerPipe}`,
+    `echo "format-diff: applied clang-format to C/C++ hunks changed vs origin/main."`
   ].join("\n");
 }
 

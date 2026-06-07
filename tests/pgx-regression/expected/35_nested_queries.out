@@ -47,7 +47,7 @@ SELECT name
 FROM products
 WHERE category_id = ANY(ARRAY(SELECT category_id FROM categories WHERE active = 1))
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.lefttree.qual[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.qual[0].right
    name   
 ----------
  Chair

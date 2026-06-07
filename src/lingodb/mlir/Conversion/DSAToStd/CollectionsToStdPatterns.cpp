@@ -15,6 +15,21 @@
 using namespace mlir;
 namespace {
 
+static TupleType getNullableCarrierType(Type type) {
+    auto tupleType = getBaseType(type).dyn_cast_or_null<TupleType>();
+    if (tupleType && tupleType.size() == 2 && tupleType.getType(0).isInteger(1)) {
+        return tupleType;
+    }
+    return {};
+}
+
+static Type getNullableCarrierPayloadType(Type type) {
+    if (auto tupleType = getNullableCarrierType(type)) {
+        return tupleType.getType(1);
+    }
+    return getBaseType(type);
+}
+
 class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
    public:
    using OpConversionPattern<mlir::dsa::SortOp>::OpConversionPattern;
@@ -194,7 +209,8 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
    public:
    LogicalResult matchAndRewrite(mlir::dsa::At atOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = atOp->getLoc();
-      auto baseType = getBaseType(atOp.getType(0));
+      auto nullableCarrierType = getNullableCarrierType(atOp.getType(0));
+      auto baseType = getNullableCarrierPayloadType(atOp.getType(0));
       mlir::Value index;
       mlir::Value columnOffset;
       auto indexType = rewriter.getIndexType();
@@ -275,13 +291,22 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
       } else {
          assert(val && "unhandled type!!");
       }
-      if (atOp->getNumResults() == 2) {
-         Value realPos = rewriter.create<arith::AddIOp>(loc, indexType, columnOffset, index);
-         realPos = rewriter.create<arith::MulIOp>(loc, indexType, nullMultiplier, index);
-         Value isValid = getBit(rewriter, loc, validityBuffer, realPos);
-         rewriter.replaceOp(atOp, mlir::ValueRange{val, isValid});
+      auto getIsValid = [&]() -> Value {
+          Value realPos = rewriter.create<arith::AddIOp>(loc, indexType, columnOffset, index);
+          realPos = rewriter.create<arith::MulIOp>(loc, indexType, nullMultiplier, index);
+          return getBit(rewriter, loc, validityBuffer, realPos);
+      };
+      if (nullableCarrierType && atOp->getNumResults() == 1) {
+          Value isValid = getIsValid();
+          Value trueValue = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
+          Value isNull = rewriter.create<arith::XOrIOp>(loc, isValid, trueValue);
+          auto packed = rewriter.create<mlir::util::PackOp>(loc, ValueRange{isNull, val});
+          rewriter.replaceOp(atOp, packed.getResult());
+      } else if (atOp->getNumResults() == 2) {
+          Value isValid = getIsValid();
+          rewriter.replaceOp(atOp, mlir::ValueRange{val, isValid});
       } else {
-         rewriter.replaceOp(atOp, val);
+          rewriter.replaceOp(atOp, val);
       }
       return success();
    }
@@ -317,11 +342,12 @@ void mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConver
       types.push_back(indexType);
       if (auto tupleT = recordBatchType.getRowType().dyn_cast_or_null<TupleType>()) {
          for (auto t : tupleT.getTypes()) {
-            if (t.isa<mlir::util::VarLen32Type>()) {
-               t = mlir::IntegerType::get(context, 32);
-            } else if (t == mlir::IntegerType::get(context, 1)) {
-               t = mlir::IntegerType::get(context, 8);
-            }
+             t = getNullableCarrierPayloadType(t);
+             if (t.isa<mlir::util::VarLen32Type>()) {
+                 t = mlir::IntegerType::get(context, 32);
+             } else if (t == mlir::IntegerType::get(context, 1)) {
+                 t = mlir::IntegerType::get(context, 8);
+             }
 
             types.push_back(indexType);
             types.push_back(indexType);

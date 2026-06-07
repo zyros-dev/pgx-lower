@@ -226,6 +226,17 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
     const ch = sql[i];
     const next = sql[i + 1];
 
+    if (ch === "\\" && sqlPrefixIsOnlyWhitespaceAndComments(current)) {
+      const end = sql.indexOf("\n", i);
+      const statement = (end === -1 ? sql.slice(i) : sql.slice(i, end)).trim();
+      if (statement) {
+        items.push({ kind: "statement", text: statement });
+      }
+      current = "";
+      i = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+
     if (ch === "'") {
       const [text, end] = readSingleQuoted(sql, i);
       current += text;
@@ -264,9 +275,10 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
       }
       const directiveMatch = directiveRe.exec(text.trim());
       if (directiveMatch) {
-        if (current.trim()) {
+        if (!sqlPrefixIsOnlyWhitespaceAndComments(current)) {
           throw new RouteConfigError(`${path}: route directive appears in the middle of a statement`);
         }
+        current = "";
         items.push({ kind: "directive", text: text.trim() });
       } else {
         current += text;
@@ -287,11 +299,36 @@ function splitSqlStatements(sql: string, path: string): SplitItem[] {
     }
   }
 
-  if (current.trim()) {
+  if (current.trim() && !sqlPrefixIsOnlyWhitespaceAndComments(current)) {
     items.push({ kind: "statement", text: current.trim() });
   }
 
   return items;
+}
+
+function sqlPrefixIsOnlyWhitespaceAndComments(text: string): boolean {
+  let i = 0;
+  while (i < text.length) {
+    if (/\s/.test(text[i] ?? "")) {
+      i++;
+      continue;
+    }
+    if (text[i] === "-" && text[i + 1] === "-") {
+      const end = text.indexOf("\n", i + 2);
+      i = end === -1 ? text.length : end + 1;
+      continue;
+    }
+    if (text[i] === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      if (end === -1) {
+        return false;
+      }
+      i = end + 2;
+      continue;
+    }
+    return false;
+  }
+  return true;
 }
 
 function parseDirective(text: string, path: string): StatementDirective {
@@ -426,11 +463,35 @@ function isSetupStatement(sql: string): boolean {
 }
 
 function firstKeyword(sql: string): string {
-  const cleaned = sql.trimStart();
+  const cleaned = stripLeadingComments(sql);
   if (cleaned.startsWith("\\")) {
     return "\\";
   }
   return /^[A-Za-z_][A-Za-z0-9_]*/u.exec(cleaned)?.[0]?.toLowerCase() ?? "";
+}
+
+function stripLeadingComments(sql: string): string {
+  let i = 0;
+  while (i < sql.length) {
+    while (/\s/.test(sql[i] ?? "")) {
+      i++;
+    }
+    if (sql[i] === "-" && sql[i + 1] === "-") {
+      const end = sql.indexOf("\n", i + 2);
+      i = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+    if (sql[i] === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      if (end === -1) {
+        return sql.slice(i);
+      }
+      i = end + 2;
+      continue;
+    }
+    return sql.slice(i);
+  }
+  return "";
 }
 
 function extractRouteEvents(manifest: SqlManifest, output: string): RouteEvent[] {

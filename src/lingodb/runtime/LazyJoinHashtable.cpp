@@ -25,12 +25,10 @@ runtime::LazyJoinHashtable* runtime::LazyJoinHashtable::create(size_t typeSize, 
 void runtime::LazyJoinHashtable::compute_column_layouts() {
     size_t offset = sizeof(Entry);
     for (int32_t i = 0; i < spec->num_key_columns; i++) {
-        ColumnLayout layout;
-        uint32_t type_oid = spec->key_columns[i].type_oid;
-        if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
-            type_oid = INT8OID;
-        }
-        layout.pg_type_oid = type_oid;
+        ColumnLayout layout{};
+        layout.pg_type_oid = spec->key_columns[i].type_oid;
+        layout.pg_typmod = spec->key_columns[i].typmod;
+        layout.pg_collation = spec->key_columns[i].collation;
         layout.phys_type = runtime::get_physical_type(layout.pg_type_oid);
         layout.is_nullable = true;
 
@@ -46,12 +44,10 @@ void runtime::LazyJoinHashtable::compute_column_layouts() {
     }
 
     for (int32_t i = 0; i < spec->num_value_columns; i++) {
-        ColumnLayout layout;
-        uint32_t type_oid = spec->value_columns[i].type_oid;
-        if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
-            type_oid = INT8OID;
-        }
-        layout.pg_type_oid = type_oid;
+        ColumnLayout layout{};
+        layout.pg_type_oid = spec->value_columns[i].type_oid;
+        layout.pg_typmod = spec->value_columns[i].typmod;
+        layout.pg_collation = spec->value_columns[i].collation;
         layout.phys_type = runtime::get_physical_type(layout.pg_type_oid);
         layout.is_nullable = true;
 

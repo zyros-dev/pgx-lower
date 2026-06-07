@@ -37,6 +37,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <memory>
 #include <stdexcept>
@@ -104,14 +105,11 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
                                                                           lhs);
             }
 
-            const bool hasNullableOperand = lhsNullable || rhsNullable;
-            auto resultType = hasNullableOperand ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
-                                                                                          ctx.builder.getI1Type()))
-                                                 : mlir::Type(ctx.builder.getI1Type());
+            llvm::SmallVector<mlir::Value, 2> operands{convertedLhs, convertedRhs};
+            auto resultType = pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, operands);
 
             auto op2 = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(), resultType,
-                                                                 ctx.builder.getStringAttr("Like"),
-                                                                 mlir::ValueRange{convertedLhs, convertedRhs});
+                                                                 ctx.builder.getStringAttr("Like"), operands);
 
             return op2.getRes();
         }
@@ -133,14 +131,11 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
                                                                           lhs);
             }
 
-            const mlir::Type boolType = ctx.builder.getI1Type();
-            auto resultType = (lhsNullable || rhsNullable)
-                                  ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), boolType))
-                                  : boolType;
+            llvm::SmallVector<mlir::Value, 2> operands{convertedLhs, convertedRhs};
+            auto resultType = pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, operands);
 
             auto likeOp = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(), resultType,
-                                                                    ctx.builder.getStringAttr("Like"),
-                                                                    mlir::ValueRange{convertedLhs, convertedRhs});
+                                                                    ctx.builder.getStringAttr("Like"), operands);
 
             auto notOp = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), resultType, likeOp.getRes());
 
@@ -314,27 +309,39 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
         return t;
     };
 
-    const bool has_date_or_interval = mlir::isa<mlir::db::DateType>(get_base_type(lhs.getType()))
-                                      || mlir::isa<mlir::db::DateType>(get_base_type(rhs.getType()))
-                                      || mlir::isa<mlir::db::IntervalType>(get_base_type(lhs.getType()))
-                                      || mlir::isa<mlir::db::IntervalType>(get_base_type(rhs.getType()));
+    const bool has_date_or_interval = mlir::isa<mlir::db::DateType, mlir::db::PgDateType>(get_base_type(lhs.getType()))
+                                      || mlir::isa<mlir::db::DateType, mlir::db::PgDateType>(get_base_type(rhs.getType()))
+                                      || mlir::isa<mlir::db::IntervalType, mlir::db::PgIntervalType>(
+                                          get_base_type(lhs.getType()))
+                                      || mlir::isa<mlir::db::IntervalType, mlir::db::PgIntervalType>(
+                                          get_base_type(rhs.getType()));
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[ARITHMETIC] op=%s, has_date_or_interval=%d, opresulttype=%u", op.c_str(),
             has_date_or_interval, op_expr->opresulttype);
 
     auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
 
-    if (has_date_or_interval) {
+    const bool has_pg_operand = mlir::db::isPgValueType(convertedLhs.getType())
+                                || mlir::db::isPgValueType(convertedRhs.getType());
+    if (has_date_or_interval || has_pg_operand) {
         const PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
-        auto result_type = type_mapper.map_postgre_sqltype(op_expr->opresulttype, -1, false);
+        auto result_type = type_mapper.map_postgre_sqltype(op_expr->opresulttype, -1, op_expr->opcollid, false);
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "[ARITHMETIC DATE] Forcing result type from PostgreSQL opresulttype=%u",
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[ARITHMETIC PG] Forcing result type from PostgreSQL opresulttype=%u",
                 op_expr->opresulttype);
 
-        const bool lhs_nullable = mlir::isa<mlir::db::NullableType>(convertedLhs.getType());
-        const bool rhs_nullable = mlir::isa<mlir::db::NullableType>(convertedRhs.getType());
+        const bool lhs_nullable = mlir::isa<mlir::db::NullableType>(convertedLhs.getType())
+                                  || (mlir::db::isPgValueType(convertedLhs.getType())
+                                      && mlir::db::getPgNullability(convertedLhs.getType())
+                                             == mlir::db::PgNullability::Maybe);
+        const bool rhs_nullable = mlir::isa<mlir::db::NullableType>(convertedRhs.getType())
+                                  || (mlir::db::isPgValueType(convertedRhs.getType())
+                                      && mlir::db::getPgNullability(convertedRhs.getType())
+                                             == mlir::db::PgNullability::Maybe);
         if (lhs_nullable || rhs_nullable) {
-            result_type = mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
+            result_type = mlir::db::isPgValueType(result_type)
+                              ? mlir::db::withPgNullability(result_type, mlir::db::PgNullability::Maybe)
+                              : mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
         }
 
         if (op == "+") {
@@ -438,10 +445,113 @@ struct SQLTypeInference {
         }
         return a;
     }
+    static bool isPgIntegerType(mlir::Type type) {
+        return mlir::isa<mlir::db::PgInt2Type, mlir::db::PgInt4Type, mlir::db::PgInt8Type>(type);
+    }
+    static bool isPgFloatType(mlir::Type type) {
+        return mlir::isa<mlir::db::PgFloat4Type, mlir::db::PgFloat8Type>(type);
+    }
+    static bool isPgStringType(mlir::Type type) {
+        return mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType, mlir::db::PgBpcharType>(type);
+    }
+    static unsigned getIntegerWidth(mlir::Type type) {
+        if (const auto intType = dyn_cast_or_null<mlir::IntegerType>(type)) {
+            return intType.getWidth();
+        }
+        if (!isPgIntegerType(type)) {
+            return 0;
+        }
+        return dyn_cast<mlir::IntegerType>(mlir::db::getPgPhysicalCarrierType(type)).getWidth();
+    }
+    static unsigned getFloatWidth(mlir::Type type) {
+        if (auto floatType = dyn_cast_or_null<mlir::FloatType>(type)) {
+            return floatType.getWidth();
+        }
+        if (!isPgFloatType(type)) {
+            return 0;
+        }
+        return dyn_cast<mlir::FloatType>(mlir::db::getPgPhysicalCarrierType(type)).getWidth();
+    }
+    static int32_t getPgTypmodOrUnconstrained(mlir::Type left, mlir::Type right) {
+        if (mlir::db::isPgValueType(left) && mlir::db::getPgTypmod(left) >= 0) {
+            return mlir::db::getPgTypmod(left);
+        }
+        if (mlir::db::isPgValueType(right) && mlir::db::getPgTypmod(right) >= 0) {
+            return mlir::db::getPgTypmod(right);
+        }
+        return -1;
+    }
+    static mlir::db::PgOid getPgCollationOrInvalid(mlir::Type left, mlir::Type right) {
+        if (mlir::db::isPgValueType(left) && mlir::db::getPgCollation(left) != InvalidOid) {
+            return mlir::db::getPgCollation(left);
+        }
+        if (mlir::db::isPgValueType(right) && mlir::db::getPgCollation(right) != InvalidOid) {
+            return mlir::db::getPgCollation(right);
+        }
+        return InvalidOid;
+    }
+    static mlir::Type getPgIntegerType(mlir::MLIRContext* context, unsigned width) {
+        if (width <= 16) {
+            return mlir::db::PgInt2Type::get(context);
+        }
+        if (width <= 32) {
+            return mlir::db::PgInt4Type::get(context);
+        }
+        return mlir::db::PgInt8Type::get(context);
+    }
+    static mlir::Type getPgFloatType(mlir::MLIRContext* context, unsigned width) {
+        if (width <= 32) {
+            return mlir::db::PgFloat4Type::get(context);
+        }
+        return mlir::db::PgFloat8Type::get(context);
+    }
+    static mlir::Type getCommonPgBaseType(mlir::Type left, mlir::Type right) {
+        auto* context = left.getContext();
+        if (isPgStringType(left) || isPgStringType(right) || mlir::isa<mlir::db::StringType>(left)
+            || mlir::isa<mlir::db::StringType>(right))
+        {
+            return mlir::db::PgTextType::get(context, getPgCollationOrInvalid(left, right));
+        }
+        if (mlir::isa<mlir::db::PgTimestampType, mlir::db::TimestampType>(left)
+            || mlir::isa<mlir::db::PgTimestampType, mlir::db::TimestampType>(right))
+        {
+            return mlir::db::PgTimestampType::get(context, getPgTypmodOrUnconstrained(left, right));
+        }
+        if (mlir::isa<mlir::db::PgDateType, mlir::db::DateType>(left)
+            || mlir::isa<mlir::db::PgDateType, mlir::db::DateType>(right))
+        {
+            return mlir::db::PgDateType::get(context);
+        }
+        if (mlir::isa<mlir::db::PgIntervalType, mlir::db::IntervalType>(left)
+            || mlir::isa<mlir::db::PgIntervalType, mlir::db::IntervalType>(right))
+        {
+            return mlir::db::PgIntervalType::get(context, getPgTypmodOrUnconstrained(left, right));
+        }
+        if (mlir::isa<mlir::db::PgNumericType, mlir::db::DecimalType>(left)
+            || mlir::isa<mlir::db::PgNumericType, mlir::db::DecimalType>(right))
+        {
+            return mlir::db::PgNumericType::get(context, getPgTypmodOrUnconstrained(left, right));
+        }
+        const unsigned floatWidth = std::max(getFloatWidth(left), getFloatWidth(right));
+        if (floatWidth > 0) {
+            return getPgFloatType(context, floatWidth);
+        }
+        const unsigned integerWidth = std::max(getIntegerWidth(left), getIntegerWidth(right));
+        if (integerWidth > 0) {
+            return getPgIntegerType(context, integerWidth);
+        }
+        if (mlir::isa<mlir::db::PgBoolType>(left) || mlir::isa<mlir::db::PgBoolType>(right)) {
+            return mlir::db::PgBoolType::get(context);
+        }
+        return mlir::db::isPgValueType(left) ? left : right;
+    }
     static mlir::Value castValueToType(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t) {
         const bool isNullable = isa<mlir::db::NullableType>(v.getType());
-        if (isNullable && !isa<mlir::db::NullableType>(t)) {
-            t = mlir::db::NullableType::get(builder.getContext(), t);
+        if (mlir::db::isPgValueType(v.getType()) && mlir::db::isPgValueType(t)) {
+            t = mlir::db::withPgNullability(t, mlir::db::getPgNullability(v.getType()));
+        } else if (isNullable && !isa<mlir::db::NullableType>(t)) {
+            t = mlir::db::isPgValueType(t) ? mlir::db::withPgNullability(t, mlir::db::PgNullability::Maybe)
+                                           : mlir::Type(mlir::db::NullableType::get(builder.getContext(), t));
         }
         const bool onlyTargetIsNullable = !isNullable && isa<mlir::db::NullableType>(t);
         if (v.getType() == t) {
@@ -474,6 +584,10 @@ struct SQLTypeInference {
     static mlir::Type getCommonBaseType(mlir::Type left, mlir::Type right) {
         left = getBaseType(left);
         right = getBaseType(right);
+
+        if (mlir::db::isPgValueType(left) || mlir::db::isPgValueType(right)) {
+            return getCommonPgBaseType(left, right);
+        }
 
         const bool leftIsDate = isa<mlir::db::DateType>(left);
         const bool rightIsDate = isa<mlir::db::DateType>(right);
@@ -512,6 +626,9 @@ struct SQLTypeInference {
         const bool isNullable = isa<mlir::db::NullableType>(left) || isa<mlir::db::NullableType>(right);
         const auto commonBaseType = getCommonBaseType(left, right);
         if (isNullable) {
+            if (mlir::db::isPgValueType(commonBaseType)) {
+                return mlir::db::withPgNullability(commonBaseType, mlir::db::PgNullability::Maybe);
+            }
             return mlir::db::NullableType::get(left.getContext(), commonBaseType);
         }
         return commonBaseType;
@@ -551,18 +668,28 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
         const auto currentType = value.getType();
         const auto currentBaseType = getBaseType(currentType);
         const bool isNullable = mlir::isa<mlir::db::NullableType>(currentType);
+        const bool isPgValue = mlir::db::isPgValueType(currentType);
         const auto loc = ctx.builder.getUnknownLoc();
 
         if (currentBaseType != targetBaseType) {
-            if (isNullable) {
-                const auto targetType = mlir::db::NullableType::get(ctx.builder.getContext(), targetBaseType);
+            if (isPgValue && mlir::db::isPgValueType(targetBaseType)) {
+                const auto targetType = mlir::db::withPgNullability(targetBaseType,
+                                                                    mlir::db::getPgNullability(currentType));
+                value = ctx.builder.create<mlir::db::CastOp>(loc, targetType, value);
+            } else if (isNullable) {
+                const auto targetType = mlir::db::isPgValueType(targetBaseType)
+                                            ? mlir::db::withPgNullability(targetBaseType, mlir::db::PgNullability::Maybe)
+                                            : mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
+                                                                                     targetBaseType));
                 value = ctx.builder.create<mlir::db::CastOp>(loc, targetType, value);
             } else {
                 value = ctx.builder.create<mlir::db::CastOp>(loc, targetBaseType, value);
             }
         }
 
-        if (needsNullable && !mlir::isa<mlir::db::NullableType>(value.getType())) {
+        if (needsNullable && !mlir::isa<mlir::db::NullableType>(value.getType())
+            && !mlir::db::isPgValueType(value.getType()))
+        {
             const auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), getBaseType(value.getType()));
             value = ctx.builder.create<mlir::db::AsNullableOp>(loc, nullableType, value);
         }
@@ -672,6 +799,12 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Creating CmpOp with predicate %d",
             static_cast<int>(predicate));
+    if (mlir::db::isPgValueType(convertedLhs.getType()) || mlir::db::isPgValueType(convertedRhs.getType())) {
+        auto resultType = mlir::db::PgBoolType::get(
+            ctx.builder.getContext(), mlir::db::combineSqlNullability(mlir::ValueRange{convertedLhs, convertedRhs}));
+        return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), resultType, predicate, convertedLhs,
+                                                   convertedRhs);
+    }
     return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
 }
 } // namespace postgresql_ast

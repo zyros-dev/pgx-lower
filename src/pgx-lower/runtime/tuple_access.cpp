@@ -584,7 +584,8 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
         for (int i{}; i < tupdesc->natts && i < g_computed_results.numComputedColumns; i++) {
             Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
             Oid expectedType = attr->atttypid;
-            Oid actualType = g_computed_results.computedTypes[i];
+            PgResultMetadata actualMetadata = g_computed_results.computedMetadata[i];
+            Oid actualType = actualMetadata.type_oid;
 
             if (expectedType != actualType) {
                 PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: TYPE MISMATCH attr[%d]: expected=%u actual=%u - FIXING",
@@ -600,8 +601,11 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
                 attr->attbyval = typByVal;
                 attr->attalign = typAlign;
             }
-            PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: tupdesc attr[%d]: type=%u typmod=%d byval=%d typlen=%d",
-                    i, attr->atttypid, attr->atttypmod, attr->attbyval, attr->attlen);
+            attr->atttypmod = actualMetadata.typmod;
+            attr->attcollation = actualMetadata.collation;
+            PGX_LOG(RUNTIME, DEBUG,
+                    "stream_tuple_to_destination: tupdesc attr[%d]: type=%u typmod=%d collation=%u byval=%d typlen=%d",
+                    i, attr->atttypid, attr->atttypmod, attr->attcollation, attr->attbyval, attr->attlen);
         }
     }
 
@@ -611,7 +615,8 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
     for (int i{}; i < numColumns; i++) {
         slot->tts_values[i] = values[i];
         slot->tts_isnull[i] = nulls[i];
-        Oid actualType = (i < g_computed_results.numComputedColumns) ? g_computed_results.computedTypes[i] : InvalidOid;
+        Oid actualType = (i < g_computed_results.numComputedColumns) ? g_computed_results.computedMetadata[i].type_oid
+                                                                     : InvalidOid;
         PGX_LOG(RUNTIME, DEBUG, "  Column %d: value=%ld, isnull=%d, actualType=%u",
                 i, static_cast<long>(values[i]), nulls[i], actualType);
     }
@@ -661,18 +666,18 @@ static bool allocate_and_process_columns(Datum** processedValues, bool** process
     }
 
     for (int i{}; i < g_computed_results.numComputedColumns; i++) {
-        PGX_LOG(RUNTIME, DEBUG, "process_computed_results: col[%d] type=%u storedValue=%lu null=%s", i,
-                g_computed_results.computedTypes[i], g_computed_results.computedValues[i],
+        const auto metadata = g_computed_results.computedMetadata[i];
+        PGX_LOG(RUNTIME, DEBUG,
+                "process_computed_results: col[%d] type=%u typmod=%d collation=%u storedValue=%lu null=%s", i,
+                metadata.type_oid, metadata.typmod, metadata.collation, g_computed_results.computedValues[i],
                 g_computed_results.computedNulls[i] ? "true" : "false");
 
-        (*processedValues)[i] = copy_datum_to_postgresql_memory(g_computed_results.computedValues[i],
-                                                                g_computed_results.computedTypes[i],
+        (*processedValues)[i] = copy_datum_to_postgresql_memory(g_computed_results.computedValues[i], metadata.type_oid,
                                                                 g_computed_results.computedNulls[i]);
         (*processedNulls)[i] = g_computed_results.computedNulls[i];
 
         PGX_LOG(RUNTIME, TRACE, "process_computed_results: col[%d] type=%u processedValue=%lu null=%s", i,
-                g_computed_results.computedTypes[i], (*processedValues)[i],
-                (*processedNulls)[i] ? "true" : "false");
+                metadata.type_oid, (*processedValues)[i], (*processedNulls)[i] ? "true" : "false");
     }
 
     return true;

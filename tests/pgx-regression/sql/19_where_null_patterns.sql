@@ -68,11 +68,11 @@ SELECT id, name
 FROM test_where_nulls
 WHERE score IS NULL
   AND age IS NOT NULL;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_19_where_null_patterns_012 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_19_where_null_patterns_012 */
 SELECT id, name, age
 FROM test_where_nulls
 WHERE COALESCE(age, 0) > 25;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_19_where_null_patterns_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_19_where_null_patterns_013 */
 SELECT id, name, score
 FROM test_where_nulls
 WHERE COALESCE(score, 0) >= 85;

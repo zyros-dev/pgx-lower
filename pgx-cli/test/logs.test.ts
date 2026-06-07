@@ -84,16 +84,7 @@ describe("logs command", () => {
 
       const exitCode = await runLogsCommand(["show", "2026-run", "--tail", "3"], noopRunner, output, {
         localProjectPath: root,
-        output: {
-          mode: "agent",
-          transcript_dir: ".pgx-cli/runs",
-          max_lines_per_step: 80,
-          max_lines_total: 180,
-          failure_tail_lines: 60,
-          success_tail_lines: 20,
-          progress: "final-summary",
-          full_output_requires_flag: true
-        }
+        output: remoteLogsConfig(root).output
       });
 
       expect(exitCode).toBe(0);
@@ -118,16 +109,7 @@ describe("logs command", () => {
 
       const exitCode = await runLogsCommand(["latest", "--tail", "5"], noopRunner, output, {
         localProjectPath: root,
-        output: {
-          mode: "agent",
-          transcript_dir: ".pgx-cli/runs",
-          max_lines_per_step: 80,
-          max_lines_total: 180,
-          failure_tail_lines: 60,
-          success_tail_lines: 20,
-          progress: "final-summary",
-          full_output_requires_flag: true
-        }
+        output: remoteLogsConfig(root).output
       });
 
       expect(exitCode).toBe(0);
@@ -148,16 +130,7 @@ describe("logs command", () => {
 
       const exitCode = await runLogsCommand(["show", "2026-run", "--head", "2"], noopRunner, output, {
         localProjectPath: root,
-        output: {
-          mode: "agent",
-          transcript_dir: ".pgx-cli/runs",
-          max_lines_per_step: 80,
-          max_lines_total: 180,
-          failure_tail_lines: 60,
-          success_tail_lines: 20,
-          progress: "final-summary",
-          full_output_requires_flag: true
-        }
+        output: remoteLogsConfig(root).output
       });
 
       expect(exitCode).toBe(0);
@@ -169,10 +142,10 @@ describe("logs command", () => {
   });
 
   test.each([
-    ["errors", ["errors", "--tail", "1"]],
-    ["docker", ["docker", "--tail", "1"]],
-    ["file", ["file", "/tmp/pgx.log"]]
-  ])("remote logs %s records explicit sync proof skip reason", async (_name, args) => {
+    ["errors", ["errors", "--tail", "1"], "docker exec pgx-lower-dev bash -lc", "tail -n 1 /tmp/pgx_errors.log"],
+    ["docker", ["docker", "--lines", "80"], "docker logs --tail 80 pgx-lower-dev", ""],
+    ["file", ["file", "/tmp/path with spaces.log", "-n", "50"], "tail -n 50", "'/tmp/path with spaces.log'"]
+  ])("remote logs %s records explicit sync proof skip reason", async (_name, args, commandPart, pathPart) => {
     const root = mkdtempSync(join(tmpdir(), "pgx-logs-remote-"));
     try {
       const runner = new RemoteLogsRunner();
@@ -181,6 +154,9 @@ describe("logs command", () => {
       const exitCode = await runLogsCommand(args, runner, output, remoteLogsConfig(root));
 
       expect(exitCode).toBe(0);
+      const command = runner.calls.at(-1)?.args.join(" ") ?? "";
+      expect(command).toContain(commandPart);
+      if (pathPart) expect(command).toContain(pathPart);
       expect(output.stdout).toContain("sync proof: skipped (remote-only logs command)");
       const runId = output.stdout.match(/run id: ([^\n]+)/)?.[1];
       expect(runId).toEqual(expect.any(String));
@@ -189,5 +165,15 @@ describe("logs command", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("logs rejects non-positive line counts", async () => {
+    const runner = new RemoteLogsRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runLogsCommand(["errors", "--lines", "0"], runner, output, remoteLogsConfig("/tmp"));
+
+    expect(exitCode).toBe(1);
+    expect(runner.calls).toEqual([]);
+    expect(output.stderr).toContain("Usage: logs");
   });
 });

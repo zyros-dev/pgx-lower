@@ -139,6 +139,97 @@ describe("route-check command", () => {
     expect(readFileSync(summaryPath, "utf8")).toContain("q1");
   });
 
+  test("treats one-line psql meta commands as route-check statements", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-route-check-"));
+    const sqlDir = join(root, "sql");
+    const outputDir = join(root, "results");
+    const summaryPath = join(root, "summary.md");
+    mkdirSync(sqlDir, { recursive: true });
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(
+      join(sqlDir, "queries.sql"),
+      [
+        "/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pset */",
+        "\\pset format unaligned",
+        "/* <<pgx-lower-config>>: auto_should_route_to=lower id=q1 */",
+        "SELECT 1;"
+      ].join("\n")
+    );
+    writeFileSync(join(outputDir, "queries.out"), "\\pset format unaligned\nSELECT 1;\n?column?\n1\n(1 row)\n");
+
+    const io = { stdout: "", stderr: "" };
+    const exitCode = await runRouteCheckCommand(
+      [
+        "--run-name",
+        "pgx",
+        "--profile",
+        "debug",
+        "--execution-mode",
+        "extension-auto",
+        "--sql-dir",
+        sqlDir,
+        "--output-dir",
+        outputDir,
+        "--summary",
+        summaryPath,
+        "--default-auto-should-route-to",
+        "lower",
+        "--require-route-directives"
+      ],
+      new FakeRunner(),
+      io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stdout).toContain("OK: route assertions passed");
+  });
+
+  test("allows standalone comments before one-line psql meta commands", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-route-check-"));
+    const sqlDir = join(root, "sql");
+    const outputDir = join(root, "results");
+    const summaryPath = join(root, "summary.md");
+    mkdirSync(sqlDir, { recursive: true });
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(
+      join(sqlDir, "queries.sql"),
+      [
+        "-- keep psql output whitespace-clean",
+        "/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pset */",
+        "\\pset format unaligned",
+        "/* <<pgx-lower-config>>: auto_should_route_to=lower id=q1 */",
+        "SELECT 1;"
+      ].join("\n")
+    );
+    writeFileSync(join(outputDir, "queries.out"), "\\pset format unaligned\nSELECT 1;\n?column?\n1\n(1 row)\n");
+
+    const io = { stdout: "", stderr: "" };
+    const exitCode = await runRouteCheckCommand(
+      [
+        "--run-name",
+        "pgx",
+        "--profile",
+        "debug",
+        "--execution-mode",
+        "extension-auto",
+        "--sql-dir",
+        sqlDir,
+        "--output-dir",
+        outputDir,
+        "--summary",
+        summaryPath,
+        "--default-auto-should-route-to",
+        "lower",
+        "--require-route-directives"
+      ],
+      new FakeRunner(),
+      io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stdout).toContain("OK: route assertions passed");
+  });
+
   test("runs supplied pg_regress command before inspecting outputs", async () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-route-check-"));
     const sqlDir = join(root, "sql");

@@ -1,6 +1,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
@@ -19,6 +20,16 @@ class WrapWithNullCheck : public mlir::RewritePattern {
    ::mlir::LogicalResult match(::mlir::Operation* op) const override {
       if (op->getNumResults() > 1) return mlir::failure();
       if (op->getNumResults() == 1 && !op->getResultTypes()[0].isa<mlir::db::NullableType>()) return mlir::failure();
+      if (auto castOp = mlir::dyn_cast<mlir::db::CastOp>(op)) {
+          auto sourceType = mlir::dyn_cast<mlir::db::NullableType>(castOp.getVal().getType());
+          auto targetType = mlir::dyn_cast<mlir::db::NullableType>(castOp.getType());
+          if (sourceType && targetType && mlir::db::isPgValueType(sourceType.getType())
+              && mlir::db::isPgValueType(targetType.getType())
+              && mlir::db::getPgTypeOid(sourceType.getType()) == mlir::db::getPgTypeOid(targetType.getType()))
+          {
+              return mlir::failure();
+          }
+      }
       auto needsWrapInterface = mlir::dyn_cast_or_null<mlir::db::NeedsNullWrap>(op);
       if (!needsWrapInterface) return mlir::failure();
       if (!needsWrapInterface.needsNullWrap()) return mlir::failure();

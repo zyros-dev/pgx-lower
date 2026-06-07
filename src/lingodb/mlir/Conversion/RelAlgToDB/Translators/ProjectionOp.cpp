@@ -96,9 +96,14 @@ class DistinctProjectionTranslator : public mlir::relalg::Translator {
             }
             compared = ifOp.getResult(0);
          } else {
-            compared = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i), rightUnpacked.getResult(i));
+             compared = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i),
+                                                         rightUnpacked.getResult(i));
          }
-         ::mlir::Value localEqual = rewriter.create<mlir::arith::AndIOp>(loc, rewriter.getI1Type(), ::mlir::ValueRange({equal, compared}));
+         if (!compared.getType().isInteger(1)) {
+             compared = rewriter.create<mlir::db::DeriveTruth>(loc, compared);
+         }
+         ::mlir::Value localEqual = rewriter.create<mlir::arith::AndIOp>(loc, rewriter.getI1Type(),
+                                                                         ::mlir::ValueRange({equal, compared}));
          equal = localEqual;
       }
       return equal;

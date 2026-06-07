@@ -266,7 +266,7 @@ where
             and l_shipmode in ('AIR', 'AIR REG')
             and l_shipinstruct = 'DELIVER IN PERSON'
         );
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.lefttree.lefttree.qual[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.lefttree.qual[0].right
  revenue 
 ---------
         

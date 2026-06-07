@@ -1,6 +1,7 @@
 extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_operator_d.h"
 #include "catalog/pg_type.h"
 #include "nodes/plannodes.h"
@@ -43,6 +44,21 @@ auto makeBoolConst() -> Const {
     value.constbyval = true;
     value.constlen = sizeof(bool);
     value.constvalue = BoolGetDatum(true);
+    return value;
+}
+
+auto makeTypedConst(Oid typeOid) -> Const {
+    auto value = Const{};
+    value.xpr.type = T_Const;
+    value.consttype = typeOid;
+    value.consttypmod = -1;
+    value.constcollid = OidIsValid(typeOid) && (typeOid == TEXTOID || typeOid == VARCHAROID || typeOid == BPCHAROID)
+                            ? DEFAULT_COLLATION_OID
+                            : InvalidOid;
+    value.constisnull = false;
+    value.constbyval = false;
+    value.constlen = -1;
+    value.constvalue = Datum{0};
     return value;
 }
 
@@ -102,6 +118,97 @@ PGX_TEST_FN(query_analyzer_rejects_unknown_expr_node) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_boolean_test) {
+    auto arg = makeBoolConst();
+    auto booleanTest = BooleanTest{};
+    booleanTest.xpr.type = T_BooleanTest;
+    booleanTest.arg = reinterpret_cast<Expr*>(&arg);
+    booleanTest.booltesttype = IS_TRUE;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&booleanTest));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_coalesce_expr) {
+    auto nullableArg = makeIntConst();
+    auto fallbackArg = makeIntConst();
+    auto coalesce = CoalesceExpr{};
+    coalesce.xpr.type = T_CoalesceExpr;
+    coalesce.coalescetype = INT4OID;
+    coalesce.coalescecollid = InvalidOid;
+    coalesce.args = list_make2(&nullableArg, &fallbackArg);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coalesce));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_scalar_array_op_expr) {
+    auto lhs = makeIntConst();
+    auto elem1 = makeIntConst();
+    auto elem2 = makeIntConst();
+    auto arrayExpr = ArrayExpr{};
+    arrayExpr.xpr.type = T_ArrayExpr;
+    arrayExpr.array_typeid = INT4ARRAYOID;
+    arrayExpr.element_typeid = INT4OID;
+    arrayExpr.elements = list_make2(&elem1, &elem2);
+
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = Int4EqualOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = InvalidOid;
+    scalarArray.args = list_make2(&lhs, &arrayExpr);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_scalar_array_ordering_operator) {
+    auto lhs = makeIntConst();
+    auto elem1 = makeIntConst();
+    auto elem2 = makeIntConst();
+    auto arrayExpr = ArrayExpr{};
+    arrayExpr.xpr.type = T_ArrayExpr;
+    arrayExpr.array_typeid = INT4ARRAYOID;
+    arrayExpr.element_typeid = INT4OID;
+    arrayExpr.elements = list_make2(&elem1, &elem2);
+
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = Int4LessOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = InvalidOid;
+    scalarArray.args = list_make2(&lhs, &arrayExpr);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_scalar_array_text_const_array) {
+    auto lhs = makeTypedConst(TEXTOID);
+    auto arrayConst = makeTypedConst(TEXTARRAYOID);
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = TextEqualOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = DEFAULT_COLLATION_OID;
+    scalarArray.args = list_make2(&lhs, &arrayConst);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&scalarArray));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_translator_unsupported_result_plan) {
     auto plan = Plan{};
     plan.type = T_Result;
@@ -156,15 +263,92 @@ PGX_TEST_FN(query_analyzer_rejects_operator_signature_mismatch) {
     PG_RETURN_VOID();
 }
 
-PGX_TEST_FN(query_analyzer_rejects_unlisted_operator_signature) {
+PGX_TEST_FN(query_analyzer_rejects_invalid_operator_oid) {
     auto lhs = makeBoolConst();
     auto rhs = makeBoolConst();
     auto op = OpExpr{};
     op.xpr.type = T_OpExpr;
-    op.opno = 58;
+    op.opno = InvalidOid;
     op.opfuncid = InvalidOid;
     op.opresulttype = BOOLOID;
     op.inputcollid = InvalidOid;
+    op.opcollid = InvalidOid;
+    op.args = list_make2(&lhs, &rhs);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_exposed_bytea_value) {
+    auto byteaValue = makeTypedConst(BYTEAOID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&byteaValue));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_bytea_typed_supported_aggregate) {
+    auto argValue = makeTypedConst(INT8OID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_SUM_INT8;
+    aggregate.aggtype = BYTEAOID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(INT8OID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_string_coerce_via_io) {
+    auto arg = makeTypedConst(TEXTOID);
+    auto coerce = CoerceViaIO{};
+    coerce.xpr.type = T_CoerceViaIO;
+    coerce.arg = reinterpret_cast<Expr*>(&arg);
+    coerce.resulttype = VARCHAROID;
+    coerce.resultcollid = DEFAULT_COLLATION_OID;
+    coerce.coerceformat = COERCE_IMPLICIT_CAST;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coerce));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_non_string_coerce_via_io) {
+    auto arg = makeIntConst();
+    auto coerce = CoerceViaIO{};
+    coerce.xpr.type = T_CoerceViaIO;
+    coerce.arg = reinterpret_cast<Expr*>(&arg);
+    coerce.resulttype = TEXTOID;
+    coerce.resultcollid = DEFAULT_COLLATION_OID;
+    coerce.coerceformat = COERCE_EXPLICIT_CAST;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coerce));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unsupported_varchar_operator_signature) {
+    auto lhs = makeTypedConst(VARCHAROID);
+    auto rhs = makeTypedConst(VARCHAROID);
+    auto op = OpExpr{};
+    op.xpr.type = T_OpExpr;
+    op.opno = TextEqualOperator;
+    op.opfuncid = F_TEXTEQ;
+    op.opresulttype = BOOLOID;
+    op.inputcollid = DEFAULT_COLLATION_OID;
     op.opcollid = InvalidOid;
     op.args = list_make2(&lhs, &rhs);
 

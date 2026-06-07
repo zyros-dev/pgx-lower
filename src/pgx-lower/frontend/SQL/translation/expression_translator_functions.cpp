@@ -235,11 +235,16 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating UPPER function to StringRuntime::upper");
 
-        const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
-        mlir::Type resultType = hasNullableOperand
-                                    ? mlir::Type(mlir::db::NullableType::get(
-                                          ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
-                                    : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+        mlir::Type resultType;
+        if (mlir::db::isPgValueType(args[0].getType())) {
+            resultType = mlir::db::withPgNullability(args[0].getType(), mlir::db::combineSqlNullability(args));
+        } else {
+            const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
+            resultType = hasNullableOperand
+                             ? mlir::Type(mlir::db::NullableType::get(
+                                   ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
+                             : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+        }
 
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc, resultType, ctx.builder.getStringAttr("Upper"),
                                                             mlir::ValueRange{args[0]});
@@ -251,11 +256,16 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LOWER function to StringRuntime::lower");
 
-        const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
-        mlir::Type resultType = hasNullableOperand
-                                    ? mlir::Type(mlir::db::NullableType::get(
-                                          ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
-                                    : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+        mlir::Type resultType;
+        if (mlir::db::isPgValueType(args[0].getType())) {
+            resultType = mlir::db::withPgNullability(args[0].getType(), mlir::db::combineSqlNullability(args));
+        } else {
+            const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
+            resultType = hasNullableOperand
+                             ? mlir::Type(mlir::db::NullableType::get(
+                                   ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
+                             : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+        }
 
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc, resultType, ctx.builder.getStringAttr("Lower"),
                                                             mlir::ValueRange{args[0]});
@@ -277,11 +287,16 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             substringArgs.push_back(maxLength);
         }
 
-        const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
-        const auto resultType = hasNullableOperand
-                                    ? mlir::Type(mlir::db::NullableType::get(
-                                          ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
-                                    : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+        mlir::Type resultType;
+        if (mlir::db::isPgValueType(args[0].getType())) {
+            resultType = mlir::db::withPgNullability(args[0].getType(), mlir::db::combineSqlNullability(args));
+        } else {
+            const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
+            resultType = hasNullableOperand
+                             ? mlir::Type(mlir::db::NullableType::get(
+                                   ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
+                             : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+        }
 
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc, resultType, ctx.builder.getStringAttr("Substring"),
                                                             mlir::ValueRange{substringArgs});
@@ -344,6 +359,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         int precision = 38;
         int scale{};
+        int32_t typmod = -1;
 
         // PostgreSQL passes typmod as second argument which encodes (precision, scale)
         // The typmod encoding is: ((precision - 1) << 16) | (scale + VARHDRSZ)
@@ -351,7 +367,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         if (args.size() >= 2) {
             if (auto* defOp = args[1].getDefiningOp()) {
                 if (auto constOp = mlir::dyn_cast<mlir::arith::ConstantIntOp>(defOp)) {
-                    int32_t typmod = constOp.value();
+                    typmod = constOp.value();
 
                     if (typmod >= 0) {
                         scale = (typmod & 0xFFFF) - 4;
@@ -363,10 +379,20 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             }
         }
 
-        auto decimalType = mlir::db::DecimalType::get(ctx.builder.getContext(), precision, scale);
-        const bool isNullable = mlir::isa<mlir::db::NullableType>(args[0].getType());
-        auto targetType = isNullable ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), decimalType))
-                                     : mlir::Type(decimalType);
+        const bool isPgValue = mlir::db::isPgValueType(args[0].getType());
+        const bool isNullable = mlir::isa<mlir::db::NullableType>(args[0].getType())
+                                || (isPgValue
+                                    && mlir::db::getPgNullability(args[0].getType()) == mlir::db::PgNullability::Maybe);
+        mlir::Type targetType;
+        if (isPgValue) {
+            targetType = mlir::db::PgNumericType::get(ctx.builder.getContext(), typmod,
+                                                      isNullable ? mlir::db::PgNullability::Maybe
+                                                                 : mlir::db::PgNullability::Never);
+        } else {
+            auto decimalType = mlir::db::DecimalType::get(ctx.builder.getContext(), precision, scale);
+            targetType = isNullable ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), decimalType))
+                                    : mlir::Type(decimalType);
+        }
         return ctx.builder.create<mlir::db::CastOp>(loc, targetType, args[0]);
     } else if (func == "varchar" || func == "text" || func == "char" || func == "bpchar") {
         if (args.empty()) {
@@ -401,21 +427,37 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         mlir::Type targetBaseType;
         if (func == "int4") {
-            targetBaseType = ctx.builder.getI32Type();
+            targetBaseType = mlir::db::isPgValueType(args[0].getType())
+                                 ? mlir::Type(mlir::db::PgInt4Type::get(ctx.builder.getContext()))
+                                 : mlir::Type(ctx.builder.getI32Type());
         } else if (func == "int8") {
-            targetBaseType = ctx.builder.getI64Type();
+            targetBaseType = mlir::db::isPgValueType(args[0].getType())
+                                 ? mlir::Type(mlir::db::PgInt8Type::get(ctx.builder.getContext()))
+                                 : mlir::Type(ctx.builder.getI64Type());
         } else if (func == "float4") {
-            targetBaseType = static_cast<mlir::Type>(ctx.builder.getF32Type());
+            targetBaseType = mlir::db::isPgValueType(args[0].getType())
+                                 ? mlir::Type(mlir::db::PgFloat4Type::get(ctx.builder.getContext()))
+                                 : mlir::Type(ctx.builder.getF32Type());
         } else if (func == "float8") {
-            targetBaseType = static_cast<mlir::Type>(ctx.builder.getF64Type());
+            targetBaseType = mlir::db::isPgValueType(args[0].getType())
+                                 ? mlir::Type(mlir::db::PgFloat8Type::get(ctx.builder.getContext()))
+                                 : mlir::Type(ctx.builder.getF64Type());
         } else {
             PGX_ERROR("Unknown numeric conversion function: %s", func.c_str());
             throw std::runtime_error("Unknown numeric conversion function");
         }
 
-        const bool isNullable = mlir::isa<mlir::db::NullableType>(args[0].getType());
-        auto targetType = isNullable ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), targetBaseType))
-                                     : targetBaseType;
+        const bool isPgValue = mlir::db::isPgValueType(args[0].getType());
+        const bool isNullable = mlir::isa<mlir::db::NullableType>(args[0].getType())
+                                || (isPgValue
+                                    && mlir::db::getPgNullability(args[0].getType()) == mlir::db::PgNullability::Maybe);
+        mlir::Type targetType = targetBaseType;
+        if (isPgValue) {
+            targetType = mlir::db::withPgNullability(targetBaseType, isNullable ? mlir::db::PgNullability::Maybe
+                                                                                : mlir::db::PgNullability::Never);
+        } else if (isNullable) {
+            targetType = mlir::db::NullableType::get(ctx.builder.getContext(), targetBaseType);
+        }
 
         return ctx.builder.create<mlir::db::CastOp>(loc, targetType, args[0]);
     } else {
@@ -442,6 +484,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             bool nullable{};
             Oid type_oid{InvalidOid};
             int32 typmod{-1};
+            Oid collation{InvalidOid};
         };
         std::unordered_map<int, CorrelationInfo> correlation_mapping;
         if (subplan->parParam && subplan->args) {
@@ -499,7 +542,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                         nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
                     }
 
-                    correlation_mapping[param_id] = {table_scope, column_name, nullable, type_oid, typmod};
+                    correlation_mapping[param_id] = {table_scope, column_name, nullable,
+                                                     type_oid,    typmod,      var->varcollid};
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s (nullable=%d)", param_id,
                             table_scope.c_str(), column_name.c_str(), nullable);
                 } else if (arg_expr && nodeTag(arg_expr) == T_Param) {
@@ -509,7 +553,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     if (param_it != ctx.params.end()) {
                         const auto& resolved = param_it->second;
                         correlation_mapping[param_id] = {resolved.table_name, resolved.column_name, resolved.nullable,
-                                                         resolved.type_oid, resolved.typmod};
+                                                         resolved.type_oid,   resolved.typmod,      resolved.collation};
                         PGX_LOG(AST_TRANSLATE, DEBUG,
                                 "Mapped correlation paramid=%d via unified params to %s.%s (nullable=%d)", param_id,
                                 resolved.table_name.c_str(), resolved.column_name.c_str(), resolved.nullable);
@@ -531,7 +575,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         for (const auto& [param_id, info] : correlation_mapping) {
             auto colRef = columnManager.createRef(info.table_scope, info.column_name);
             PostgreSQLTypeMapper mapper(*ctx.builder.getContext());
-            auto mlir_type = mapper.map_postgre_sqltype(info.type_oid, info.typmod, info.nullable);
+            auto mlir_type = mapper.map_postgre_sqltype(info.type_oid, info.typmod, info.collation, info.nullable);
 
             mlir::Value correlation_value = ctx.builder.create<mlir::relalg::GetColumnOp>(
                 ctx.builder.getUnknownLoc(),
@@ -540,15 +584,14 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                 ctx.current_tuple
             );
 
-            subquery_ctx.params[param_id] = pgx_lower::frontend::sql::ResolvedParam{
-                .table_name = info.table_scope,
-                .column_name = info.column_name,
-                .type_oid = info.type_oid,
-                .typmod = info.typmod,
-                .nullable = info.nullable,
-                .mlir_type = mlir_type,
-                .cached_value = correlation_value
-            };
+            subquery_ctx.params[param_id] = pgx_lower::frontend::sql::ResolvedParam{.table_name = info.table_scope,
+                                                                                    .column_name = info.column_name,
+                                                                                    .type_oid = info.type_oid,
+                                                                                    .typmod = info.typmod,
+                                                                                    .collation = info.collation,
+                                                                                    .nullable = info.nullable,
+                                                                                    .mlir_type = mlir_type,
+                                                                                    .cached_value = correlation_value};
         }
         auto [subquery_stream, subquery_result] = translate_subquery_plan(subquery_ctx, subquery_plan, &ctx.current_stmt);
 
@@ -561,7 +604,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         auto column_ref = columnManager.createRef(result_column.table_name, result_column.column_name);
 
         mlir::Type result_type = result_column.mlir_type;
-        if (!isa<mlir::db::NullableType>(result_type)) {
+        if (mlir::db::isPgValueType(result_type)) {
+            result_type = mlir::db::withPgNullability(result_type, mlir::db::PgNullability::Maybe);
+        } else if (!isa<mlir::db::NullableType>(result_type)) {
             result_type = mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
         }
 
@@ -632,9 +677,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                             .column_name = column_schema.column_name,
                             .type_oid = column_schema.type_oid,
                             .typmod = column_schema.typmod,
+                            .collation = column_schema.collation,
                             .nullable = column_schema.nullable,
-                            .mlir_type = column_schema.mlir_type
-                        };
+                            .mlir_type = column_schema.mlir_type};
 
                         PGX_LOG(AST_TRANSLATE, DEBUG, "  Mapped paramId=%d to column %s.%s (index %d)", param_id,
                                 column_schema.table_name.c_str(), column_schema.column_name.c_str(), i);

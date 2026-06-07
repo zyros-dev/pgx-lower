@@ -96,7 +96,7 @@ SELECT name, department, age
 FROM test_order_where
 WHERE department IN ('IT', 'Sales')
 ORDER BY department, age;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 20 at Plan.lefttree.qual[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.qual[0].right
  name  | department | age 
 -------+------------+-----
  Bob   | IT         |  25

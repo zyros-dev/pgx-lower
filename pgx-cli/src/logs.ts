@@ -16,6 +16,9 @@ export type LogsConfig = {
   runningOnRemote?: boolean;
 };
 
+const defaultLines = 50;
+const pgxErrorsPath = "/tmp/pgx_errors.log";
+
 export async function runLogsCommand(
   args: string[],
   runner: ManagedOperationRunner,
@@ -36,12 +39,16 @@ export async function runLogsCommand(
   }
 
   if ((command === "errors" || command === "docker" || command === "file") && isRemoteLogsConfig(config)) {
-    const lines = parseLineCount(args, 80);
-    const shellCommand = command === "errors"
-      ? `docker exec ${quoteShell(config.dockerContainer)} bash -lc ${quoteShell(`tail -n ${lines} /tmp/pgx_errors.log 2>/dev/null || true`)}`
-      : command === "docker"
-        ? `docker logs --tail ${lines} ${quoteShell(config.dockerContainer)}`
-        : `tail -n ${lines} ${quoteShell(maybeValue ?? idOrFlag ?? "")}`;
+    const parsed = parseRemoteLogArgs(args);
+    if (!parsed) {
+      output.stderr += "Usage: logs <show <run-id>|latest|errors|docker|file <path>> [--head N|--tail N|--lines N|--full]\n";
+      return 1;
+    }
+    const shellCommand = parsed.kind === "errors"
+      ? `docker exec ${quoteShell(config.dockerContainer)} bash -lc ${quoteShell(`tail -n ${parsed.lines} ${pgxErrorsPath} 2>/dev/null || true`)}`
+      : parsed.kind === "docker"
+        ? `docker logs --tail ${parsed.lines} ${quoteShell(config.dockerContainer)}`
+        : `tail -n ${parsed.lines} ${quoteShell(parsed.path)}`;
     const result = await runManagedRemoteShell({
       runner,
       output,
@@ -54,7 +61,7 @@ export async function runLogsCommand(
     return result.workflowExitCode;
   }
 
-  output.stderr += "Usage: logs <show <run-id>|latest|errors|docker|file <path>> [--head N|--tail N|--full]\n";
+  output.stderr += "Usage: logs <show <run-id>|latest|errors|docker|file <path>> [--head N|--tail N|--lines N|--full]\n";
   return 1;
 }
 
@@ -97,6 +104,41 @@ function latestRunId(config: LogsConfig): string | undefined {
     .at(-1);
 }
 
+type RemoteLogArgs =
+  | { kind: "errors"; lines: number }
+  | { kind: "docker"; lines: number }
+  | { kind: "file"; path: string; lines: number };
+
+function parseRemoteLogArgs(args: string[]): RemoteLogArgs | undefined {
+  const [command, ...rest] = args;
+  if (command === "errors") {
+    const lines = parseLineCount(rest);
+    return lines === undefined ? undefined : { kind: "errors", lines };
+  }
+  if (command === "docker") {
+    const lines = parseLineCount(rest);
+    return lines === undefined ? undefined : { kind: "docker", lines };
+  }
+  if (command === "file") {
+    const [path, ...options] = rest;
+    if (!path) return undefined;
+    const lines = parseLineCount(options);
+    return lines === undefined ? undefined : { kind: "file", path, lines };
+  }
+  return undefined;
+}
+
+function parseLineCount(args: string[]): number | undefined {
+  if (args.length === 0) {
+    return defaultLines;
+  }
+  if (args.length !== 2 || !["--tail", "--lines", "-n"].includes(args[0])) {
+    return undefined;
+  }
+  const value = Number(args[1]);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 function parseTail(args: string[]): number | undefined {
   const index = args.indexOf("--tail");
   if (index === -1) return undefined;
@@ -109,11 +151,6 @@ function parseHead(args: string[]): number | undefined {
   if (index === -1) return undefined;
   const value = Number(args[index + 1]);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
-}
-
-function parseLineCount(args: string[], fallback: number): number {
-  const value = parseTail(args) ?? Number(args[args.indexOf("--lines") + 1]);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 function tailLines(text: string, count: number): string {

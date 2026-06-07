@@ -27,49 +27,30 @@ extern "C" {}
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable) const
-    -> mlir::Type {
+auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const Oid collation,
+                                               const bool nullable) const -> mlir::Type {
     PGX_IO(AST_TRANSLATE);
-
-    auto wrap_nullable = [&](auto val) -> mlir::Type {
-        if (nullable) {
-            return mlir::db::NullableType::get(&context_, val);
-        }
-        return val;
-    };
+    const auto nullability = nullable ? mlir::db::PgNullability::Maybe : mlir::db::PgNullability::Never;
+    const auto pgCollation = static_cast<mlir::db::PgOid>(collation);
 
     switch (type_oid) {
-    case INT4OID: return wrap_nullable(mlir::IntegerType::get(&context_, INT4_BIT_WIDTH));
-    case INT8OID: return wrap_nullable(mlir::IntegerType::get(&context_, INT8_BIT_WIDTH));
-    case INT2OID: return wrap_nullable(mlir::IntegerType::get(&context_, INT2_BIT_WIDTH));
-    case FLOAT4OID: return wrap_nullable(mlir::Float32Type::get(&context_));
-    case FLOAT8OID: return wrap_nullable(mlir::Float64Type::get(&context_));
-    case BOOLOID: return wrap_nullable(mlir::IntegerType::get(&context_, BOOL_BIT_WIDTH));
-    // TODO: NV BPCHAROID is supposed to map to a !db.char<X>, but its kind of high effort to add. so I'm just
-    //       mapping both of them to strings for the time being.
-    case TEXTOID:
-    case VARCHAROID:
-    case BPCHAROID: {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "String type mapping: OID=%d (TEXTOID=%d, VARCHAROID=%d, BPCHAROID=%d), typmod=%d",
-                type_oid, TEXTOID, VARCHAROID, BPCHAROID, typmod);
-        return wrap_nullable(mlir::db::StringType::get(&context_));
-    }
+    case BOOLOID: return mlir::db::PgBoolType::get(&context_, nullability);
+    case INT2OID: return mlir::db::PgInt2Type::get(&context_, nullability);
+    case INT4OID: return mlir::db::PgInt4Type::get(&context_, nullability);
+    case INT8OID: return mlir::db::PgInt8Type::get(&context_, nullability);
+    case FLOAT4OID: return mlir::db::PgFloat4Type::get(&context_, nullability);
+    case FLOAT8OID: return mlir::db::PgFloat8Type::get(&context_, nullability);
+    case TEXTOID: return mlir::db::PgTextType::get(&context_, pgCollation, nullability);
+    case VARCHAROID: return mlir::db::PgVarcharType::get(&context_, typmod, pgCollation, nullability);
+    case BPCHAROID: return mlir::db::PgBpcharType::get(&context_, typmod, pgCollation, nullability);
     case BYTEAOID: {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA type mapping: using string type for binary data (OID=%d)", type_oid);
-        return wrap_nullable(mlir::db::StringType::get(&context_));
+        PGX_ERROR("BYTEA is not supported as a PostgreSQL value type in the primitive mapper");
+        throw std::runtime_error("Unsupported PostgreSQL BYTEA value type");
     }
-    case NUMERICOID: {
-        auto [precision, scale] = extract_numeric_info(typmod);
-        return wrap_nullable(mlir::db::DecimalType::get(&context_, precision, scale));
-    }
-    case DATEOID: return wrap_nullable(mlir::db::DateType::get(&context_, mlir::db::DateUnitAttr::day));
-    case TIMESTAMPOID: {
-        const auto timeUnit = extract_timestamp_precision(typmod);
-        return wrap_nullable(mlir::db::TimestampType::get(&context_, timeUnit));
-    }
-    case INTERVALOID: {
-        return wrap_nullable(mlir::db::IntervalType::get(&context_, mlir::db::IntervalUnitAttr::daytime));
-    }
+    case NUMERICOID: return mlir::db::PgNumericType::get(&context_, typmod, nullability);
+    case DATEOID: return mlir::db::PgDateType::get(&context_, nullability);
+    case TIMESTAMPOID: return mlir::db::PgTimestampType::get(&context_, typmod, nullability);
+    case INTERVALOID: return mlir::db::PgIntervalType::get(&context_, typmod, nullability);
     default: {
         PGX_ERROR("Unknown PostgreSQL type OID: %d", type_oid);
         throw std::runtime_error("Unknown PostgreSQL type OID");
@@ -103,46 +84,18 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
 
 Oid PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::Type mlir_type) {
     if (const auto nullable_type = mlir::dyn_cast<mlir::db::NullableType>(mlir_type)) {
-        mlir_type = nullable_type.getType();
-    }
-
-    if (const auto int_type = mlir::dyn_cast<mlir::IntegerType>(mlir_type)) {
-        switch (int_type.getWidth()) {
-        case 1: return BOOLOID;
-        case 16: return INT2OID;
-        case 32: return INT4OID;
-        case 64: return INT8OID;
-        default: PGX_WARNING("Unknown integer width %u, using INT4OID", int_type.getWidth()); return INT4OID;
+        if (mlir::db::isPgValueType(nullable_type.getType())) {
+            PGX_WARNING("Legacy NullableType cannot define PostgreSQL identity for PG semantic payloads");
+            return InvalidOid;
         }
     }
 
-    if (mlir::isa<mlir::Float32Type>(mlir_type)) {
-        return FLOAT4OID;
-    }
-    if (mlir::isa<mlir::Float64Type>(mlir_type)) {
-        return FLOAT8OID;
+    if (mlir::db::isPgValueType(mlir_type)) {
+        return mlir::db::getPgTypeOid(mlir_type);
     }
 
-    if (mlir::isa<mlir::db::StringType>(mlir_type)) {
-        return TEXTOID;
-    }
-
-    if (mlir::isa<mlir::db::DecimalType>(mlir_type)) {
-        return NUMERICOID;
-    }
-
-    if (mlir::isa<mlir::db::DateType>(mlir_type)) {
-        return DATEOID;
-    }
-    if (mlir::isa<mlir::db::TimestampType>(mlir_type)) {
-        return TIMESTAMPOID;
-    }
-    if (mlir::isa<mlir::db::IntervalType>(mlir_type)) {
-        return INTERVALOID;
-    }
-
-    PGX_WARNING("Unable to map MLIR type to PostgreSQL OID, returning UNKNOWNOID");
-    return UNKNOWNOID;
+    PGX_WARNING("Unable to map non-PostgreSQL MLIR type to PostgreSQL OID, returning InvalidOid");
+    return InvalidOid;
 }
 
 mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const int32_t typmod) {
@@ -184,42 +137,42 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         throw std::runtime_error("Invalid const parameters");
     }
 
+    const auto type_mapper = PostgreSQLTypeMapper(context);
+
     if (constNode->constisnull) {
-        auto nullType = mlir::db::NullableType::get(&context, mlir::IntegerType::get(&context, INT4_BIT_WIDTH));
+        auto nullType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod,
+                                                        constNode->constcollid, true);
         return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), nullType);
     }
 
-    const auto type_mapper = PostgreSQLTypeMapper(context);
-    const auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod, false);
+    const auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod,
+                                                          constNode->constcollid, false);
 
     switch (constNode->consttype) {
     case BOOLOID: {
         const bool val = static_cast<bool>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
-                                                          val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getBoolAttr(val));
     }
     case INT2OID: {
         const int16_t val = static_cast<int16_t>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI16IntegerAttr(val));
     }
     case INT4OID: {
         const int32_t val = static_cast<int32_t>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI32IntegerAttr(val));
     }
     case INT8OID: {
         const int64_t val = static_cast<int64_t>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(val));
     }
     case FLOAT4OID: {
         // goofy, C++ doesn't support float32_t and float64_t until C++23... we're on 20. unsure of how to handle this
         const float val = *reinterpret_cast<float*>(&constNode->constvalue);
-        return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
-                                                            mlir::cast<mlir::FloatType>(mlirType));
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getF32FloatAttr(val));
     }
     case FLOAT8OID: {
         const double val = *reinterpret_cast<double*>(&constNode->constvalue);
-        return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
-                                                            mlir::cast<mlir::FloatType>(mlirType));
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getF64FloatAttr(val));
     }
     case NUMERICOID: {
 #ifdef POSTGRESQL_EXTENSION
@@ -310,21 +263,6 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
         }
 #endif
-    }
-    case BYTEAOID: {
-#ifdef POSTGRESQL_EXTENSION
-        if (constNode->constvalue != 0u) {
-            auto* bytea_val = DatumGetByteaP(constNode->constvalue);
-            const char* data = VARDATA(bytea_val);
-            const int len = VARSIZE(bytea_val) - VARHDRSZ;
-            const std::string binary_value(data, len);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA constant: length=%d bytes", len);
-            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
-                                                        builder.getStringAttr(binary_value));
-        }
-#endif
-        PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA constant with null value, creating NULL");
-        return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), mlirType);
     }
     default:
         PGX_ERROR("Unsupported constant type: %d", constNode->consttype);

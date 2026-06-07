@@ -1,6 +1,12 @@
 extern "C" {
 #include "postgres.h"
+#include "access/tupdesc.h"
+#include "catalog/pg_collation.h"
+#include "catalog/pg_type.h"
 #include "fmgr.h"
+#include "nodes/pg_list.h"
+#include "nodes/plannodes.h"
+#include "nodes/primnodes.h"
 #include "varatt.h"
 #include "utils/numeric.h"
 #include "utils/fmgrprotos.h"
@@ -9,8 +15,11 @@ extern "C" {
 #include <cstring>
 #include <vector>
 
+#include "pgx-lower/execution/postgres/my_executor.h"
 #include "pgx-lower/runtime/NumericRuntime.h"
 #include "pgx-lower/test/pgx_test_fn.h"
+
+TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns);
 
 namespace {
 
@@ -50,7 +59,57 @@ Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale
     return PointerGetDatum(num);
 }
 
+Const make_result_const(Oid typeOid, int32_t typmod, Oid collation = InvalidOid) {
+    Const c{};
+    c.xpr.type = T_Const;
+    c.consttype = typeOid;
+    c.consttypmod = typmod;
+    c.constcollid = collation;
+    c.constisnull = false;
+    c.constbyval = false;
+    c.constlen = -1;
+    c.constvalue = Datum{0};
+    return c;
+}
+
+TupleDesc build_result_descriptor(Expr* expr) {
+    TargetEntry target{};
+    target.xpr.type = T_TargetEntry;
+    target.expr = expr;
+    target.resno = 1;
+    target.resname = const_cast<char*>("result");
+    target.resjunk = false;
+
+    Plan plan{};
+    plan.type = T_Result;
+    plan.targetlist = list_make1(&target);
+
+    PlannedStmt stmt{};
+    stmt.type = T_PlannedStmt;
+    stmt.planTree = &plan;
+
+    return setupTupleDescriptor(&stmt, {-1});
+}
+
 }  // namespace
+
+#define REQUIRE_EQ_U32(actual, expected)                                                                               \
+    do {                                                                                                               \
+        auto _a = static_cast<uint32_t>(actual);                                                                       \
+        auto _e = static_cast<uint32_t>(expected);                                                                     \
+        if (_a != _e) {                                                                                                \
+            elog(ERROR, "%s:%d expected %u got %u", __FILE__, __LINE__, _e, _a);                                       \
+        }                                                                                                              \
+    } while (0)
+
+#define REQUIRE_EQ_I32(actual, expected)                                                                               \
+    do {                                                                                                               \
+        auto _a = static_cast<int32_t>(actual);                                                                        \
+        auto _e = static_cast<int32_t>(expected);                                                                      \
+        if (_a != _e) {                                                                                                \
+            elog(ERROR, "%s:%d expected %d got %d", __FILE__, __LINE__, _e, _a);                                       \
+        }                                                                                                              \
+    } while (0)
 
 #define ASSERT_NUMERIC_EQ_STR(actual_datum, expected_cstr)                                                             \
     do {                                                                                                               \
@@ -58,6 +117,27 @@ Datum make_numeric(std::vector<char>& buf, bool neg, int16 weight, uint16 dscale
         if (std::strcmp(_s, (expected_cstr)) != 0)                                                                     \
             elog(ERROR, "%s:%d expected numeric '%s' got '%s'", __FILE__, __LINE__, (expected_cstr), _s);              \
     } while (0)
+
+PGX_TEST_FN(numeric_result_descriptor_preserves_typmod) {
+    auto c = make_result_const(NUMERICOID, 786438);
+    const TupleDesc desc = build_result_descriptor(reinterpret_cast<Expr*>(&c));
+    const Form_pg_attribute attr = TupleDescAttr(desc, 0);
+    REQUIRE_EQ_U32(attr->atttypid, NUMERICOID);
+    REQUIRE_EQ_I32(attr->atttypmod, 786438);
+    FreeTupleDesc(desc);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(numeric_result_descriptor_preserves_string_collation) {
+    auto c = make_result_const(VARCHAROID, 18, DEFAULT_COLLATION_OID);
+    const TupleDesc desc = build_result_descriptor(reinterpret_cast<Expr*>(&c));
+    const Form_pg_attribute attr = TupleDescAttr(desc, 0);
+    REQUIRE_EQ_U32(attr->atttypid, VARCHAROID);
+    REQUIRE_EQ_I32(attr->atttypmod, 18);
+    REQUIRE_EQ_U32(attr->attcollation, DEFAULT_COLLATION_OID);
+    FreeTupleDesc(desc);
+    PG_RETURN_VOID();
+}
 
 PGX_TEST_FN(numeric_add_basic) {
     std::vector<char> buf_l;

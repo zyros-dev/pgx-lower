@@ -4,6 +4,13 @@
 #include "pgx-lower/utility/logging.h"
 
 using namespace ::mlir::relalg;
+static bool isPgNullabilityWideningCast(::mlir::Value value, ::mlir::Type targetType) {
+    ::mlir::Type valueType = value.getType();
+    return mlir::db::isPgValueType(valueType) && mlir::db::isPgValueType(targetType)
+           && mlir::db::getPgNullability(valueType) == mlir::db::PgNullability::Never
+           && mlir::db::withPgNullability(valueType, mlir::db::PgNullability::Maybe) == targetType;
+}
+
 std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir::Block* dest, ::mlir::Operation* op, mlir::function_ref<::mlir::Block*(::mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
    // Splice the operations of the 'source' block into the 'dest' block and erase it.
    llvm::iplist<::mlir::Operation> translated;
@@ -25,6 +32,22 @@ std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir
    for (auto* op : toErase) {
       op->dropAllUses();
       op->erase();
+   }
+
+   llvm::SmallVector<mlir::db::CastOp, 4> castsToNullable;
+   for (auto& operation : dest->getOperations()) {
+       if (auto castOp = mlir::dyn_cast<mlir::db::CastOp>(&operation)) {
+           if (isPgNullabilityWideningCast(castOp.getVal(), castOp.getResult().getType())) {
+               castsToNullable.push_back(castOp);
+           }
+       }
+   }
+   for (auto castOp : castsToNullable) {
+       mlir::OpBuilder builder(castOp);
+       auto asNullable = builder.create<mlir::db::AsNullableOp>(castOp.getLoc(), castOp.getResult().getType(),
+                                                                castOp.getVal());
+       castOp.getResult().replaceAllUsesWith(asNullable.getResult());
+       castOp.erase();
    }
 
    // PGX-LOWER: Enforce nullability in joins earlier, which causes this operaiton

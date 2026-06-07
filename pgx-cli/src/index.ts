@@ -10,13 +10,14 @@ import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
 import { runLogsCommand } from "./logs.js";
 import { connectMcp } from "./mcp.js";
+import { renderBufferedOutput } from "./output.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
+import { runRgCommand } from "./search.js";
 import { runUnitSqlCommand } from "./unit-sql.js";
 import { runGatewayCommand } from "./run.js";
 import { runCodexPolicyCommand } from "./codex-policy.js";
 import {
-  flushRemainingOutput,
   runQueueCommand,
   runSetupCommand,
   runSyncCommand,
@@ -178,6 +179,14 @@ try {
     process.exit();
   }
 
+  if (argv[0] === "rg") {
+    process.exitCode = await runRgCommand(argv.slice(1), runner, io, {
+      localProjectPath: config.localProjectPath
+    });
+    flushIo();
+    process.exit();
+  }
+
   if (argv[0] === "repo") {
     process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
@@ -270,11 +279,16 @@ try {
 }
 
 function flushIo(): void {
-  flushRemainingOutput(
-    io,
-    (text) => process.stdout.write(text),
-    (text) => process.stderr.write(text)
-  );
+  const stdoutStart = io.flushedStdoutLength ?? 0;
+  const stderrStart = io.flushedStderrLength ?? 0;
+  const rendered = renderBufferedOutput({
+    stdout: io.stdout.slice(stdoutStart),
+    stderr: io.stderr.slice(stderrStart)
+  });
+  if (rendered.stdout) process.stdout.write(rendered.stdout);
+  if (rendered.stderr) process.stderr.write(rendered.stderr);
+  io.flushedStdoutLength = io.stdout.length;
+  io.flushedStderrLength = io.stderr.length;
 }
 
 function parseGlobalArgs(args: string[]): { url?: string; argv: string[] } {
