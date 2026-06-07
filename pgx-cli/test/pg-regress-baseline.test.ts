@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { evaluatePgRegressBaseline } from "../src/pg-regress-baseline.js";
+import { detectCtestFailure, evaluatePgRegressBaseline, summarizePgRegressBaseline } from "../src/pg-regress-baseline.js";
 
 describe("pg_regress baseline evaluation", () => {
   test("all passing with no baseline exits zero", () => {
@@ -44,5 +44,42 @@ describe("pg_regress baseline evaluation", () => {
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain("ERROR: no TAP-ish lines found");
+  });
+
+  test("summary helper returns failed tests and workflow exit code", () => {
+    const result = summarizePgRegressBaseline(
+      [
+        "1: ok 1 - 1_one_tuple 10 ms",
+        "1: not ok 2 - 2_new_regression 50 ms",
+        "diffs: /workspace/build-artifacts/ptest/extension/results/2_new_regression.diff"
+      ].join("\n"),
+      ""
+    );
+
+    expect(result.workflowExitCode).toBe(1);
+    expect(result.lines).toContain("failed test: 2_new_regression");
+    expect(result.lines).toContain("diff: /workspace/build-artifacts/ptest/extension/results/2_new_regression.diff");
+    expect(result.lines.join("\n")).toContain("new regression");
+  });
+
+  test("detects CTest failures when the shell command captured output with child exit zero", () => {
+    const result = detectCtestFailure(
+      [
+        "40% tests passed, 3 tests failed out of 5",
+        "",
+        "The following tests FAILED:",
+        "\t  2 - pgx_lower_regress_routes (Failed)",
+        "\t  5 - pgx_lower_tpch_routes (Failed)",
+        "Errors while running CTest"
+      ].join("\n")
+    );
+
+    expect(result).toContain("CTest failed");
+    expect(result).toContain("pgx_lower_regress_routes");
+    expect(result).toContain("pgx_lower_tpch_routes");
+  });
+
+  test("does not flag a zero-failure CTest summary", () => {
+    expect(detectCtestFailure("100% tests passed, 0 tests failed out of 5\n")).toBeUndefined();
   });
 });

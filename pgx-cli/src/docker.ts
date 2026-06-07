@@ -1,30 +1,27 @@
-import type { CommandRunner } from "./commands.js";
+import type { StreamingCommandRunner } from "./commands.js";
+import { runManagedRemoteShell } from "./managed-operations.js";
+import type { ManagedOperationConfig } from "./managed-operations.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 
-export type DockerConfig = OperationConfig & {
+export type DockerConfig = ManagedOperationConfig & {
   dockerContainer: string;
 };
 
 export async function runDockerCommand(
   args: string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DockerConfig
 ): Promise<number> {
   const [command, subcommand] = args;
   if (command === "status") {
-    return runRemoteShell(
-      runner,
-      output,
-      config,
-      `docker ps --format '{{.Names}}' | grep -E '^${quoteRegex(config.dockerContainer)}$'`
-    );
+    return runManagedDocker(runner, output, config, "docker-status", `docker ps --format '{{.Names}}' | grep -E '^${quoteRegex(config.dockerContainer)}$'`);
   }
   if (command === "build" && subcommand === "ptest") {
-    return runRemoteShell(runner, output, config, ptestCommand(config.dockerContainer));
+    return runManagedDocker(runner, output, config, "docker-build-ptest", ptestCommand(config.dockerContainer));
   }
   if (command === "build" && subcommand === "release") {
-    return runRemoteShell(runner, output, config, releaseCommand(config.dockerContainer));
+    return runManagedDocker(runner, output, config, "docker-build-release", releaseCommand(config.dockerContainer));
   }
 
   output.stderr += "Usage: docker <status|build <ptest|release>>\n";
@@ -61,19 +58,22 @@ function releaseCommand(container: string): string {
   )}`;
 }
 
-async function runRemoteShell(
-  runner: CommandRunner,
+async function runManagedDocker(
+  runner: StreamingCommandRunner,
   output: OperationOutput,
-  config: OperationConfig,
+  config: DockerConfig,
+  commandName: string,
   shellCommand: string
 ): Promise<number> {
-  const remoteShell = `cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`;
-  const result = config.runningOnRemote
-    ? await runner.run("bash", ["-lc", remoteShell])
-    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
+  const result = await runManagedRemoteShell({
+    runner,
+    output,
+    config,
+    commandName,
+    shellCommand,
+    requireMutagenProof: true
+  });
+  return result.workflowExitCode;
 }
 
 function quoteRegex(value: string): string {

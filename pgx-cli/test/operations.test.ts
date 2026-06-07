@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { tmpdir } from "node:os";
 import { NodeCommandRunner } from "../src/commands.js";
 import {
   runQueueCommand,
@@ -6,9 +7,9 @@ import {
   runSyncCommand,
   runThorCommand
 } from "../src/operations.js";
-import type { CommandRunner, RunResult } from "../src/commands.js";
+import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 
-class FakeRunner implements CommandRunner {
+class FakeRunner implements StreamingCommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
   results: RunResult[] = [];
 
@@ -16,12 +17,49 @@ class FakeRunner implements CommandRunner {
     this.calls.push({ command, args });
     return this.results.shift() ?? { exitCode: 0, stdout: "", stderr: "" };
   }
+
+  async runStreaming(command: string, args: string[], options: StreamingRunOptions): Promise<StreamingRunResult> {
+    this.calls.push({ command, args });
+    const rendered = [command, ...args].join(" ");
+    const stdout = command === "mutagen" && args[1] === "list"
+      ? JSON.stringify([{ name: "pgx-lower", paused: false, status: "watching", alpha: { connected: true }, beta: { connected: true } }])
+      : rendered.includes(".pgx-cli/sync-probes/")
+        ? `probe-${rendered.match(new RegExp("sync-probes/([^/']+)\\.txt"))?.[1] ?? "missing"}\n`
+        : "ok\n";
+    options.stdout?.write(stdout);
+    return {
+      childExitCode: 0,
+      stdoutSample: { head: stdout, tail: "", truncated: false },
+      stderrSample: { head: "", tail: "", truncated: false },
+      timedOut: false
+    };
+  }
 }
 
 const thorConfig = {
   mutagenSession: "pgx-lower",
   sshHost: "comfy",
-  remoteProjectPath: "/home/zel/repos/pgx-lower"
+  remoteProjectPath: "/home/zel/repos/pgx-lower",
+  localProjectPath: tmpdir(),
+  sync: {
+    required_for_remote: true,
+    flush_timeout_seconds: 45,
+    proof: {
+      enabled: false,
+      path: ".pgx-cli/sync-probes",
+      required_for: ["build", "test", "lint", "psql", "pg_regress", "bench", "profile", "run"]
+    }
+  },
+  output: {
+    mode: "agent",
+    transcript_dir: ".pgx-cli/runs",
+    max_lines_per_step: 20,
+    max_lines_total: 60,
+    failure_tail_lines: 20,
+    success_tail_lines: 10,
+    progress: "final-summary",
+    full_output_requires_flag: true
+  }
 };
 
 const setupConfig = {
@@ -147,18 +185,13 @@ describe("operations", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          "'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && git status --short'"
-        ]
-      }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("mutagen sync list pgx-lower --template {{json .}}");
+    expect(commands).toContain("mutagen sync flush pgx-lower");
+    expect(commands).toContain("ssh comfy bash -c");
+    expect(commands).toContain("git status --short");
+    expect(output.stdout).toContain("run id:");
+    expect(output.stdout).toContain("transcript:");
   });
 
   test("queue status checks task-spooler queues directly on thor", async () => {
@@ -167,18 +200,11 @@ describe("operations", () => {
     const exitCode = await runQueueCommand(["status"], runner, output, thorConfig);
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          "'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && for q in pgx-build pgx-check; do echo \"=== ${q} queue ===\"; TS_SOCKET=/tmp/${q}.sock tsp; done'"
-        ]
-      }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("mutagen sync flush pgx-lower");
+    expect(commands).toContain("ssh comfy bash -c");
+    expect(commands).toContain("TS_SOCKET=/tmp/${q}.sock tsp");
+    expect(output.stdout).toContain("run id:");
   });
 
   test.each([
@@ -190,18 +216,10 @@ describe("operations", () => {
     const exitCode = await runQueueCommand(args, runner, output, thorConfig);
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          `'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && ${shellCommand}'`
-        ]
-      }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("mutagen sync flush pgx-lower");
+    expect(commands).toContain("ssh comfy bash -c");
+    expect(commands).toContain(shellCommand);
   });
 
   test("queue flush clears completed build and check queue entries on thor", async () => {
@@ -210,18 +228,10 @@ describe("operations", () => {
     const exitCode = await runQueueCommand(["flush"], runner, output, thorConfig);
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "flush", "pgx-lower"] },
-      {
-        command: "ssh",
-        args: [
-          "comfy",
-          "bash",
-          "-lc",
-          "'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && TS_SOCKET=/tmp/pgx-build.sock tsp -C && TS_SOCKET=/tmp/pgx-check.sock tsp -C'"
-        ]
-      }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("mutagen sync flush pgx-lower");
+    expect(commands).toContain("ssh comfy bash -c");
+    expect(commands).toContain("TS_SOCKET=/tmp/pgx-build.sock tsp -C");
   });
 
   test("queue tail requires an id", async () => {

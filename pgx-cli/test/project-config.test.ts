@@ -37,6 +37,30 @@ remote:
 queues:
   build: pgx-build
   check: pgx-check
+sync:
+  required_for_remote: true
+  flush_timeout_seconds: 45
+  proof:
+    enabled: true
+    path: .pgx-cli/sync-probes
+    required_for:
+      - build
+      - test
+      - lint
+      - psql
+      - pg_regress
+      - bench
+      - profile
+      - run
+output:
+  mode: agent
+  transcript_dir: .pgx-cli/runs
+  max_lines_per_step: 80
+  max_lines_total: 180
+  failure_tail_lines: 60
+  success_tail_lines: 20
+  progress: final-summary
+  full_output_requires_flag: true
 profiles:
   debug:
     build:
@@ -71,6 +95,8 @@ profiles:
         `
 remote:
   host: local-thor
+output:
+  max_lines_total: 40
 profiles:
   debug:
     runtime:
@@ -81,6 +107,11 @@ profiles:
       const config = loadProjectConfig(root);
       expect(config?.remote.host).toBe("local-thor");
       expect(config?.remote.path).toBe("/home/zel/repos/pgx-lower");
+      expect(config?.sync?.flush_timeout_seconds).toBe(45);
+      expect(config?.sync?.proof?.path).toBe(".pgx-cli/sync-probes");
+      expect(config?.output?.max_lines_per_step).toBe(80);
+      expect(config?.output?.max_lines_total).toBe(40);
+      expect(config?.output?.progress).toBe("final-summary");
       expect(config?.profiles.debug.runtime?.logging).toBe("debug");
       expect(config?.profiles.latency.runtime?.logging).toBe("error");
     });
@@ -98,6 +129,22 @@ mispelled_remote:
       );
 
       expect(() => loadProjectConfig(root)).toThrow("Unknown project config key: mispelled_remote");
+    });
+  });
+
+  test("rejects unknown nested sync and output keys", () => {
+    withTempRepo((root) => {
+      writeFileSync(
+        join(root, "pgx-cli.yaml"),
+        `
+project: pgx-lower
+sync:
+  proof:
+    bad_key: true
+`
+      );
+
+      expect(() => loadProjectConfig(root)).toThrow("Unknown sync.proof key: bad_key");
     });
   });
 

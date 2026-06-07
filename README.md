@@ -14,7 +14,7 @@ committed per-PR benchmark reports.
 
 `pgx-cli` is the command surface for pgx-lower development workflows. The CLI
 lives in `pgx-cli/` and owns thor, Mutagen, task-spooler, CLion, build, check,
-and queue operations.
+Docker, Postgres, logs, and queue operations.
 
 Install or relink it from this checkout:
 
@@ -26,13 +26,40 @@ Diagnose the local/thor workflow:
 
 ```bash
 pgx-cli setup doctor
+pgx-cli sync doctor
 pgx-cli sync status
 pgx-cli queue status
 ```
 
-Use `pgx-cli dev ...` and `pgx-cli queue ...` as the normal workflow commands;
-treat raw `ssh comfy`, raw `mutagen`, and raw `tsp` as debugging escape hatches.
-The old recipe layer has been retired.
+Use `pgx-cli dev ...`, `pgx-cli queue ...`, and `pgx-cli run ...` as the normal
+workflow commands. Raw `ssh comfy`, `docker`, `psql`, `pg_regress`, `ctest`,
+`cmake`, `ninja`, `tsp`, `mutagen`, `just`, and migrated helper scripts are not
+normal agent workflow. The old recipe layer has been retired.
+
+When no typed command exists yet, use the bounded gateway:
+
+```bash
+pgx-cli run thor -- true
+pgx-cli run docker -- bash -lc 'echo ok'
+pgx-cli run psql --query 'SELECT 1'
+pgx-cli run psql --file tests/debug/q17.sql
+```
+
+Mutagen-dependent commands fail before remote execution when session health,
+flush, or sync proof fails. Managed commands print a compact summary and store
+full transcripts under `.pgx-cli/runs/<run-id>/`:
+
+```bash
+pgx-cli logs show <run-id>
+pgx-cli logs latest
+pgx-cli sync doctor
+```
+
+Use `--head N`, `--tail N`, or `--full` when you need a different transcript
+preview.
+
+Codex CLI command rules live in `.codex/rules/default.rules`; the project
+`.codex/` layer must be trusted for those rules to load.
 
 Workflow entrypoints live in `pgx-cli`. New shell or Python helper scripts need
 a plan-level exception and must pass:

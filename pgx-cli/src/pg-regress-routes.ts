@@ -1,6 +1,7 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createWriteStream, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import type { CommandRunner } from "./commands.js";
+import { finished } from "node:stream/promises";
+import type { StreamingCommandRunner } from "./commands.js";
 import {
   assertRoutes,
   parseSqlManifest,
@@ -84,7 +85,7 @@ export function parseRouteCheckArgs(args: readonly string[]): RouteCheckOptions 
 
 export async function runRouteCheckCommand(
   args: readonly string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   io: Io
 ): Promise<number> {
   let options: RouteCheckOptions;
@@ -109,10 +110,10 @@ export async function runRouteCheckCommand(
     if (!command) {
       throw new Error("pg_regress command is empty");
     }
-    const result = await runner.run(command, commandArgs);
-    pgRegressExitCode = result.exitCode;
-    io.stdout += result.stdout;
-    io.stderr += result.stderr;
+    mkdirSync(options.outputDir, { recursive: true });
+    const logPath = join(options.outputDir, "pg_regress.log");
+    pgRegressExitCode = await runStreamingToLog(runner, command, commandArgs, logPath);
+    io.stdout += `pg_regress log: ${logPath}\n`;
   }
 
   const outputsByPath = readOutputs(manifests, options.outputDir);
@@ -139,6 +140,19 @@ export async function runRouteCheckCommand(
 
   io.stdout += `OK: route assertions passed. Summary: ${options.summaryPath}\n`;
   return 0;
+}
+
+async function runStreamingToLog(
+  runner: StreamingCommandRunner,
+  command: string,
+  args: string[],
+  logPath: string
+): Promise<number> {
+  const log = createWriteStream(logPath, { flags: "w" });
+  const result = await runner.runStreaming(command, args, { stdout: log, stderr: log });
+  log.end();
+  await finished(log);
+  return result.childExitCode;
 }
 
 function readSqlManifests(options: RouteCheckOptions) {

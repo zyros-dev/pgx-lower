@@ -2,6 +2,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+export type StreamSample = {
+  head: string;
+  tail: string;
+  truncated: boolean;
+  omittedBytes?: number;
+  omittedLines?: number;
+};
+
 export type BufferedOutput = {
   stdout: string;
   stderr: string;
@@ -13,6 +21,19 @@ type RenderOptions = {
 };
 
 const defaultMaxLines = 50;
+
+export function streamSampleToText(sample: StreamSample | string): string {
+  if (typeof sample === "string") {
+    return sample;
+  }
+  if (!sample.truncated) {
+    return sample.head + sample.tail;
+  }
+  const omitted = sample.omittedLines !== undefined
+    ? `lines: ${sample.omittedLines}`
+    : `bytes: ${sample.omittedBytes ?? 0}`;
+  return `${sample.head}[... omitted ${omitted}; full transcript in run artifact ...]\n${sample.tail}`;
+}
 
 export function renderBufferedOutput(
   output: BufferedOutput,
@@ -37,12 +58,6 @@ export function renderBufferedOutput(
       stderr.text +
       `pgx-cli: output truncated to ${maxLines} lines per stream; full transcript: ${transcriptPath}\n`
   };
-}
-
-export function writeBufferedOutput(output: BufferedOutput): void {
-  const rendered = renderBufferedOutput(output);
-  process.stdout.write(rendered.stdout);
-  process.stderr.write(rendered.stderr);
 }
 
 function limitStream(text: string, maxLines: number): { text: string; truncated: boolean } {

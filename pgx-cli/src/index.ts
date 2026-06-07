@@ -4,22 +4,26 @@ import { DEFAULT_CONFIG_PATH, writeConfig } from "./config.js";
 import { renderBuildExplain } from "./build-profile.js";
 import { helpText, runCli } from "./cli.js";
 import { NodeCommandRunner } from "./commands.js";
+import { runBenchCommand } from "./bench.js";
 import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
 import { runLogsCommand } from "./logs.js";
 import { connectMcp } from "./mcp.js";
-import { writeBufferedOutput } from "./output.js";
+import { renderBufferedOutput } from "./output.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
 import { runRgCommand } from "./search.js";
 import { runUnitSqlCommand } from "./unit-sql.js";
+import { runGatewayCommand } from "./run.js";
+import { runCodexPolicyCommand } from "./codex-policy.js";
 import {
   runQueueCommand,
   runSetupCommand,
   runSyncCommand,
   runThorCommand
 } from "./operations.js";
+import type { OperationOutput } from "./operations.js";
 import { loadProjectConfig, resolveProfile } from "./project-config.js";
 import { DEFAULT_REQUEST_DIR, writeRequest } from "./requests.js";
 import { runRepoCommand } from "./repo-audit.js";
@@ -33,7 +37,12 @@ const config = loadConfig({ env: process.env, argvUrl: url });
 incrementUsage(DEFAULT_USAGE_PATH, argv);
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const io = { stdout: "", stderr: "" };
+const io: OperationOutput = {
+  stdout: "",
+  stderr: "",
+  liveStdout: (text) => process.stdout.write(text),
+  liveStderr: (text) => process.stderr.write(text)
+};
 
 try {
   if (!argv[0] || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
@@ -64,7 +73,7 @@ try {
       dockerContainer: config.dockerContainer,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -72,7 +81,7 @@ try {
     process.exitCode = await runSyncCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -81,9 +90,12 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -92,9 +104,12 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -104,9 +119,12 @@ try {
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
       dockerContainer: config.dockerContainer,
+      localProjectPath: config.localProjectPath,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -115,10 +133,49 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
       dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
+    process.exit();
+  }
+
+  if (argv[0] === "run") {
+    process.exitCode = await runGatewayCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    flushIo();
+    process.exit();
+  }
+
+  if (argv[0] === "bench") {
+    process.exitCode = await runBenchCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    flushIo();
+    process.exit();
+  }
+
+  if (argv[0] === "codex-policy") {
+    process.exitCode = runCodexPolicyCommand(argv.slice(1), io);
+    flushIo();
     process.exit();
   }
 
@@ -126,7 +183,7 @@ try {
     process.exitCode = await runRgCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -134,25 +191,25 @@ try {
     process.exitCode = await runRepoCommand(argv.slice(1), runner, io, {
       localProjectPath: config.localProjectPath
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "route-check") {
     process.exitCode = await runRouteCheckCommand(argv.slice(2), runner, io);
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
     process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
   if (argv[0] === "test" && argv[1] === "unit-sql") {
     process.exitCode = runUnitSqlCommand(argv.slice(2), io);
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -165,12 +222,15 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
       profileName,
       profile,
       dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -183,9 +243,11 @@ try {
       dockerContainer: config.dockerContainer,
       buildQueue: config.buildQueue,
       checkQueue: config.checkQueue,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
-    writeBufferedOutput(io);
+    flushIo();
     process.exit();
   }
 
@@ -208,12 +270,25 @@ try {
     sshHost: config.sshHost,
     projectPath: config.projectPath
   });
-  writeBufferedOutput(io);
+  flushIo();
   process.exitCode = exitCode;
 } catch (error) {
-  writeBufferedOutput(io);
+  flushIo();
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
+}
+
+function flushIo(): void {
+  const stdoutStart = io.flushedStdoutLength ?? 0;
+  const stderrStart = io.flushedStderrLength ?? 0;
+  const rendered = renderBufferedOutput({
+    stdout: io.stdout.slice(stdoutStart),
+    stderr: io.stderr.slice(stderrStart)
+  });
+  if (rendered.stdout) process.stdout.write(rendered.stdout);
+  if (rendered.stderr) process.stderr.write(rendered.stderr);
+  io.flushedStdoutLength = io.stdout.length;
+  io.flushedStderrLength = io.stderr.length;
 }
 
 function parseGlobalArgs(args: string[]): { url?: string; argv: string[] } {

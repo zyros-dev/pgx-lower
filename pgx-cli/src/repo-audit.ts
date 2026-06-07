@@ -7,7 +7,7 @@ export type RepoAuditConfig = {
   localProjectPath: string;
 };
 
-const ignoredDirs = new Set([".git", "build-artifacts", "node_modules"]);
+const ignoredDirs = new Set([".git", "benchmark", "build-artifacts", "build-docker-lint", "node_modules"]);
 const allowedExact = new Set([
   ".githooks/pre-commit",
   ".githooks/pre-push",

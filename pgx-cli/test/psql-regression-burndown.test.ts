@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { CommandRunner, RunResult } from "../src/commands.js";
+import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 import {
   buildPsqlRegressionPgRegressCommand,
   classifyPsqlRegressionDelta,
@@ -17,13 +17,25 @@ import {
   validatePsqlRegressionSource
 } from "../src/psql-regression-burndown.js";
 
-class FakeRunner implements CommandRunner {
-  calls: Array<{ command: string; args: string[] }> = [];
+class FakeRunner implements StreamingCommandRunner {
+  calls: Array<{ command: string; args: string[]; streaming: boolean }> = [];
   result: RunResult = { exitCode: 0, stdout: "ok 1 - boolean 10 ms\n", stderr: "" };
 
   async run(command: string, args: string[]): Promise<RunResult> {
-    this.calls.push({ command, args });
+    this.calls.push({ command, args, streaming: false });
     return this.result;
+  }
+
+  async runStreaming(command: string, args: string[], options: StreamingRunOptions): Promise<StreamingRunResult> {
+    this.calls.push({ command, args, streaming: true });
+    options.stdout?.write(this.result.stdout);
+    options.stderr?.write(this.result.stderr);
+    return {
+      childExitCode: this.result.exitCode,
+      stdoutSample: { head: this.result.stdout, tail: "", truncated: false },
+      stderrSample: { head: this.result.stderr, tail: "", truncated: false },
+      timedOut: false
+    };
   }
 }
 
@@ -308,6 +320,8 @@ describe("psql regression burndown command", () => {
     const exitCode = await runPsqlRegressionBurndownCommand(fixture.args, runner, io);
 
     expect(exitCode).toBe(0);
+    expect(runner.calls[0]).toMatchObject({ streaming: true });
+    expect(io.stdout).not.toContain("ok 1 - boolean");
     expect(readFileSync(join(fixture.outputDir, "pg_regress.log"), "utf8")).toContain("ok 1 - boolean");
     expect(readFileSync(join(fixture.outputDir, "route-check.log"), "utf8")).toContain("OK: route assertions passed");
     expect(readFileSync(fixture.summary, "utf8")).toContain("# PostgreSQL Regression Burndown");
