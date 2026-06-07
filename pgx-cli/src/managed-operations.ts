@@ -35,6 +35,7 @@ export async function runManagedRemoteShell(input: {
   commandName: string;
   shellCommand: string;
   requireMutagenProof: boolean;
+  mutagenProofSkipReason?: string;
   postprocess?: ManagedOperationPostprocessor;
   fullOutput?: boolean;
   preview?: PreviewSelection;
@@ -83,7 +84,9 @@ export async function runManagedRemoteShell(input: {
     flushTimeoutSeconds: input.config.sync.flush_timeout_seconds,
     runningOnRemote: input.config.runningOnRemote,
     proofPath: input.config.sync.proof.path,
-    requireProof: input.requireMutagenProof && input.config.sync.proof.enabled
+    requireProof: input.requireMutagenProof && input.config.sync.proof.enabled,
+    proofSkipReason: input.mutagenProofSkipReason ??
+      (input.requireMutagenProof ? "disabled by sync.proof.enabled=false" : undefined)
   });
 
   if (!preflight.ok) {
@@ -172,6 +175,7 @@ export async function runManagedRemoteShell(input: {
 
   const rendered = applyTotalOutputBudget(
     [
+      preflight.proofSkippedReason ? `sync proof: skipped (${preflight.proofSkippedReason})\n` : "",
       managedRun.combinedPreview,
       `exit: ${managedRun.workflowExitCode} (child: ${managedRun.childExitCode})\n`,
       `transcript: ${managedRun.artifact.combinedPath}\n`

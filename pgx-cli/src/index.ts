@@ -4,6 +4,7 @@ import { DEFAULT_CONFIG_PATH, writeConfig } from "./config.js";
 import { renderBuildExplain } from "./build-profile.js";
 import { helpText, runCli } from "./cli.js";
 import { NodeCommandRunner } from "./commands.js";
+import { runBenchCommand } from "./bench.js";
 import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
@@ -142,6 +143,22 @@ try {
 
   if (argv[0] === "run") {
     process.exitCode = await runGatewayCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "bench") {
+    process.exitCode = await runBenchCommand(argv.slice(1), runner, io, {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,

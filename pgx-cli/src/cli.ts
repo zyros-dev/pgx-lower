@@ -373,6 +373,7 @@ export function helpText(): string {
     "  pgx-cli run docker -- <cmd...>",
     "  pgx-cli run psql --query <sql>",
     "  pgx-cli run psql --file <repo-local.sql>",
+    "  pgx-cli bench tpch -- <benchmark/tpch/run.py args...>",
     "  pgx-cli logs show <run-id> [--head N|--tail N|--full]",
     "  pgx-cli logs latest [--head N|--tail N|--full]",
     "  pgx-cli codex-policy check -- <cmd...>",

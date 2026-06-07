@@ -48,7 +48,8 @@ export async function runLogsCommand(
       config,
       commandName: `logs-${command}`,
       shellCommand,
-      requireMutagenProof: false
+      requireMutagenProof: false,
+      mutagenProofSkipReason: "remote-only logs command"
     });
     return result.workflowExitCode;
   }

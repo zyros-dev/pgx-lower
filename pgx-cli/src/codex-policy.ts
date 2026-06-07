@@ -100,9 +100,17 @@ function forbid(command: string, replacement: string): CommandPolicyDecision {
 
 function filesIn(dir: string, prefix: string, include: (name: string) => boolean): string[] {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && include(entry.name))
-    .map((entry) => `${prefix}/${entry.name}`);
+  const discovered: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const childPrefix = `${prefix}/${entry.name}`;
+    const childPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      discovered.push(...filesIn(childPath, childPrefix, include));
+    } else if (entry.isFile() && include(entry.name)) {
+      discovered.push(childPrefix);
+    }
+  }
+  return discovered;
 }
 
 function prefixRule(pattern: string[], replacement: string): string {

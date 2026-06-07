@@ -19,50 +19,48 @@ export async function runGatewayCommand(
   output: OperationOutput,
   config: RunGatewayConfig
 ): Promise<number> {
-  const { args: parsedArgs, fullOutput, preview } = parseExpansionFlags(args);
-  const [command, ...rest] = parsedArgs;
+  const [command, ...rest] = args;
   if (command === "thor") {
-    const separator = rest.indexOf("--");
-    if (separator === -1 || separator === rest.length - 1) {
+    const parsed = parsePayloadCommand(rest);
+    if (!parsed) {
       output.stderr += "Usage: run thor [--head N|--tail N|--full] -- <cmd...>\n";
       return 1;
     }
-    const payload = rest.slice(separator + 1);
     const result = await runManagedRemoteShell({
       runner,
       output,
       config,
-      commandName: `run-thor-${payload[0] ?? "command"}`,
-      shellCommand: payload.map(quoteShell).join(" "),
+      commandName: `run-thor-${parsed.payload[0] ?? "command"}`,
+      shellCommand: parsed.payload.map(quoteShell).join(" "),
       requireMutagenProof: true,
-      fullOutput,
-      preview
+      fullOutput: parsed.fullOutput,
+      preview: parsed.preview
     });
     return result.workflowExitCode;
   }
 
   if (command === "docker") {
-    const separator = rest.indexOf("--");
-    if (separator === -1 || separator === rest.length - 1) {
+    const parsed = parsePayloadCommand(rest);
+    if (!parsed) {
       output.stderr += "Usage: run docker [--head N|--tail N|--full] -- <cmd...>\n";
       return 1;
     }
-    const payload = rest.slice(separator + 1);
     const result = await runManagedRemoteShell({
       runner,
       output,
       config,
-      commandName: `run-docker-${payload[0] ?? "command"}`,
-      shellCommand: `docker exec ${quoteShell(config.dockerContainer)} ${payload.map(quoteShell).join(" ")}`,
+      commandName: `run-docker-${parsed.payload[0] ?? "command"}`,
+      shellCommand: `docker exec ${quoteShell(config.dockerContainer)} ${parsed.payload.map(quoteShell).join(" ")}`,
       requireMutagenProof: true,
-      fullOutput,
-      preview
+      fullOutput: parsed.fullOutput,
+      preview: parsed.preview
     });
     return result.workflowExitCode;
   }
 
   if (command === "psql") {
-    const psqlCommand = psqlShellCommand(rest, config, output);
+    const { args: psqlArgs, fullOutput, preview } = parseExpansionFlags(rest);
+    const psqlCommand = psqlShellCommand(psqlArgs, config, output);
     if (!psqlCommand) {
       return 1;
     }
@@ -81,6 +79,19 @@ export async function runGatewayCommand(
 
   output.stderr += "Usage: run <thor|docker|psql> ...\n";
   return 1;
+}
+
+function parsePayloadCommand(args: string[]): {
+  payload: string[];
+  fullOutput: boolean;
+  preview?: PreviewSelection;
+} | undefined {
+  const separator = args.indexOf("--");
+  if (separator === -1 || separator === args.length - 1) {
+    return undefined;
+  }
+  const { fullOutput, preview } = parseExpansionFlags(args.slice(0, separator));
+  return { payload: args.slice(separator + 1), fullOutput, preview };
 }
 
 function psqlShellCommand(args: string[], config: RunGatewayConfig, output: OperationOutput): string | undefined {

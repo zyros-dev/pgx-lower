@@ -49,13 +49,14 @@ describe("codex policy", () => {
     try {
       mkdirSync(join(root, "scripts"), { recursive: true });
       mkdirSync(join(root, "tools", "scripts"), { recursive: true });
-      mkdirSync(join(root, "benchmark"), { recursive: true });
+      mkdirSync(join(root, "benchmark", "tpch"), { recursive: true });
       writeFileSync(join(root, "scripts", "a.sh"), "");
       writeFileSync(join(root, "tools", "scripts", "b.py"), "");
       writeFileSync(join(root, "benchmark", "c.py"), "");
+      writeFileSync(join(root, "benchmark", "tpch", "run.py"), "");
 
       const scripts = discoverWorkflowScripts(root);
-      expect(scripts).toEqual(["benchmark/c.py", "scripts/a.sh", "tools/scripts/b.py"]);
+      expect(scripts).toEqual(["benchmark/c.py", "benchmark/tpch/run.py", "scripts/a.sh", "tools/scripts/b.py"]);
 
       for (const script of scripts) {
         expect(classifyAgentCommand([script], { workflowScripts: scripts }).decision).toBe("forbidden");

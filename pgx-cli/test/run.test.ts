@@ -116,6 +116,32 @@ describe("run gateway", () => {
     }
   });
 
+  test.each([
+    ["thor", "--full", []],
+    ["thor", "--head", ["payload"]],
+    ["thor", "--tail", ["payload"]],
+    ["docker", "--full", []],
+    ["docker", "--head", ["payload"]],
+    ["docker", "--tail", ["payload"]]
+  ])("run %s preserves payload flag %s after --", async (target, flag, rest) => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-run-payload-"));
+    try {
+      const runner = new FakeRunner();
+      const output = { stdout: "", stderr: "" };
+
+      const exitCode = await runGatewayCommand([target, "--", "printf", "%s\\n", flag, ...rest], runner, output, makeConfig(root));
+
+      expect(exitCode).toBe(0);
+      const command = runner.calls.at(-1)?.args.join(" ") ?? "";
+      expect(command).toContain(flag);
+      for (const arg of rest) {
+        expect(command).toContain(arg);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("run psql query uses postgres in the configured container", async () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-run-psql-"));
     try {

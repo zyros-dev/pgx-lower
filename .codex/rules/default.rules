@@ -62,3 +62,51 @@ prefix_rule(
     decision = "forbidden",
     justification = "Use pgx-cli ... so Mutagen, transcripts, and output limits are enforced.",
 )
+
+prefix_rule(
+    pattern = ["benchmark/tpch/aggregate.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["./benchmark/tpch/aggregate.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["benchmark/tpch/fxt_to_flamegraph.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["./benchmark/tpch/fxt_to_flamegraph.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["benchmark/tpch/metrics_collector.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["./benchmark/tpch/metrics_collector.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["benchmark/tpch/run.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["./benchmark/tpch/run.py"],
+    decision = "forbidden",
+    justification = "Use pgx-cli <typed workflow command> so Mutagen, transcripts, and output limits are enforced.",
+)

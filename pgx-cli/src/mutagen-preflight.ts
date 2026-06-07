@@ -9,7 +9,7 @@ export type MutagenHealth =
   | { healthy: false; reason: string };
 
 export type MutagenPreflightResult =
-  | { ok: true; message: string; transcriptPath?: string }
+  | { ok: true; message: string; transcriptPath?: string; proofSkippedReason?: string }
   | { ok: false; message: string; transcriptPath?: string; next: string[] };
 
 export function evaluateMutagenListJson(json: string, sessionName: string): MutagenHealth {
@@ -66,6 +66,7 @@ export async function runMutagenPreflight(input: {
   flushTimeoutSeconds: number;
   runningOnRemote?: boolean;
   requireProof: boolean;
+  proofSkipReason?: string;
   proofPath?: string;
   probeContents?: string;
 }): Promise<MutagenPreflightResult> {
@@ -97,7 +98,14 @@ export async function runMutagenPreflight(input: {
   }
 
   if (!input.requireProof) {
-    return { ok: true, message: secondHealth.message, transcriptPath };
+    const reason = input.proofSkipReason ?? "not required for this workflow";
+    writeTranscript(transcriptPath, `sync proof: skipped (${reason})\n`);
+    return {
+      ok: true,
+      message: `${secondHealth.message}; sync proof skipped: ${reason}`,
+      transcriptPath,
+      proofSkippedReason: reason
+    };
   }
 
   const proofRelativePath = (input.proofPath ?? ".pgx-cli/sync-probes").replace(/^\/+/, "");
