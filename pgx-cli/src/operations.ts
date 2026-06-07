@@ -1,4 +1,7 @@
-import type { CommandRunner } from "./commands.js";
+import type { CommandRunner, StreamingCommandRunner } from "./commands.js";
+import { evaluateMutagenListJson } from "./mutagen-preflight.js";
+import { runManagedRemoteShell } from "./managed-operations.js";
+import type { ManagedOperationConfig } from "./managed-operations.js";
 
 export type OperationOutput = {
   stdout: string;
@@ -9,6 +12,7 @@ export type OperationConfig = {
   mutagenSession: string;
   sshHost: string;
   remoteProjectPath: string;
+  localProjectPath?: string;
   runningOnRemote?: boolean;
 };
 
@@ -41,15 +45,28 @@ export async function runSyncCommand(
     return result.exitCode;
   }
 
-  output.stderr += "Usage: sync <status|flush>\n";
+  if (command === "doctor") {
+    const result = await runner.run("mutagen", ["sync", "list", config.mutagenSession, "--template", "{{json .}}"]);
+    const health = result.exitCode === 0
+      ? evaluateMutagenListJson(result.stdout, config.mutagenSession)
+      : { healthy: false as const, reason: `mutagen session ${config.mutagenSession} status check failed` };
+    output.stdout += health.healthy ? "sync doctor: ok\n" : `sync doctor: failed - ${health.reason}\n`;
+    if (!health.healthy) {
+      output.stdout += "next:\n- pgx-cli sync status\n- pgx-cli sync doctor\n";
+    }
+    output.stderr += result.stderr;
+    return health.healthy ? 0 : 1;
+  }
+
+  output.stderr += "Usage: sync <status|flush|doctor>\n";
   return 1;
 }
 
 export async function runThorCommand(
   args: string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
-  config: OperationConfig
+  config: ManagedOperationConfig
 ): Promise<number> {
   const [command, ...rest] = args;
 
@@ -60,12 +77,16 @@ export async function runThorCommand(
       return 1;
     }
 
-    const flush = await flushMutagen(runner, output, config);
-    if (flush !== 0) {
-      return flush;
-    }
-
-    return runRemote(runner, output, config, rest.slice(separatorIndex + 1));
+    const commandArgs = rest.slice(separatorIndex + 1);
+    const result = await runManagedRemoteShell({
+      runner,
+      output,
+      config,
+      commandName: `thor-shell-${commandArgs[0] ?? "command"}`,
+      shellCommand: commandArgs.map(quoteShell).join(" "),
+      requireMutagenProof: true
+    });
+    return result.workflowExitCode;
   }
 
   output.stderr += "Usage: thor shell --dangerous -- <cmd...>\n";
@@ -154,50 +175,26 @@ export async function runSetupCommand(
 
 export async function runQueueCommand(
   args: string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
-  config: OperationConfig
+  config: ManagedOperationConfig
 ): Promise<number> {
   const [command, id] = args;
 
   if (command === "status") {
-    return runRemoteWithFlush(
-      runner,
-      output,
-      config,
-      'for q in pgx-build pgx-check; do echo "=== ${q} queue ==="; TS_SOCKET=/tmp/${q}.sock tsp; done',
-      "queue status"
-    );
+    return runManagedQueue(runner, output, config, "queue-status", 'for q in pgx-build pgx-check; do echo "=== ${q} queue ==="; TS_SOCKET=/tmp/${q}.sock tsp; done');
   }
 
   if (command === "tail" && isNumericId(id)) {
-    return runRemoteWithFlush(
-      runner,
-      output,
-      config,
-      `TS_SOCKET=/tmp/pgx-build.sock tsp -t ${id}`,
-      `queue tail ${id}`
-    );
+    return runManagedQueue(runner, output, config, `queue-tail-${id}`, `TS_SOCKET=/tmp/pgx-build.sock tsp -t ${id}`);
   }
 
   if (command === "cancel" && isNumericId(id)) {
-    return runRemoteWithFlush(
-      runner,
-      output,
-      config,
-      `TS_SOCKET=/tmp/pgx-build.sock tsp -k ${id} || true; TS_SOCKET=/tmp/pgx-build.sock tsp -r ${id}`,
-      `queue cancel ${id}`
-    );
+    return runManagedQueue(runner, output, config, `queue-cancel-${id}`, `TS_SOCKET=/tmp/pgx-build.sock tsp -k ${id} || true; TS_SOCKET=/tmp/pgx-build.sock tsp -r ${id}`);
   }
 
   if (command === "flush") {
-    return runRemoteWithFlush(
-      runner,
-      output,
-      config,
-      "TS_SOCKET=/tmp/pgx-build.sock tsp -C && TS_SOCKET=/tmp/pgx-check.sock tsp -C",
-      "queue flush"
-    );
+    return runManagedQueue(runner, output, config, "queue-flush", "TS_SOCKET=/tmp/pgx-build.sock tsp -C && TS_SOCKET=/tmp/pgx-check.sock tsp -C");
   }
 
   output.stderr += "Usage: queue <status|flush|tail <id>|cancel <id>>\n";
@@ -208,69 +205,22 @@ function isNumericId(value: string | undefined): value is string {
   return value !== undefined && /^[0-9]+$/.test(value);
 }
 
-async function flushMutagen(runner: CommandRunner, output: OperationOutput, config: OperationConfig): Promise<number> {
-  if (config.runningOnRemote) {
-    output.stdout += "mutagen: skipped (already on thor)\n";
-    return 0;
-  }
-  output.stdout += `Flushing Mutagen session: ${config.mutagenSession}\n`;
-  const result = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
-}
-
-async function runRemoteWithFlush(
-  runner: CommandRunner,
+async function runManagedQueue(
+  runner: StreamingCommandRunner,
   output: OperationOutput,
-  config: OperationConfig,
+  config: ManagedOperationConfig,
+  commandName: string,
   shellCommand: string,
-  displayCommand: string
 ): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) {
-    return flush;
-  }
-
-  return runRemoteShell(runner, output, config, shellCommand, displayCommand);
-}
-
-async function runRemote(
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: OperationConfig,
-  command: string[]
-): Promise<number> {
-  const remoteCommand = `cd ${quoteShell(config.remoteProjectPath)} && ${command
-    .map(quoteShell)
-    .join(" ")}`;
-  const remoteShell = `export PATH=$HOME/.local/bin:$PATH && ${remoteCommand}`;
-  output.stdout += `thor: ${config.sshHost}:${config.remoteProjectPath}\n`;
-  output.stdout += `$ ${command.join(" ")}\n`;
-  const result = config.runningOnRemote
-    ? await runner.run("bash", ["-lc", remoteShell])
-    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
-}
-
-async function runRemoteShell(
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: OperationConfig,
-  shellCommand: string,
-  displayCommand: string
-): Promise<number> {
-  const remoteShell = `export PATH=$HOME/.local/bin:$PATH && cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`;
-  output.stdout += `thor: ${config.sshHost}:${config.remoteProjectPath}\n`;
-  output.stdout += `$ ${displayCommand}\n`;
-  const result = config.runningOnRemote
-    ? await runner.run("bash", ["-lc", remoteShell])
-    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
+  const result = await runManagedRemoteShell({
+    runner,
+    output,
+    config,
+    commandName,
+    shellCommand,
+    requireMutagenProof: true
+  });
+  return result.workflowExitCode;
 }
 
 function quoteShell(value: string): string {

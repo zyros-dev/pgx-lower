@@ -1,6 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join } from "node:path";
-import type { CommandRunner } from "./commands.js";
+import { finished } from "node:stream/promises";
+import type { StreamingCommandRunner } from "./commands.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 
 export type PsqlRegressionStatus = {
@@ -216,7 +217,7 @@ export function buildPsqlRegressionPgRegressCommand(options: PsqlRegressionBurnd
 
 export async function runPsqlRegressionBurndownCommand(
   args: readonly string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   io: Io
 ): Promise<number> {
   let options: PsqlRegressionBurndownOptions;
@@ -244,10 +245,9 @@ export async function runPsqlRegressionBurndownCommand(
     return 1;
   }
 
-  const pgRegressResult = await runner.run(command, commandArgs);
-  const pgRegressTranscript = `${pgRegressResult.stdout}${pgRegressResult.stderr}`;
   const pgRegressLog = join(options.outputDir, "pg_regress.log");
-  writeFileSync(pgRegressLog, pgRegressTranscript);
+  await runStreamingToLog(runner, command, commandArgs, pgRegressLog);
+  const pgRegressTranscript = readFileSync(pgRegressLog, "utf8");
 
   const parsed = parsePgRegressStatusLines(pgRegressTranscript);
   if (parsed.passing.size === 0 && parsed.failing.size === 0) {
@@ -316,6 +316,19 @@ export async function runPsqlRegressionBurndownCommand(
     io.stderr += `FAIL: PostgreSQL regression delta changed. Summary: ${options.summary}\n`;
   }
   return exitCode;
+}
+
+async function runStreamingToLog(
+  runner: StreamingCommandRunner,
+  command: string,
+  args: string[],
+  logPath: string
+): Promise<number> {
+  const log = createWriteStream(logPath, { flags: "w" });
+  const result = await runner.runStreaming(command, args, { stdout: log, stderr: log });
+  log.end();
+  await finished(log);
+  return result.childExitCode;
 }
 
 function renderNameList(names: ReadonlySet<string>): string {

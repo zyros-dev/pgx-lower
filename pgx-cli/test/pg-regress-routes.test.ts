@@ -2,16 +2,28 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { CommandRunner, RunResult } from "../src/commands.js";
+import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 import { parseRouteCheckArgs, runRouteCheckCommand } from "../src/pg-regress-routes.js";
 
-class FakeRunner implements CommandRunner {
-  calls: Array<{ command: string; args: string[] }> = [];
+class FakeRunner implements StreamingCommandRunner {
+  calls: Array<{ command: string; args: string[]; streaming: boolean }> = [];
   result: RunResult = { exitCode: 0, stdout: "pg_regress ok\n", stderr: "" };
 
   async run(command: string, args: string[]): Promise<RunResult> {
-    this.calls.push({ command, args });
+    this.calls.push({ command, args, streaming: false });
     return this.result;
+  }
+
+  async runStreaming(command: string, args: string[], options: StreamingRunOptions): Promise<StreamingRunResult> {
+    this.calls.push({ command, args, streaming: true });
+    options.stdout?.write(this.result.stdout);
+    options.stderr?.write(this.result.stderr);
+    return {
+      childExitCode: this.result.exitCode,
+      stdoutSample: { head: this.result.stdout, tail: "", truncated: false },
+      stderrSample: { head: this.result.stderr, tail: "", truncated: false },
+      timedOut: false
+    };
   }
 }
 
@@ -164,7 +176,9 @@ describe("route-check command", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([{ command: "pg_regress", args: ["--inputdir=tests"] }]);
+    expect(runner.calls).toEqual([{ command: "pg_regress", args: ["--inputdir=tests"], streaming: true }]);
+    expect(io.stdout).not.toContain("pg_regress ok");
+    expect(readFileSync(join(outputDir, "pg_regress.log"), "utf8")).toContain("pg_regress ok");
   });
 
   test("preserves pg_regress failure when route assertions do not add failures", async () => {

@@ -41,6 +41,13 @@ pgx-cli call <tool-name> '{"arg":"value"}'
 pgx-cli tunnel
 pgx-cli sync status
 pgx-cli sync flush
+pgx-cli sync doctor
+pgx-cli run thor -- true
+pgx-cli run docker -- bash -lc 'echo ok'
+pgx-cli run psql --query 'SELECT 1'
+pgx-cli run psql --file tests/debug/q17.sql
+pgx-cli logs show <run-id>
+pgx-cli logs latest
 pgx-cli dev status
 pgx-cli dev lint diff
 pgx-cli dev test focused
@@ -61,6 +68,8 @@ pgx-cli queue tail <id>
 pgx-cli queue cancel <id>
 pgx-cli queue flush
 pgx-cli thor shell --dangerous -- git status --short
+pgx-cli codex-policy check -- ssh comfy true
+pgx-cli codex-policy rules
 pgx-cli request feature make the compile gate easier to inspect
 pgx-cli request complaint thor command output is too noisy
 pgx-cli doctor
@@ -78,7 +87,8 @@ pgx-cli run <configuration-name>
 The `call` command supports every tool the CLion MCP server advertises. The convenience commands resolve against the discovered tool list, so they fail loudly if the installed CLion MCP exposes a different tool surface.
 
 `pgx-cli dev ...` commands are the normal pgx-lower development workflow. They
-flush Mutagen and run the needed local/thor/Docker/task-spooler steps directly.
+run the needed thor/Docker/task-spooler steps through managed output and Mutagen
+preflight.
 `pgx-cli test route-check` validates pg_regress route notices against SQL
 directives and writes a route summary without contacting CLion MCP.
 `pgx-cli test unit-sql` generates pg_regress SQL wrappers for PGX_TEST_FN C++
@@ -86,10 +96,27 @@ unit tests.
 `pgx-cli test psql-regression-burndown` runs the opt-in upstream PostgreSQL
 regression burn-down ledger and compares failures against a reviewed baseline.
 `pgx-cli docker ...` commands wrap explicit thor-side Docker maintenance flows.
+`pgx-cli run thor -- ...`, `pgx-cli run docker -- ...`, and
+`pgx-cli run psql ...` are the bounded escape hatch when no typed command exists
+yet.
 `pgx-cli repo audit-tools` enforces that workflow entrypoints stay in pgx-cli
 instead of drifting back into loose shell or Python helper scripts.
 `pgx-cli thor shell ...` is reserved for explicit remote shell work and requires
 `--dangerous`. `pgx-cli queue ...` is for diagnostics and recovery.
+
+Managed commands print a run id and transcript path, and write
+`.pgx-cli/runs/<run-id>/summary.json`, `stdout.log`, `stderr.log`,
+`combined.log`, and `sync-preflight.log`. Use `pgx-cli logs show <run-id>` or
+`pgx-cli logs latest` to inspect bounded transcript excerpts without rerunning a
+workflow. Use `--head N`, `--tail N`, or `--full` only when the default preview
+is not the view you need.
+
+Mutagen-dependent commands fail closed before remote execution when the session
+is missing, paused, disconnected, conflicted, stale, or the sync proof fails.
+Use `pgx-cli sync status` and `pgx-cli sync doctor` to diagnose those failures.
+Project-local Codex rules live in `.codex/rules/default.rules`; Codex CLI must
+trust the project `.codex/` layer for raw workflow command blocks to load. Hook
+enforcement for opaque `bash -lc` scripts is intentionally deferred.
 
 `pgx-cli request feature ...` and `pgx-cli request complaint ...` write timestamped Markdown notes to `~/.config/pgx-cli/requests/`. They are local inbox commands for agents to lodge friction quickly and continue with the current task.
 
@@ -150,6 +177,13 @@ pgx-cli dev logs latest
 pgx-cli docker status
 pgx-cli docker build ptest
 pgx-cli docker build release
+pgx-cli run thor -- true
+pgx-cli run docker -- bash -lc 'echo ok'
+pgx-cli run psql --query 'SELECT 1'
+pgx-cli run psql --file tests/debug/q17.sql
+pgx-cli logs show <run-id>
+pgx-cli logs latest
+pgx-cli sync doctor
 pgx-cli repo audit-tools
 ```
 

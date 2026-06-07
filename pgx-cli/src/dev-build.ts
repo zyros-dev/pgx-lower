@@ -1,9 +1,11 @@
 import { renderBuildExplain, renderConfigureCommand } from "./build-profile.js";
-import type { CommandRunner } from "./commands.js";
+import type { StreamingCommandRunner } from "./commands.js";
+import { runManagedRemoteShell } from "./managed-operations.js";
+import type { ManagedOperationConfig } from "./managed-operations.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 import type { ResolvedProfileConfig } from "./project-config.js";
 
-export type DevBuildConfig = OperationConfig & {
+export type DevBuildConfig = ManagedOperationConfig & {
   profileName?: string;
   profile?: ResolvedProfileConfig;
   dockerContainer?: string;
@@ -11,7 +13,7 @@ export type DevBuildConfig = OperationConfig & {
 
 export async function runDevBuildCommand(
   args: string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DevBuildConfig
 ): Promise<number> {
@@ -31,41 +33,26 @@ export async function runDevBuildCommand(
       return 1;
     }
     const command = buildProfileCommand(action, config.profile, config.dockerContainer);
-    const flush = await flushMutagen(runner, output, config);
-    if (flush !== 0) return flush;
-    return runRemoteShell(runner, output, config, command, `dev build ${action} --profile ${config.profileName ?? "unknown"}`);
+    const result = await runManagedRemoteShell({
+      runner,
+      output,
+      config: { ...config, dockerContainer: config.dockerContainer },
+      commandName: `dev-build-${action}-${config.profileName ?? "unknown"}`,
+      shellCommand: command,
+      requireMutagenProof: true,
+      metadata: {
+        profile: {
+          name: config.profileName,
+          buildDir: config.profile.build.build_dir
+        }
+      },
+      artifactPaths: [config.profile.build.build_dir]
+    });
+    return result.workflowExitCode;
   }
 
   output.stderr += "Usage: dev build <explain|configure|compile|install|clean|reconfigure> --profile <name>\n";
   return 1;
-}
-
-async function flushMutagen(runner: CommandRunner, output: OperationOutput, config: OperationConfig): Promise<number> {
-  if (config.runningOnRemote) {
-    output.stdout += "mutagen: skipped (already on thor)\n";
-    return 0;
-  }
-  const result = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
-}
-
-async function runRemoteShell(
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: OperationConfig,
-  command: string,
-  summary: string
-): Promise<number> {
-  const remoteShell = `cd ${quoteShell(config.remoteProjectPath)} && ${command}`;
-  const result = config.runningOnRemote
-    ? await runner.run("bash", ["-lc", remoteShell])
-    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(remoteShell)]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  output.stdout += `${summary}: exit ${result.exitCode}\n`;
-  return result.exitCode;
 }
 
 function buildProfileCommand(action: string, profile: ResolvedProfileConfig, container: string): string {

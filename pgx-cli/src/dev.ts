@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { CommandRunner } from "./commands.js";
-import type { RunResult } from "./commands.js";
+import type { StreamingCommandRunner } from "./commands.js";
 import { fullLintShellCommand, targetedLintShellCommand } from "./lint.js";
-import { evaluatePgRegressBaseline, hasPgRegressBaselineInput } from "./pg-regress-baseline.js";
-import type { OperationConfig, OperationOutput } from "./operations.js";
-import { writeUnitSqlFiles } from "./unit-sql.js";
+import { detectCtestFailure, evaluatePgRegressBaseline, hasPgRegressBaselineInput } from "./pg-regress-baseline.js";
+import type { OperationOutput } from "./operations.js";
+import { runManagedRemoteShell } from "./managed-operations.js";
+import type { ManagedOperationConfig } from "./managed-operations.js";
 
 export type WorkflowStep = {
   name: string;
@@ -16,7 +16,7 @@ export type WorkflowStep = {
   summary?: string;
 };
 
-export type DevConfig = OperationConfig & {
+export type DevConfig = ManagedOperationConfig & {
   localProjectPath: string;
   dockerContainer: string;
   buildQueue: string;
@@ -42,7 +42,7 @@ export function formatWorkflowSummary(steps: WorkflowStep[]): string {
 
 export async function runDevCommand(
   args: string[],
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DevConfig
 ): Promise<number> {
@@ -56,11 +56,18 @@ export async function runDevCommand(
     if (sync.exitCode !== 0) return sync.exitCode;
 
     for (const shellCommand of [
-      `cd ${quoteShell(config.remoteProjectPath)} && git status --short --branch`,
+      "git status --short --branch",
       `TS_SOCKET=/tmp/${config.buildQueue}.sock tsp`,
       `TS_SOCKET=/tmp/${config.checkQueue}.sock tsp`
     ]) {
-      const exitCode = await runRemoteShell(runner, output, config, shellCommand);
+      const exitCode = await runRemoteShell({
+        runner,
+        output,
+        config,
+        commandName: `dev-status-${resultsSafeName(shellCommand)}`,
+        shellCommand,
+        requireMutagenProof: false
+      });
       if (exitCode !== 0) return exitCode;
     }
     return 0;
@@ -69,10 +76,24 @@ export async function runDevCommand(
   if (command === "logs") {
     const id = rest[0];
     if (id === "latest") {
-      return runRemoteShell(runner, output, config, `TS_SOCKET=/tmp/${config.buildQueue}.sock tsp -t`);
+      return runRemoteShell({
+        runner,
+        output,
+        config,
+        commandName: "dev-logs-latest",
+        shellCommand: `TS_SOCKET=/tmp/${config.buildQueue}.sock tsp -t`,
+        requireMutagenProof: true
+      });
     }
     if (id && /^[0-9]+$/.test(id)) {
-      return runRemoteShell(runner, output, config, `TS_SOCKET=/tmp/${config.buildQueue}.sock tsp -t ${id}`);
+      return runRemoteShell({
+        runner,
+        output,
+        config,
+        commandName: `dev-logs-${id}`,
+        shellCommand: `TS_SOCKET=/tmp/${config.buildQueue}.sock tsp -t ${id}`,
+        requireMutagenProof: true
+      });
     }
     output.stderr += "Usage: dev logs <latest|job-id>\n";
     return 1;
@@ -160,7 +181,7 @@ export async function runDevCommand(
 }
 
 async function runWorkflow(
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DevConfig,
   steps: Array<{ name: string; command: string[]; logPath?: string; run: () => Promise<number> }>
@@ -183,72 +204,93 @@ async function runWorkflow(
   return 0;
 }
 
-async function runCheckDiff(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
-  return runLocalShell(runner, output, checkDiffScript(config));
+async function runCheckDiff(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  return runRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-check-diff",
+    shellCommand: checkDiffScript({ ...config, runningOnRemote: true }),
+    requireMutagenProof: true
+  });
 }
 
-async function runLintDiff(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
-  return runLocalShell(runner, output, lintDiffScript(config));
+async function runLintDiff(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  return runRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-lint-diff",
+    shellCommand: lintDiffScript({ ...config, runningOnRemote: true }),
+    requireMutagenProof: true
+  });
 }
 
 async function runLintFiles(
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DevConfig,
   files: string[]
 ): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
   const command = dockerBashCommand(config, targetedLintShellCommand("/workspace", files));
-  return runRemoteShell(runner, output, config, command);
-}
-
-async function runFullLint(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
-  return runRemoteShell(
+  return runRemoteShell({
     runner,
     output,
     config,
-    queuedDockerCommand(config, config.buildQueue, fullLintShellCommand("/workspace"))
-  );
+    commandName: "dev-lint-files",
+    shellCommand: command,
+    requireMutagenProof: true
+  });
+}
+
+async function runFullLint(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  return runRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-lint-all",
+    shellCommand: queuedDockerCommand(config, config.buildQueue, fullLintShellCommand("/workspace")),
+    requireMutagenProof: true,
+    artifactPaths: ["/workspace/build-docker-lint"]
+  });
 }
 
 async function runPostgresUnitTests(
-  runner: CommandRunner,
+  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DevConfig,
   suite?: string
 ): Promise<number> {
-  const generated = writeUnitSqlFiles(config.localProjectPath);
-  if (generated.length > 0) output.stdout += `${generated.join("\n")}\n`;
-
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
-
   const testSelector = suite
-    ? `test -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)} && `
-    : "";
+    ? `test -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)} || { echo "unit-sql: suite ${quoteShell(suite)} not generated under /workspace/tests/unit-tests/sql"; exit 1; }`
+    : "true";
   const testRunner = suite
     ? `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit && /usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f /workspace/tests/unit-tests/sql/${quoteShell(`${suite}.sql`)}"`
     : `su postgres -c "/usr/local/pgsql/bin/dropdb --if-exists regression_unit && /usr/local/pgsql/bin/createdb regression_unit" && fail=0; for sql in /workspace/tests/unit-tests/sql/*.sql; do echo "--- $(basename "$sql") ---"; su postgres -c "/usr/local/pgsql/bin/psql -v ON_ERROR_STOP=on -d regression_unit -f $sql" || { fail=1; echo FAIL: $sql; }; done; echo; if [ $fail -eq 0 ]; then echo UTEST-PG_OK; else echo UTEST-PG_FAILED; exit 1; fi`;
   const command = [
     "export PATH=/usr/local/pgsql/bin:$PATH",
-    testSelector + buildAndInstallCommand(),
+    "/workspace/pgx-cli/dist/index.js test unit-sql --root /workspace",
+    testSelector,
+    buildAndInstallCommand(),
     "chmod o+x /workspace/.worktrees 2>/dev/null || true",
     "chmod -R o+rX /workspace/tests/unit-tests",
     testRunner
   ].join(" && ");
-  return runRemoteShell(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
+  return runRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: `dev-test-unit-${suite ?? "focused"}`,
+    shellCommand: `${buildCliCommand()} && ${queuedDockerCommand(config, config.buildQueue, command)}`,
+    requireMutagenProof: true,
+    artifactPaths: [
+      "/workspace/tests/unit-tests/sql",
+      "/workspace/build-artifacts/ptest"
+    ]
+  });
 }
 
-async function runTpchTests(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
+async function runTpchTests(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
   const command = [
     "set -euo pipefail",
     "export PATH=/usr/local/pgsql/bin:$PATH",
@@ -265,19 +307,41 @@ async function runTpchTests(runner: CommandRunner, output: OperationOutput, conf
     "pg_regress_bin=\"$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress\"",
     "(su postgres -c \"$pg_regress_bin --bindir=$(pg_config --bindir) --dlpath=$(pg_config --pkglibdir) --inputdir=/workspace/tests/tpch --outputdir=/workspace/build-artifacts/ptest/extension/tpch --load-extension=pgx_lower init_tpch tpch_no_lower tpch\" 2>&1 | tee /tmp/pg_regress_tpch.out; true)"
   ].join(" && ");
-  const result = await runRemoteShellResult(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
-  return evaluateRemotePgRegressResult(result, output, config);
+  const result = await runManagedRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-test-tpch",
+    shellCommand: queuedDockerCommand(config, config.buildQueue, command),
+    requireMutagenProof: true,
+    postprocess: pgRegressPostprocessor(config),
+    artifactPaths: [
+      "/workspace/build-artifacts/ptest/extension/tpch",
+      "/tmp/pg_regress_tpch.out"
+    ]
+  });
+  return result.workflowExitCode;
 }
 
-async function runCompile(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
-  return runLocalShell(runner, output, compileScript(config));
+async function runCompile(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
+  return runRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-build-compile-debug",
+    shellCommand: compileScript(config),
+    requireMutagenProof: true,
+    metadata: {
+      profile: {
+        name: "debug",
+        buildDir: "/workspace/build-artifacts/ptest"
+      }
+    },
+    artifactPaths: ["/workspace/build-artifacts/ptest"]
+  });
 }
 
-async function runFullTests(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  const flush = await flushMutagen(runner, output, config);
-  if (flush !== 0) return flush;
+async function runFullTests(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
   const command = [
     buildAndInstallCommand(),
     "mkdir -p /tmp/pgx_ir",
@@ -288,61 +352,51 @@ async function runFullTests(runner: CommandRunner, output: OperationOutput, conf
     "cd /workspace/build-artifacts/ptest",
     "(su postgres -c \"ctest -V\" 2>&1 | tee /tmp/ctest.out; true)"
   ].join(" && ");
-  const result = await runRemoteShellResult(runner, output, config, queuedDockerCommand(config, config.buildQueue, command));
-  return evaluateRemotePgRegressResult(result, output, config);
+  const result = await runManagedRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "dev-test-full",
+    shellCommand: `${buildCliCommand()} && ${queuedDockerCommand(config, config.buildQueue, command)}`,
+    requireMutagenProof: true,
+    postprocess: pgRegressPostprocessor(config),
+    metadata: {
+      profile: {
+        name: "debug",
+        buildDir: "/workspace/build-artifacts/ptest"
+      }
+    },
+    artifactPaths: [
+      "/workspace/build-artifacts/ptest",
+      "/workspace/build-artifacts/ptest/Testing/Temporary/LastTest.log",
+      "/tmp/ctest.out",
+      "/tmp/pgx_ir"
+    ]
+  });
+  return result.workflowExitCode;
 }
 
-async function flushMutagen(runner: CommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {
-  if (config.runningOnRemote) {
-    output.stdout += "mutagen: skipped (already on thor)\n";
-    return 0;
-  }
-  const result = await runner.run("mutagen", ["sync", "flush", config.mutagenSession]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
-}
-
-async function runLocalShell(runner: CommandRunner, output: OperationOutput, shellCommand: string): Promise<number> {
-  const result = await runner.run("bash", ["-lc", shellCommand]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result.exitCode;
-}
-
-async function runRemoteShell(
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: DevConfig,
-  shellCommand: string
-): Promise<number> {
-  const result = await runRemoteShellResult(runner, output, config, shellCommand);
-  return result.exitCode;
-}
-
-async function runRemoteShellResult(
-  runner: CommandRunner,
-  output: OperationOutput,
-  config: DevConfig,
-  shellCommand: string
-): Promise<RunResult> {
-  const result = config.runningOnRemote
-    ? await runner.run("bash", ["-lc", `cd ${quoteShell(config.remoteProjectPath)} && ${shellCommand}`])
-    : await runner.run("ssh", [config.sshHost, "bash", "-lc", quoteShell(shellCommand)]);
-  output.stdout += result.stdout;
-  output.stderr += result.stderr;
-  return result;
-}
-
-function evaluateRemotePgRegressResult(result: RunResult, output: OperationOutput, config: DevConfig): number {
-  const raw = result.stdout + result.stderr;
-  if (result.exitCode !== 0 && !hasPgRegressBaselineInput(raw)) {
-    return result.exitCode;
-  }
-  const evaluated = evaluatePgRegressBaseline(raw, readBaselineText(config));
-  output.stdout += evaluated.stdout;
-  output.stderr += evaluated.stderr;
-  return evaluated.exitCode;
+async function runRemoteShell(input: {
+  runner: StreamingCommandRunner;
+  output: OperationOutput;
+  config: DevConfig;
+  commandName: string;
+  shellCommand: string;
+  requireMutagenProof: boolean;
+  metadata?: Record<string, unknown>;
+  artifactPaths?: string[];
+}): Promise<number> {
+  const result = await runManagedRemoteShell({
+    runner: input.runner,
+    output: input.output,
+    config: input.config,
+    commandName: input.commandName,
+    shellCommand: input.shellCommand,
+    requireMutagenProof: input.requireMutagenProof,
+    metadata: input.metadata,
+    artifactPaths: input.artifactPaths
+  });
+  return result.workflowExitCode;
 }
 
 function readBaselineText(config: DevConfig): string {
@@ -390,23 +444,11 @@ function dockerPipeCommand(config: DevConfig, command: string): string {
 }
 
 function compileScript(config: DevConfig): string {
-  const remoteCommand = queuedDockerCommand(config, config.buildQueue, buildAndInstallCommand());
-  return [
-    "set -o pipefail",
-    "log=/tmp/pgx-compile.out",
-    "echo \"compile: full log -> ${log}\"",
-    `ssh ${quoteShell(config.sshHost)} ${quoteShell(remoteCommand)} >"\${log}" 2>&1`,
-    "rc=$?",
-    "if [ \"$rc\" -eq 0 ]; then",
-    "  ninja_targets=$(grep -cE '^\\[[0-9]+/[0-9]+\\]' \"${log}\" 2>/dev/null || true)",
-    "  echo \"BUILD OK - ${ninja_targets} ninja step(s), pgx_lower.so installed\"",
-    "else",
-    "  errs=$(grep -cE 'error:|FAILED:' \"${log}\" 2>/dev/null || true)",
-    "  echo \"BUILD FAILED - ${errs} error line(s), exit $rc. Last 80 lines from ${log}:\"",
-    "  tail -n 80 \"${log}\"",
-    "  exit \"$rc\"",
-    "fi"
-  ].join("\n");
+  return queuedDockerCommand(config, config.buildQueue, buildAndInstallCommand());
+}
+
+function buildCliCommand(): string {
+  return "([ -d pgx-cli/node_modules ] || npm --prefix pgx-cli install) && npm --prefix pgx-cli run build";
 }
 
 function buildAndInstallCommand(): string {
@@ -425,7 +467,12 @@ function queuedDockerCommand(config: DevConfig, queue: string, command: string):
     "tsp -S 1 >/dev/null",
     `id=$(tsp ${dockerBashCommand(config, command)})`,
     `echo "[job $id queued on ${queue}]"`,
-    "tsp -c $id"
+    "status=0",
+    'tsp -w "$id" || status=$?',
+    "cat_status=0",
+    'tsp -c "$id" || cat_status=$?',
+    'if [ "$cat_status" -ne 0 ] && [ "$status" -eq 0 ]; then exit "$cat_status"; fi',
+    'exit "$status"'
   ].join(" && ");
 }
 
@@ -438,4 +485,40 @@ function quoteShell(value: string): string {
     return value;
   }
   return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function pgRegressPostprocessor(config: DevConfig) {
+  return ({ artifact, childExitCode }: { artifact: { combinedPath: string }; childExitCode: number }) => {
+    const raw = readFileSync(artifact.combinedPath, "utf8");
+    const ctestFailure = detectCtestFailure(raw);
+    if (ctestFailure) {
+      return {
+        workflowExitCode: 1,
+        postprocessedFailure: ctestFailure,
+        summary: {
+          ctest: {
+            failed: true
+          }
+        }
+      };
+    }
+    if (childExitCode !== 0 && !hasPgRegressBaselineInput(raw)) {
+      return { workflowExitCode: childExitCode };
+    }
+    const evaluated = evaluatePgRegressBaseline(raw, readBaselineText(config));
+    return {
+      workflowExitCode: evaluated.exitCode,
+      postprocessedFailure: evaluated.exitCode === 0 ? undefined : `${evaluated.stdout}${evaluated.stderr}`.trim(),
+      summary: {
+        pgRegressBaseline: {
+          childExitCode,
+          workflowExitCode: evaluated.exitCode
+        }
+      }
+    };
+  };
+}
+
+function resultsSafeName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "command";
 }

@@ -23,6 +23,11 @@ describe("loadConfig", () => {
     expect(config.dockerContainer).toBe("pgx-lower-dev");
     expect(config.buildQueue).toBe("pgx-build");
     expect(config.checkQueue).toBe("pgx-check");
+    expect(config.sync.flush_timeout_seconds).toBe(45);
+    expect(config.sync.proof.path).toBe(".pgx-cli/sync-probes");
+    expect(config.output.max_lines_per_step).toBe(80);
+    expect(config.output.max_lines_total).toBe(180);
+    expect(config.output.progress).toBe("final-summary");
   });
 
   test("uses pgx-cli config directory", () => {
@@ -64,7 +69,26 @@ describe("loadConfig", () => {
       mutagenSession: "pgx-lower",
       dockerContainer: "pgx-lower-dev",
       buildQueue: "pgx-build",
-      checkQueue: "pgx-check"
+      checkQueue: "pgx-check",
+      sync: {
+        required_for_remote: true,
+        flush_timeout_seconds: 45,
+        proof: {
+          enabled: true,
+          path: ".pgx-cli/sync-probes",
+          required_for: ["build", "test", "lint", "psql", "pg_regress", "bench", "profile", "run"]
+        }
+      },
+      output: {
+        mode: "agent",
+        transcript_dir: ".pgx-cli/runs",
+        max_lines_per_step: 80,
+        max_lines_total: 180,
+        failure_tail_lines: 60,
+        success_tail_lines: 20,
+        progress: "final-summary",
+        full_output_requires_flag: true
+      }
     });
 
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
@@ -77,7 +101,26 @@ describe("loadConfig", () => {
       mutagenSession: "pgx-lower",
       dockerContainer: "pgx-lower-dev",
       buildQueue: "pgx-build",
-      checkQueue: "pgx-check"
+      checkQueue: "pgx-check",
+      sync: {
+        required_for_remote: true,
+        flush_timeout_seconds: 45,
+        proof: {
+          enabled: true,
+          path: ".pgx-cli/sync-probes",
+          required_for: ["build", "test", "lint", "psql", "pg_regress", "bench", "profile", "run"]
+        }
+      },
+      output: {
+        mode: "agent",
+        transcript_dir: ".pgx-cli/runs",
+        max_lines_per_step: 80,
+        max_lines_total: 180,
+        failure_tail_lines: 60,
+        success_tail_lines: 20,
+        progress: "final-summary",
+        full_output_requires_flag: true
+      }
     });
 
     rmSync(dir, { recursive: true, force: true });
@@ -100,7 +143,8 @@ describe("loadConfig", () => {
           build: "project-build",
           check: "project-check"
         },
-        profiles: {}
+        profiles: {},
+        output: { max_lines_total: 25 }
       })
     });
 
@@ -111,6 +155,7 @@ describe("loadConfig", () => {
     expect(config.dockerContainer).toBe("pgx-lower-dev");
     expect(config.buildQueue).toBe("project-build");
     expect(config.checkQueue).toBe("project-check");
+    expect(config.output.max_lines_total).toBe(25);
   });
 
   test("detects when pgx-cli is already running from the remote checkout", () => {

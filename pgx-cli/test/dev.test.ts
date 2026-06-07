@@ -2,21 +2,47 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { CommandRunner, RunResult } from "../src/commands.js";
+import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 import { formatWorkflowSummary, runDevCommand } from "../src/dev.js";
 
-class FakeRunner implements CommandRunner {
+class FakeRunner implements StreamingCommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
   results: RunResult[] = [];
 
   async run(command: string, args: string[]): Promise<RunResult> {
     this.calls.push({ command, args });
+    if (command === "mutagen" && args[1] === "list") {
+      return { exitCode: 0, stdout: healthyJson(), stderr: "" };
+    }
     const rendered = [command, ...args].join(" ");
     if (rendered.includes("pg_regress") || rendered.includes("ctest -V")) {
       return { exitCode: 0, stdout: "1: ok 1 - 1_one_tuple 10 ms\n", stderr: "" };
     }
     return this.results.shift() ?? { exitCode: 0, stdout: "", stderr: "" };
   }
+
+  async runStreaming(command: string, args: string[], options: StreamingRunOptions): Promise<StreamingRunResult> {
+    this.calls.push({ command, args });
+    const rendered = [command, ...args].join(" ");
+    const stdout = command === "mutagen" && args[1] === "list"
+      ? healthyJson()
+      : rendered.includes(".pgx-cli/sync-probes/")
+        ? `probe-${rendered.match(new RegExp("sync-probes/([^/']+)\\.txt"))?.[1] ?? "missing"}\n`
+        : rendered.includes("pg_regress") || rendered.includes("ctest -V")
+          ? "1: ok 1 - 1_one_tuple 10 ms\n"
+          : "ok\n";
+    options.stdout?.write(stdout);
+    return {
+      childExitCode: 0,
+      stdoutSample: { head: stdout, tail: "", truncated: false },
+      stderrSample: { head: "", tail: "", truncated: false },
+      timedOut: false
+    };
+  }
+}
+
+function healthyJson(): string {
+  return JSON.stringify([{ name: "pgx-lower", paused: false, status: "watching", alpha: { connected: true }, beta: { connected: true } }]);
 }
 
 const devConfigBase = {
@@ -25,7 +51,26 @@ const devConfigBase = {
   remoteProjectPath: "/home/zel/repos/pgx-lower",
   dockerContainer: "pgx-lower-dev",
   buildQueue: "pgx-build",
-  checkQueue: "pgx-check"
+  checkQueue: "pgx-check",
+  sync: {
+    required_for_remote: true,
+    flush_timeout_seconds: 45,
+    proof: {
+      enabled: false,
+      path: ".pgx-cli/sync-probes",
+      required_for: ["build", "test", "lint", "psql", "pg_regress", "bench", "profile", "run"]
+    }
+  },
+  output: {
+    mode: "agent",
+    transcript_dir: ".pgx-cli/runs",
+    max_lines_per_step: 20,
+    max_lines_total: 80,
+    failure_tail_lines: 20,
+    success_tail_lines: 10,
+    progress: "final-summary",
+    full_output_requires_flag: true
+  }
 };
 
 function makeDevConfig() {
@@ -73,12 +118,13 @@ describe("dev commands", () => {
     const exitCode = await runDevCommand(["status"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "mutagen", args: ["sync", "list", "pgx-lower"] },
-      { command: "ssh", args: ["comfy", "bash", "-lc", "'cd /home/zel/repos/pgx-lower && git status --short --branch'"] },
-      { command: "ssh", args: ["comfy", "bash", "-lc", "'TS_SOCKET=/tmp/pgx-build.sock tsp'"] },
-      { command: "ssh", args: ["comfy", "bash", "-lc", "'TS_SOCKET=/tmp/pgx-check.sock tsp'"] }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("mutagen sync list pgx-lower");
+    expect(commands).toContain("git status --short --branch");
+    expect(commands).toContain("TS_SOCKET=/tmp/pgx-build.sock tsp");
+    expect(commands).toContain("TS_SOCKET=/tmp/pgx-check.sock tsp");
+    expect(output.stdout).toContain("run id:");
+    expect(output.stdout).toContain("transcript:");
     expect(output.stdout).toContain("dev status");
   });
 
@@ -88,9 +134,9 @@ describe("dev commands", () => {
     const exitCode = await runDevCommand(["logs", "latest"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "ssh", args: ["comfy", "bash", "-lc", "'TS_SOCKET=/tmp/pgx-build.sock tsp -t'"] }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("TS_SOCKET=/tmp/pgx-build.sock tsp -t");
+    expect(output.stdout).toContain("run id:");
   });
 
   test("dev logs id tails a specific build queue job", async () => {
@@ -99,13 +145,13 @@ describe("dev commands", () => {
     const exitCode = await runDevCommand(["logs", "7"], runner, output, makeDevConfig());
 
     expect(exitCode).toBe(0);
-    expect(runner.calls).toEqual([
-      { command: "ssh", args: ["comfy", "bash", "-lc", "'TS_SOCKET=/tmp/pgx-build.sock tsp -t 7'"] }
-    ]);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("TS_SOCKET=/tmp/pgx-build.sock tsp -t 7");
+    expect(output.stdout).toContain("transcript:");
   });
 
   test.each([
-    [["lint", "diff"], "bash", "clang-tidy-diff-20"],
+    [["lint", "diff"], "ssh", "clang-tidy-diff-20"],
     [["lint", "file", "src/pgx-lower/runtime/tuple_access.cpp"], "ssh", "clang-tidy-20"],
     [["lint", "files", "a.cpp", "b.cpp"], "ssh", "clang-tidy-20"],
     [["test", "unit", "type_mapping"], "ssh", "type_mapping.sql"],
@@ -119,6 +165,8 @@ describe("dev commands", () => {
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(runner.calls.some((call) => call.command === command && call.args.join(" ").includes(marker))).toBe(true);
+    expect(output.stdout).toContain("run id:");
+    expect(output.stdout).toContain("transcript:");
     expect(runner.calls.some((call) => call.command === "python3")).toBe(false);
     expect(commands).not.toContain(oldLintScript);
     expect(commands).not.toContain(oldBaselineScript);
@@ -129,7 +177,7 @@ describe("dev commands", () => {
   test("dev lint diff runs directly on thor when invoked from the remote checkout", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const config = { ...makeDevConfig(), localProjectPath: "/home/zel/repos/pgx-lower", runningOnRemote: true };
+    const config = { ...makeDevConfig(), runningOnRemote: true };
     const exitCode = await runDevCommand(["lint", "diff"], runner, output, config);
 
     expect(exitCode).toBe(0);
@@ -163,6 +211,8 @@ describe("dev commands", () => {
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("npm --prefix pgx-cli run build");
+    expect(commands).toContain("/workspace/pgx-cli/dist/index.js test unit-sql --root /workspace");
     expect(commands).toContain("tests/unit-tests/sql");
     expect(commands).not.toContain("tests/regress-unit/sql");
   });
@@ -176,6 +226,7 @@ describe("dev commands", () => {
     expect(extensionCmake).toContain("route-check");
     expect(extensionCmake).toContain("tests/unit-tests/sql");
     expect(extensionCmake).toContain("test unit-sql");
+    expect(extensionCmake).toContain("pgx-cli/dist/index.js");
     expect(extensionCmake).not.toContain("npm --prefix");
     expect(extensionCmake).not.toContain("dist/unit-sql.js");
   });
@@ -204,9 +255,16 @@ describe("dev commands", () => {
     expect(commands).toContain("clang-format-diff-20");
     expect(commands).toContain("clang-tidy-20");
     expect(commands).not.toContain(oldLintScript);
-    expect(commands).toContain("pgx-compile.out");
+    expect(output.stdout).toContain("pgx-cli dev build compile --profile debug");
+    expect(output.stdout).toContain("transcript:");
     expect(commands).toContain("UTEST-PG_OK");
+    expect(commands).toContain("npm --prefix pgx-cli run build");
+    expect(commands).not.toContain("npm --prefix /workspace/pgx-cli run build");
     expect(commands).toContain("ctest -V");
+    const waitIndex = commands.indexOf('tsp -w "$id"');
+    const catIndex = commands.indexOf('tsp -c "$id"');
+    expect(waitIndex).toBeGreaterThan(-1);
+    expect(catIndex).toBeGreaterThan(waitIndex);
     expect(commands).not.toContain(oldBaselineScript);
     expect(commands).not.toContain("just");
   });

@@ -47,16 +47,40 @@ Thor SSH alias: `comfy` (user `zel`; see `~/repos/midgard/docs/infrastructure.md
 ## pgx-cli workflow
 
 Use `pgx-cli` as the default interface for agent-facing pgx-lower workflows:
-build, test, lint, queue, Docker, setup, and repo maintenance.
+build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
 
 - The source package lives at `pgx-cli/`.
 - Run `pgx-cli setup doctor` when onboarding or diagnosing the local/thor setup.
 - Run `pgx-cli setup install` after the in-repo CLI changes or when the global
   command resolves outside this checkout.
+- Raw local inspection commands such as `rg`, `sed`, `find`, `ls`,
+  `git status --short`, `git diff`, `git show`, `nl`, and `wc` are fine.
+- Raw `ssh`, `docker`, `psql`, `pg_regress`, `ctest`, `cmake`, `ninja`, `tsp`,
+  `mutagen`, `just`, and migrated helper scripts are not normal agent workflow.
+  Use typed `pgx-cli` commands first.
 - Use `pgx-cli dev lint diff`, `pgx-cli dev test focused`,
   `pgx-cli dev test tpch`, `pgx-cli dev build compile --profile debug`, and
-  `pgx-cli queue status` before reaching for raw `ssh comfy`, `mutagen`, or
-  `tsp`.
+  `pgx-cli queue status` before reaching for raw workflow commands.
+- Use `pgx-cli run thor -- ...`, `pgx-cli run docker -- ...`, and
+  `pgx-cli run psql ...` when no typed pgx-cli command exists yet.
+- Mutagen-dependent commands fail closed before remote execution when session
+  health, flush, or sync proof fails. If that happens, run `pgx-cli sync status`
+  or `pgx-cli sync doctor`; do not bypass with raw SSH unless the user explicitly
+  asks for emergency manual diagnosis.
+- Managed commands write `.pgx-cli/runs/<run-id>/summary.json`, `stdout.log`,
+  `stderr.log`, `combined.log`, and `sync-preflight.log`. When reporting a
+  build/test failure, include the pgx-cli summary and transcript path rather
+  than pasting long logs.
+- `pgx-cli logs show <run-id>` and `pgx-cli logs latest` retrieve bounded
+  transcript excerpts without rerunning the command; use `--head N`, `--tail N`,
+  or `--full` when you need a different view.
+- Codex CLI must trust the project `.codex/` layer for
+  `.codex/rules/default.rules` to block raw workflow commands. Hook enforcement
+  for opaque `bash -lc` scripts is deferred; simple shell splitting is checked
+  with `codex execpolicy`.
+- Long-running commands such as `pgx-cli dev gate review`, full compile/test
+  gates, and benchmarks get one start note and one final result. Do not narrate
+  ordinary waits or repeated polling.
 - Before adding a new script, just recipe, or direct SSH workflow, first add or
   extend a `pgx-cli` command.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow

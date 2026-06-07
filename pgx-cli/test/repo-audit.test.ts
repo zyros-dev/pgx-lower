@@ -27,8 +27,12 @@ describe("repo tooling audit", () => {
     writeFileSync(join(root, "docker/dev/Dockerfile"), "FROM scratch\n");
     writeFileSync(join(root, "docker/docker-compose.yml"), "services: {}\n");
     writeFileSync(join(root, "pgx-cli.yaml"), "project: {}\n");
+    mkdirSync(join(root, "tests"), { recursive: true });
+    writeFileSync(join(root, "tests/workloads.yaml"), "workloads: []\n");
     writeExecutable(join(root, "pgx-cli/clion-wrappers/container-clang"));
     writeExecutable(join(root, "pgx-cli/dist/index.js"));
+    writeExecutable(join(root, "build-docker-lint/generated.sh"));
+    writeExecutable(join(root, "benchmark/tpch/run.py"));
 
     expect(auditToolSurface(root)).toEqual([]);
   });

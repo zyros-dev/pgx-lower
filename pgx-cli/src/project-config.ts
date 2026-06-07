@@ -26,6 +26,27 @@ export type ProfileConfig = {
   runtime?: RuntimeConfig;
 };
 
+export type SyncConfig = {
+  required_for_remote?: boolean;
+  flush_timeout_seconds?: number;
+  proof?: {
+    enabled?: boolean;
+    path?: string;
+    required_for?: string[];
+  };
+};
+
+export type OutputConfig = {
+  mode?: string;
+  transcript_dir?: string;
+  max_lines_per_step?: number;
+  max_lines_total?: number;
+  failure_tail_lines?: number;
+  success_tail_lines?: number;
+  progress?: string;
+  full_output_requires_flag?: boolean;
+};
+
 export type ResolvedProfileConfig = {
   build: Required<BuildConfig> & { cmake: Required<CmakeConfig> };
   runtime: RuntimeConfig;
@@ -43,14 +64,34 @@ export type ProjectConfig = {
     build: string;
     check: string;
   };
+  sync?: SyncConfig;
+  output?: OutputConfig;
   profiles: Record<string, ProfileConfig>;
   configPath?: string;
   localConfigPath?: string;
 };
 
-const allowedTopLevelKeys = new Set(["project", "remote", "queues", "profiles"]);
+export type ResolvedSyncConfig = Required<Omit<SyncConfig, "proof">> & {
+  proof: Required<NonNullable<SyncConfig["proof"]>>;
+};
+
+export type ResolvedOutputConfig = Required<OutputConfig>;
+
+const allowedTopLevelKeys = new Set(["project", "remote", "queues", "profiles", "sync", "output"]);
 const allowedRemoteKeys = new Set(["host", "path", "mutagen_session", "docker_container"]);
 const allowedQueueKeys = new Set(["build", "check"]);
+const allowedSyncKeys = new Set(["required_for_remote", "flush_timeout_seconds", "proof"]);
+const allowedSyncProofKeys = new Set(["enabled", "path", "required_for"]);
+const allowedOutputKeys = new Set([
+  "mode",
+  "transcript_dir",
+  "max_lines_per_step",
+  "max_lines_total",
+  "failure_tail_lines",
+  "success_tail_lines",
+  "progress",
+  "full_output_requires_flag"
+]);
 const allowedProfileKeys = new Set(["inherits", "build", "runtime"]);
 const allowedBuildKeys = new Set(["build_dir", "cmake"]);
 const allowedCmakeKeys = new Set(["generator", "args"]);
@@ -138,6 +179,15 @@ function validateConfigObject(value: Record<string, unknown>): void {
   }
   if (isObject(value.queues)) {
     validateKeys(value.queues, allowedQueueKeys, "queues");
+  }
+  if (isObject(value.sync)) {
+    validateKeys(value.sync, allowedSyncKeys, "sync");
+    if (isObject(value.sync.proof)) {
+      validateKeys(value.sync.proof, allowedSyncProofKeys, "sync.proof");
+    }
+  }
+  if (isObject(value.output)) {
+    validateKeys(value.output, allowedOutputKeys, "output");
   }
   if (isObject(value.profiles)) {
     for (const [profileName, profile] of Object.entries(value.profiles)) {

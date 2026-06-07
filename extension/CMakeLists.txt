@@ -14,9 +14,12 @@ if(NOT BUILDING_UNIT_TESTS)
         )
     endif()
 
-    find_program(PGX_CLI_EXECUTABLE pgx-cli)
-    if(NOT PGX_CLI_EXECUTABLE)
-        set(PGX_CLI_EXECUTABLE pgx-cli)
+    set(PGX_CLI_EXECUTABLE "${CMAKE_SOURCE_DIR}/pgx-cli/dist/index.js")
+    if(NOT EXISTS "${PGX_CLI_EXECUTABLE}")
+        find_program(PGX_CLI_EXECUTABLE pgx-cli)
+        if(NOT PGX_CLI_EXECUTABLE)
+            set(PGX_CLI_EXECUTABLE pgx-cli)
+        endif()
     endif()
 
     add_postgresql_mixed_extension(

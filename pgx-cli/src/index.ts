@@ -7,10 +7,13 @@ import { NodeCommandRunner } from "./commands.js";
 import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
+import { runLogsCommand } from "./logs.js";
 import { connectMcp } from "./mcp.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
 import { runUnitSqlCommand } from "./unit-sql.js";
+import { runGatewayCommand } from "./run.js";
+import { runCodexPolicyCommand } from "./codex-policy.js";
 import {
   runQueueCommand,
   runSetupCommand,
@@ -80,6 +83,9 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
@@ -92,6 +98,9 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
@@ -105,8 +114,50 @@ try {
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
       dockerContainer: config.dockerContainer,
+      localProjectPath: config.localProjectPath,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "logs") {
+    process.exitCode = await runLogsCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "run") {
+    process.exitCode = await runGatewayCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    process.stdout.write(io.stdout);
+    process.stderr.write(io.stderr);
+    process.exit();
+  }
+
+  if (argv[0] === "codex-policy") {
+    process.exitCode = runCodexPolicyCommand(argv.slice(1), io);
     process.stdout.write(io.stdout);
     process.stderr.write(io.stderr);
     process.exit();
@@ -151,9 +202,12 @@ try {
       mutagenSession: config.mutagenSession,
       sshHost: config.sshHost,
       remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
       profileName,
       profile,
       dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
@@ -170,6 +224,8 @@ try {
       dockerContainer: config.dockerContainer,
       buildQueue: config.buildQueue,
       checkQueue: config.checkQueue,
+      sync: config.sync,
+      output: config.output,
       runningOnRemote: config.runningOnRemote
     });
     process.stdout.write(io.stdout);
