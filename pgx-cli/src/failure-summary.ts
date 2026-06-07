@@ -49,9 +49,13 @@ export function summarizeFailure(input: FailureSummaryInput): FailureSummary | u
     return summary("unit-sql", evidence.map((line) => `unit-sql: ${line}`), input);
   }
 
-  const psql = firstMatching(lines, [/^psql:.*(?:ERROR|WARNING|NOTICE):/i]);
+  const psqlPatterns = [/^psql:.*(?:ERROR|WARNING|NOTICE):/i];
+  if (lowerCommand.includes("psql")) {
+    psqlPatterns.push(/^(?:ERROR|WARNING|NOTICE):/i, /^STATEMENT:/i);
+  }
+  const psql = firstMatching(lines, psqlPatterns);
   if (psql) {
-    return summary("psql", matching(lines, [/^psql:.*(?:ERROR|WARNING|NOTICE):/i]).map((line) => `psql: ${line}`), input);
+    return summary("psql", matching(lines, psqlPatterns).map((line) => `psql: ${line}`), input);
   }
 
   const mutagen = firstMatching(lines, [/paused/i, /alpha disconnected/i, /beta disconnected/i, /conflict/i, /problem/i, /unsafe status/i]);

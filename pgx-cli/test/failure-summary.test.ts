@@ -152,6 +152,18 @@ describe("failure summary", () => {
     expect(summary?.lines.join("\n")).toContain("pg_nullability");
   });
 
+  test("classifies plain psql query diagnostics as psql failures", () => {
+    const summary = summarizeFailure({
+      commandName: "run-psql",
+      stdoutSample: "",
+      stderrSample: "ERROR:  MLIR lowering pipeline failed\nSTATEMENT:  SELECT 1\n",
+      childExitCode: 1
+    });
+
+    expect(summary?.kind).toBe("psql");
+    expect(summary?.lines.join("\n")).toContain("MLIR lowering pipeline failed");
+  });
+
   test("returns undefined when both child and workflow exit cleanly", () => {
     expect(
       summarizeFailure({ commandName: "ok", stdoutSample: "ok\n", stderrSample: "", childExitCode: 0, workflowExitCode: 0 })

@@ -75,9 +75,9 @@ build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
   transcript excerpts without rerunning the command; use `--head N`, `--tail N`,
   or `--full` when you need a different view.
 - Codex CLI must trust the project `.codex/` layer for
-  `.codex/rules/default.rules` to block raw workflow commands. Hook enforcement
-  for opaque `bash -lc` scripts is deferred; simple shell splitting is checked
-  with `codex execpolicy`.
+  `.codex/rules/default.rules` to block raw workflow commands. This Codex
+  version treats `bash -lc` wrappers as opaque to `execpolicy`; hook enforcement
+  for that bypass is deferred.
 - Long-running commands such as `pgx-cli dev gate review`, full compile/test
   gates, and benchmarks get one start note and one final result. Do not narrate
   ordinary waits or repeated polling.

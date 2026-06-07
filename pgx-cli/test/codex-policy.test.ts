@@ -62,11 +62,12 @@ describe("codex policy", () => {
         expect(classifyAgentCommand([`./${script}`], { workflowScripts: scripts }).decision).toBe("forbidden");
       }
 
-      const rules = renderDefaultRules({ root, workflowScripts: scripts });
-      expect(rules).toContain('pattern = ["ssh"]');
-      expect(rules).toContain('match: ssh comfy true');
-      expect(rules).toContain('pattern = ["./scripts/a.sh"]');
-    } finally {
+	      const rules = renderDefaultRules({ root, workflowScripts: scripts });
+	      expect(rules).toContain('pattern = ["ssh"]');
+	      expect(rules).toContain('match: ssh comfy true');
+	      expect(rules).toContain('pattern = ["./scripts/a.sh"]');
+	      expect(rules).not.toMatch(/\n\n$/);
+	    } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });

@@ -62,4 +62,3 @@ prefix_rule(
     decision = "forbidden",
     justification = "Use pgx-cli ... so Mutagen, transcripts, and output limits are enforced.",
 )
-

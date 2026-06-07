@@ -217,12 +217,18 @@ function objectField(value: unknown, ...keys: string[]): Record<string, unknown>
 function hasNonEmptyField(value: unknown, pattern: RegExp): boolean {
   if (!isObject(value)) return false;
   for (const [key, field] of Object.entries(value)) {
-    if (!pattern.test(key)) continue;
-    if (Array.isArray(field) && field.length > 0) return true;
-    if (isObject(field) && Object.keys(field).length > 0) return true;
-    if (typeof field === "string" && field.length > 0) return true;
-    if (typeof field === "number" && field > 0) return true;
+    if (pattern.test(key) && hasValue(field)) return true;
+    if (hasNonEmptyField(field, pattern)) return true;
   }
+  return false;
+}
+
+function hasValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (isObject(value)) return Object.keys(value).length > 0;
+  if (typeof value === "string") return value.length > 0;
+  if (typeof value === "number") return value > 0;
+  if (typeof value === "boolean") return value;
   return false;
 }
 

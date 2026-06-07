@@ -245,7 +245,7 @@ describe("dev commands", () => {
     expect(output.stdout).toContain("Workflow result: ok");
   });
 
-  test("dev gate review runs full review checks", async () => {
+	  test("dev gate review runs full review checks", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
     const exitCode = await runDevCommand(["gate", "review"], runner, output, makeDevConfig());
@@ -265,9 +265,10 @@ describe("dev commands", () => {
     const catIndex = commands.indexOf('tsp -c "$id"');
     expect(waitIndex).toBeGreaterThan(-1);
     expect(catIndex).toBeGreaterThan(waitIndex);
-    expect(commands).not.toContain(oldBaselineScript);
-    expect(commands).not.toContain("just");
-  });
+	    expect(commands).not.toContain(oldBaselineScript);
+	    expect(commands).not.toContain("just");
+	    expect(output.stdout).not.toContain("stdout preview:");
+	  });
 
   test("dev gate review no-bench does not run bench", async () => {
     const runner = new FakeRunner();

@@ -6,6 +6,7 @@ import { detectCtestFailure, evaluatePgRegressBaseline, hasPgRegressBaselineInpu
 import type { OperationOutput } from "./operations.js";
 import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
+import { applyTotalOutputBudget } from "./managed-runner.js";
 
 export type WorkflowStep = {
   name: string;
@@ -124,51 +125,51 @@ export async function runDevCommand(
   if (command === "gate") {
     const [gateCommand] = rest;
     if (gateCommand === "batch") {
-      return runWorkflow(runner, output, config, [
+      return runWorkflow(output, config, "dev-gate-batch", [
         {
           name: "check diff",
           command: ["pgx-cli", "dev", "check", "diff"],
-          run: () => runCheckDiff(runner, output, config)
+          run: (stepOutput) => runCheckDiff(runner, stepOutput, config)
         },
         {
           name: "lint diff",
           command: ["pgx-cli", "dev", "lint", "diff"],
-          run: () => runLintDiff(runner, output, config)
+          run: (stepOutput) => runLintDiff(runner, stepOutput, config)
         },
         {
           name: "utest-pg",
           command: ["pgx-cli", "dev", "test", "focused"],
-          run: () => runPostgresUnitTests(runner, output, config)
+          run: (stepOutput) => runPostgresUnitTests(runner, stepOutput, config)
         }
       ]);
     }
     if (gateCommand === "review") {
-      return runWorkflow(runner, output, config, [
+      return runWorkflow(output, config, "dev-gate-review", [
         {
           name: "check diff",
           command: ["pgx-cli", "dev", "check", "diff"],
-          run: () => runCheckDiff(runner, output, config)
+          run: (stepOutput) => runCheckDiff(runner, stepOutput, config)
         },
         {
           name: "lint",
           command: ["pgx-cli", "dev", "lint", "all"],
-          run: () => runFullLint(runner, output, config)
+          run: (stepOutput) => runFullLint(runner, stepOutput, config)
         },
         {
           name: "compile",
           command: ["pgx-cli", "dev", "build", "compile", "--profile", "debug"],
           logPath: "/tmp/pgx-compile.out",
-          run: () => runCompile(runner, output, config)
+          run: (stepOutput) => runCompile(runner, stepOutput, config)
         },
         {
           name: "utest-pg",
           command: ["pgx-cli", "dev", "test", "focused"],
-          run: () => runPostgresUnitTests(runner, output, config)
+          run: (stepOutput) => runPostgresUnitTests(runner, stepOutput, config)
         },
         {
           name: "test",
           command: ["pgx-cli", "dev", "test", "all"],
-          run: () => runFullTests(runner, output, config)
+          run: (stepOutput) => runFullTests(runner, stepOutput, config)
         }
       ]);
     }
@@ -181,27 +182,51 @@ export async function runDevCommand(
 }
 
 async function runWorkflow(
-  runner: StreamingCommandRunner,
   output: OperationOutput,
   config: DevConfig,
-  steps: Array<{ name: string; command: string[]; logPath?: string; run: () => Promise<number> }>
+  workflowName: string,
+  steps: Array<{ name: string; command: string[]; logPath?: string; run: (stepOutput: OperationOutput) => Promise<number> }>
 ): Promise<number> {
   const results: WorkflowStep[] = [];
+  const parts = [`pgx-cli: starting ${workflowName}\n`];
   for (const step of steps) {
-    const exitCode = await step.run();
+    const stepOutput = { stdout: "", stderr: "" };
+    const exitCode = await step.run(stepOutput);
+    const stepSummary = workflowStepSummary(stepOutput, step.logPath);
     results.push({
       name: step.name,
       command: step.command,
       exitCode,
-      logPath: step.logPath
+      logPath: step.logPath,
+      summary: stepSummary
     });
     if (exitCode !== 0) {
-      output.stdout += formatWorkflowSummary(results);
+      parts.push(renderFailedStepOutput(stepOutput));
+      parts.push(formatWorkflowSummary(results));
+      output.stdout += applyTotalOutputBudget(parts, config.output.max_lines_total).text;
       return exitCode;
     }
   }
-  output.stdout += formatWorkflowSummary(results);
+  parts.push(formatWorkflowSummary(results));
+  output.stdout += applyTotalOutputBudget(parts, config.output.max_lines_total).text;
   return 0;
+}
+
+function workflowStepSummary(output: OperationOutput, logPath?: string): string | undefined {
+  const combined = `${output.stdout}\n${output.stderr}`;
+  const runId = combined.match(/^run id: (.+)$/m)?.[1];
+  const transcript = combined.match(/^transcript: (.+)$/m)?.[1];
+  const details = [
+    ...(logPath ? [`log ${logPath}`] : []),
+    ...(runId ? [`run ${runId}`] : []),
+    ...(transcript ? [`transcript: ${transcript}`] : [])
+  ];
+  return details.length > 0 ? details.join(" - ") : undefined;
+}
+
+function renderFailedStepOutput(output: OperationOutput): string {
+  const combined = `${output.stderr}${output.stdout}`;
+  return combined ? `failed step output:\n${combined}` : "";
 }
 
 async function runCheckDiff(runner: StreamingCommandRunner, output: OperationOutput, config: DevConfig): Promise<number> {

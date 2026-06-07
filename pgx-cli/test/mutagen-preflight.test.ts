@@ -66,8 +66,19 @@ describe("mutagen health parser", () => {
     [JSON.stringify([{ name: "pgx-lower", paused: true, alpha: { connected: true }, beta: { connected: true } }]), "paused"],
     [JSON.stringify([{ name: "pgx-lower", paused: false, alpha: { connected: false }, beta: { connected: true } }]), "alpha disconnected"],
     [JSON.stringify([{ name: "pgx-lower", paused: false, alpha: { connected: true }, beta: { connected: false } }]), "beta disconnected"],
-    [JSON.stringify([{ name: "pgx-lower", paused: false, alpha: { connected: true }, beta: { connected: true }, conflicts: ["x"] }]), "conflict"],
-    [JSON.stringify([{ name: "pgx-lower", paused: false, status: "halted", alpha: { connected: true }, beta: { connected: true } }]), "unsafe status"],
+	    [JSON.stringify([{ name: "pgx-lower", paused: false, alpha: { connected: true }, beta: { connected: true }, conflicts: ["x"] }]), "conflict"],
+	    [
+	      JSON.stringify([
+	        {
+	          name: "pgx-lower",
+	          paused: false,
+	          alpha: { connected: true },
+	          beta: { connected: true, transitionProblems: [{ path: "src/a.cpp", error: "stale" }] }
+	        }
+	      ]),
+	      "problem"
+	    ],
+	    [JSON.stringify([{ name: "pgx-lower", paused: false, status: "halted", alpha: { connected: true }, beta: { connected: true } }]), "unsafe status"],
     [JSON.stringify([{ name: "pgx-lower", paused: false, status: "staging", alpha: { connected: true }, beta: { connected: true } }]), "unsafe status"],
     ["not-json", "malformed"]
   ])("rejects unhealthy state containing %s", (json, reason) => {
