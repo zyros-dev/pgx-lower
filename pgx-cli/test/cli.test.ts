@@ -211,7 +211,9 @@ describe("runCli", () => {
     expect(io.stdout).toContain("pgx-cli logs errors [--lines N]");
     expect(io.stdout).toContain("pgx-cli logs docker [--lines N]");
     expect(io.stdout).toContain("pgx-cli logs file <path> [--lines N]");
-    expect(io.stdout).toContain("pgx-cli rg [--lines N] [--glob G] <pattern> [path...]");
+    expect(io.stdout).toContain("pgx-cli logs inspect <errors|docker|latest|file <path>> [--tail N]");
+    expect(io.stdout).toContain("pgx-cli rg [--source] [--lines N] [--glob G] <pattern> [path...]");
+    expect(io.stdout).toContain("pgx-cli ir inspect latest [--head N|--tail N|--pattern P]");
     expect(io.stdout).toContain("pgx-cli agent evidence init --claim id:text");
     expect(io.stdout).toContain("pgx-cli agent evidence check");
     expect(io.stdout).toContain("tunnel");

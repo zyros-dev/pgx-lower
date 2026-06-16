@@ -9,6 +9,7 @@ import { runDevBuildCommand } from "./dev-build.js";
 import { runDevCommand } from "./dev.js";
 import { runDockerCommand } from "./docker.js";
 import { runLogsCommand } from "./logs.js";
+import { runIrCommand } from "./ir.js";
 import { connectMcp } from "./mcp.js";
 import { renderBufferedOutput } from "./output.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
@@ -136,6 +137,20 @@ try {
       remoteProjectPath: config.remoteProjectPath,
       localProjectPath: config.localProjectPath,
       dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    flushIo();
+    process.exit();
+  }
+
+  if (argv[0] === "ir") {
+    process.exitCode = await runIrCommand(argv.slice(1), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
       sync: config.sync,
       output: config.output,
       runningOnRemote: config.runningOnRemote

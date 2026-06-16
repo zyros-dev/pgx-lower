@@ -26,6 +26,9 @@ export async function runLogsCommand(
   config: LogsConfig
 ): Promise<number> {
   const [command, idOrFlag, maybeValue] = args;
+  if (command === "inspect") {
+    return inspectLogs(args.slice(1), runner, output, config);
+  }
   if (command === "show" && idOrFlag) {
     return showRun(idOrFlag, args.slice(2), output, config);
   }
@@ -41,7 +44,7 @@ export async function runLogsCommand(
   if ((command === "errors" || command === "docker" || command === "file") && isRemoteLogsConfig(config)) {
     const parsed = parseRemoteLogArgs(args);
     if (!parsed) {
-      output.stderr += "Usage: logs <show <run-id>|latest|errors|docker|file <path>> [--head N|--tail N|--lines N|--full]\n";
+      output.stderr += logsUsage();
       return 1;
     }
     const shellCommand = parsed.kind === "errors"
@@ -61,7 +64,29 @@ export async function runLogsCommand(
     return result.workflowExitCode;
   }
 
-  output.stderr += "Usage: logs <show <run-id>|latest|errors|docker|file <path>> [--head N|--tail N|--lines N|--full]\n";
+  output.stderr += logsUsage();
+  return 1;
+}
+
+async function inspectLogs(
+  args: string[],
+  runner: ManagedOperationRunner,
+  output: OperationOutput,
+  config: LogsConfig
+): Promise<number> {
+  const [target] = args;
+  if (target === "latest") {
+    const latest = latestRunId(config);
+    if (!latest) {
+      output.stderr += "logs inspect latest: no run artifacts found\n";
+      return 1;
+    }
+    return showRun(latest, args.slice(1), output, config);
+  }
+  if ((target === "errors" || target === "docker" || target === "file") && isRemoteLogsConfig(config)) {
+    return runLogsCommand(args, runner, output, config);
+  }
+  output.stderr += logsUsage();
   return 1;
 }
 
@@ -88,6 +113,10 @@ function showRun(runId: string, args: string[], output: OperationOutput, config:
   output.stdout += `transcript: ${combinedPath}\n`;
   output.stdout += excerpt.endsWith("\n") ? excerpt : `${excerpt}\n`;
   return 0;
+}
+
+function logsUsage(): string {
+  return "Usage: logs <show <run-id>|latest|errors|docker|file <path>|inspect <errors|docker|latest|file <path>>> [--head N|--tail N|--lines N|--full]\n";
 }
 
 function latestRunId(config: LogsConfig): string | undefined {

@@ -13,9 +13,20 @@ type ParsedArgs = {
   pattern: string;
   paths: string[];
   globs: string[];
+  full: boolean;
 };
 
 const defaultLines = 50;
+const maxSafeLines = 500;
+const defaultExcludeGlobs = [
+  "!build-artifacts/**",
+  "!build-docker-*/**",
+  "!node_modules/**",
+  "!pgx-cli/dist/**",
+  "!.pgx-cli/runs/**",
+  "!/tmp/pgx_ir/**"
+];
+const sourceRoots = ["src", "include", "tests", "extension", "pgx-cli", "wiki/specs"];
 
 export async function runRgCommand(
   args: string[],
@@ -25,7 +36,15 @@ export async function runRgCommand(
 ): Promise<number> {
   const parsed = parseArgs(args);
   if (!parsed) {
-    output.stderr += "Usage: rg [--lines N|-n N] [--glob G|-g G] <pattern> [path...]\n";
+    output.stderr += "Usage: rg [--source] [--lines N|-n N] [--glob G|-g G] [--full] <pattern> [path...]\n";
+    return 1;
+  }
+  if (parsed.paths.some(isPgxIrPath)) {
+    output.stderr += "rg: /tmp/pgx_ir contains generated IR; use pgx-cli ir inspect latest|<path> [--pattern P|--head N|--tail N]\n";
+    return 1;
+  }
+  if (!parsed.full && parsed.lines > maxSafeLines) {
+    output.stderr += `rg: --lines ${parsed.lines} exceeds safe maximum ${maxSafeLines}; use --full to override\n`;
     return 1;
   }
 
@@ -34,6 +53,7 @@ export async function runRgCommand(
     "-n",
     "--color",
     "never",
+    ...defaultExcludeGlobs.flatMap((glob) => ["--glob", glob]),
     ...parsed.globs.flatMap((glob) => ["--glob", glob]),
     parsed.pattern,
     ...(parsed.paths.length > 0 ? parsed.paths : ["."])
@@ -59,9 +79,19 @@ function parseArgs(args: string[]): ParsedArgs | undefined {
   let lines = defaultLines;
   const globs: string[] = [];
   const rest: string[] = [];
+  let full = false;
+  let source = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--full") {
+      full = true;
+      continue;
+    }
+    if (arg === "--source") {
+      source = true;
+      continue;
+    }
     if (arg === "--lines" || arg === "-n") {
       const next = args[index + 1];
       const parsed = Number(next);
@@ -88,7 +118,11 @@ function parseArgs(args: string[]): ParsedArgs | undefined {
   if (!pattern) {
     return undefined;
   }
-  return { lines, pattern, paths, globs };
+  return { lines, pattern, paths: source ? sourceRoots : paths, globs, full };
+}
+
+function isPgxIrPath(path: string): boolean {
+  return path === "/tmp/pgx_ir" || path.startsWith("/tmp/pgx_ir/");
 }
 
 function createTranscriptPath(): string {

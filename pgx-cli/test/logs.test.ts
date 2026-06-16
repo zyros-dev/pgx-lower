@@ -167,6 +167,51 @@ describe("logs command", () => {
     }
   });
 
+  test.each([
+    ["errors", ["inspect", "errors", "--tail", "80"], "tail -n 80 /tmp/pgx_errors.log"],
+    ["docker", ["inspect", "docker", "--tail", "80"], "docker logs --tail 80 pgx-lower-dev"],
+    ["file", ["inspect", "file", "/tmp/path with spaces.log", "--tail", "80"], "tail -n 80"]
+  ])("logs inspect %s uses bounded remote commands", async (_name, args, expectedCommand) => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-logs-inspect-"));
+    try {
+      const runner = new RemoteLogsRunner();
+      const output = { stdout: "", stderr: "" };
+
+      const exitCode = await runLogsCommand(args, runner, output, remoteLogsConfig(root));
+
+      expect(exitCode).toBe(0);
+      const command = runner.calls.at(-1)?.args.join(" ") ?? "";
+      expect(command).toContain(expectedCommand);
+      if (args[1] === "file") expect(command).toContain("/tmp/path with spaces.log");
+      expect(command).not.toMatch(/\bcat\b/);
+      expect(output.stdout).toContain("transcript:");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("logs inspect latest aliases the latest bounded local transcript", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-logs-inspect-latest-"));
+    try {
+      const runDir = join(root, ".pgx-cli", "runs", "2026-run");
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, "combined.log"), Array.from({ length: 20 }, (_, index) => `line-${index}`).join("\n"));
+      const output = { stdout: "", stderr: "" };
+
+      const exitCode = await runLogsCommand(["inspect", "latest", "--tail", "4"], noopRunner, output, {
+        localProjectPath: root,
+        output: remoteLogsConfig(root).output
+      });
+
+      expect(exitCode).toBe(0);
+      expect(output.stdout).toContain("run id: 2026-run");
+      expect(output.stdout).toContain("line-19");
+      expect(output.stdout).not.toContain("line-0");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("logs rejects non-positive line counts", async () => {
     const runner = new RemoteLogsRunner();
     const output = { stdout: "", stderr: "" };
