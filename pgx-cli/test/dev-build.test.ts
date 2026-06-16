@@ -1,13 +1,19 @@
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { expect, test } from "vitest";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 import { runDevBuildCommand } from "../src/dev-build.js";
+import { gateFailureStatePath, recordGateFailure } from "../src/gate-memory.js";
 
 class FakeRunner implements StreamingCommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
 
   async run(command: string, args: string[]) {
     this.calls.push({ command, args });
+    if (command === "git" && args.includes("rev-parse")) {
+      return { stdout: "abc123\n", stderr: "", exitCode: 0 };
+    }
     return { stdout: "", stderr: "", exitCode: 0 };
   }
 
@@ -88,4 +94,30 @@ test("dev build configure runs cmake in the configured docker container", async 
   expect(commands).toContain("cmake -S /workspace -B build-artifacts/ptest -G Ninja -DCMAKE_BUILD_TYPE=Debug");
   expect(output.stdout).toContain("run id:");
   expect(output.stdout).toContain("transcript:");
+});
+
+test("dev build compile clears a matching review gate block", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pgx-dev-build-gate-"));
+  mkdirSync(join(root, ".pgx-cli"), { recursive: true });
+  recordGateFailure({
+    root,
+    gate: "review",
+    head: "abc123",
+    stepName: "compile",
+    stepCommand: ["pgx-cli", "dev", "build", "compile", "--profile", "debug"],
+    runId: "run-1"
+  });
+  const runner = new FakeRunner();
+  const output = { stdout: "", stderr: "" };
+
+  const exitCode = await runDevBuildCommand(
+    ["compile", "--profile", "debug"],
+    runner,
+    output,
+    { ...devBuildConfig, localProjectPath: root }
+  );
+
+  expect(exitCode).toBe(0);
+  expect(existsSync(gateFailureStatePath(root))).toBe(false);
+  expect(output.stdout).toContain("focused reproducer passed");
 });

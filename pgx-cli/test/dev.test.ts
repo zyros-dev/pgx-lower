@@ -1,13 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 import { formatWorkflowSummary, runDevCommand } from "../src/dev.js";
+import { gateFailureStatePath, recordGateFailure } from "../src/gate-memory.js";
 
 class FakeRunner implements StreamingCommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
   results: RunResult[] = [];
+  streamingResults: Array<{ match: string; exitCode: number; stdout?: string; stderr?: string }> = [];
 
   async run(command: string, args: string[]): Promise<RunResult> {
     this.calls.push({ command, args });
@@ -42,6 +44,20 @@ class FakeRunner implements StreamingCommandRunner {
   async runStreaming(command: string, args: string[], options: StreamingRunOptions): Promise<StreamingRunResult> {
     this.calls.push({ command, args });
     const rendered = [command, ...args].join(" ");
+    const scriptedIndex = this.streamingResults.findIndex((result) => rendered.includes(result.match));
+    if (scriptedIndex >= 0) {
+      const [scripted] = this.streamingResults.splice(scriptedIndex, 1);
+      const stdout = scripted.stdout ?? "";
+      const stderr = scripted.stderr ?? "";
+      options.stdout?.write(stdout);
+      options.stderr?.write(stderr);
+      return {
+        childExitCode: scripted.exitCode,
+        stdoutSample: sample(stdout),
+        stderrSample: sample(stderr),
+        timedOut: false
+      };
+    }
     const stdout = command === "mutagen" && args[1] === "list"
       ? healthyJson()
       : rendered.includes(".pgx-cli/sync-probes/")
@@ -57,6 +73,10 @@ class FakeRunner implements StreamingCommandRunner {
       timedOut: false
     };
   }
+}
+
+function sample(text: string) {
+  return { head: text, tail: "", truncated: false };
 }
 
 function healthyJson(): string {
@@ -369,6 +389,144 @@ describe("dev commands", () => {
 
     expect(exitCode).toBe(0);
     expect(output.stdout).not.toContain("bench");
+  });
+
+  test("failed review writes gate state", async () => {
+    const runner = new FakeRunner();
+    runner.streamingResults.push({ match: "build-docker-lint", exitCode: 1, stderr: "lint failed\n" });
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, config);
+
+    expect(exitCode).toBe(1);
+    const state = JSON.parse(readFileSync(gateFailureStatePath(config.localProjectPath), "utf8"));
+    expect(state).toMatchObject({
+      gate: "review",
+      head: "abc123",
+      stepName: "lint",
+      focusedCommand: ["pgx-cli", "dev", "lint", "diff"]
+    });
+    expect(state.runId).toEqual(expect.any(String));
+    expect(state.transcript).toEqual(expect.stringContaining(".pgx-cli/runs/"));
+  });
+
+  test.each([
+    {
+      match: "build-docker-lint",
+      stepName: "lint",
+      focusedCommand: ["pgx-cli", "dev", "lint", "diff"]
+    },
+    {
+      match: "cmake --build .",
+      stepName: "compile",
+      focusedCommand: ["pgx-cli", "dev", "build", "compile", "--profile", "debug"],
+      beforeFailure: [{ match: "build-docker-lint", exitCode: 0 }]
+    },
+    {
+      match: "ctest -V",
+      stepName: "test",
+      focusedCommand: ["pgx-cli", "dev", "test", "focused"]
+    },
+    {
+      match: "compare-postgres-internal --workload tpch-correctness",
+      stepName: "compare-postgres",
+      focusedCommand: ["pgx-cli", "test", "compare-postgres", "--workload", "tpch-correctness"]
+    }
+  ])("review $stepName failure records runnable focused command", async ({ match, stepName, focusedCommand, beforeFailure = [] }) => {
+    const runner = new FakeRunner();
+    runner.streamingResults.push(...beforeFailure, { match, exitCode: 1, stderr: `${stepName} failed\n` });
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, config);
+
+    expect(exitCode).toBe(1);
+    const state = JSON.parse(readFileSync(gateFailureStatePath(config.localProjectPath), "utf8"));
+    expect(state).toMatchObject({ stepName, focusedCommand });
+    expect(state.focusedCommand).not.toEqual(["pgx-cli", "dev", "lint", "all"]);
+    expect(state.focusedCommand).not.toEqual(["pgx-cli", "dev", "test", "all"]);
+  });
+
+  test("immediate review rerun without override blocks and prints focused command", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    recordGateFailure({
+      root: config.localProjectPath,
+      gate: "review",
+      head: "abc123",
+      stepName: "lint",
+      stepCommand: ["pgx-cli", "dev", "lint", "diff"],
+      runId: "run-1"
+    });
+
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, config);
+
+    expect(exitCode).toBe(1);
+    expect(output.stderr).toContain("run focused reproducer first");
+    expect(output.stderr).toContain("pgx-cli dev lint diff");
+    expect(output.stderr).not.toContain("pgx-cli dev lint all");
+    expect(runner.calls.some((call) => call.command === "ssh")).toBe(false);
+  });
+
+  test("--rerun-full allows review rerun and prints override note", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    recordGateFailure({
+      root: config.localProjectPath,
+      gate: "review",
+      head: "abc123",
+      stepName: "utest-pg",
+      stepCommand: ["pgx-cli", "dev", "test", "focused"],
+      runId: "run-1"
+    });
+
+    const exitCode = await runDevCommand(["gate", "review", "--rerun-full"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    expect(output.stderr).toContain("full review gate override accepted");
+    expect(runner.calls.some((call) => call.command === "ssh")).toBe(true);
+  });
+
+  test("successful matching non-test command clears review gate block", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    recordGateFailure({
+      root: config.localProjectPath,
+      gate: "review",
+      head: "abc123",
+      stepName: "lint",
+      stepCommand: ["pgx-cli", "dev", "lint", "diff"],
+      runId: "run-1"
+    });
+
+    const exitCode = await runDevCommand(["lint", "diff"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(gateFailureStatePath(config.localProjectPath))).toBe(false);
+    expect(output.stdout).toContain("focused reproducer passed");
+  });
+
+  test("successful focused command clears matching review gate block", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    recordGateFailure({
+      root: config.localProjectPath,
+      gate: "review",
+      head: "abc123",
+      stepName: "utest-pg",
+      stepCommand: ["pgx-cli", "dev", "test", "focused"],
+      runId: "run-1"
+    });
+
+    const exitCode = await runDevCommand(["test", "focused"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(gateFailureStatePath(config.localProjectPath))).toBe(false);
+    expect(output.stdout).toContain("focused reproducer passed");
   });
 
   test("dev gate batch does not run compare-postgres", async () => {

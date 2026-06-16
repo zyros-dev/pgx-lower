@@ -4,6 +4,7 @@ import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
 import type { OperationConfig, OperationOutput } from "./operations.js";
 import type { ResolvedProfileConfig } from "./project-config.js";
+import { satisfyGateFailureState } from "./gate-memory.js";
 
 export type DevBuildConfig = ManagedOperationConfig & {
   profileName?: string;
@@ -48,11 +49,31 @@ export async function runDevBuildCommand(
       },
       artifactPaths: [config.profile.build.build_dir]
     });
+    await clearMatchingGateMemory(["build", ...args], result.workflowExitCode, runner, output, config);
     return result.workflowExitCode;
   }
 
   output.stderr += "Usage: dev build <explain|configure|compile|install|clean|reconfigure> --profile <name>\n";
   return 1;
+}
+
+async function clearMatchingGateMemory(
+  argv: string[],
+  exitCode: number,
+  runner: StreamingCommandRunner,
+  output: OperationOutput,
+  config: DevBuildConfig
+): Promise<void> {
+  if (exitCode !== 0) return;
+  const currentHead = await readCurrentHead(runner, config);
+  const previousFailure = satisfyGateFailureState({ root: config.localProjectPath, currentHead, argv });
+  if (!previousFailure) return;
+  output.stdout += `gate memory: focused reproducer passed; cleared review gate block for ${previousFailure.stepName}\n`;
+}
+
+async function readCurrentHead(runner: StreamingCommandRunner, config: DevBuildConfig): Promise<string> {
+  const result = await runner.run("git", ["-C", config.localProjectPath, "rev-parse", "HEAD"]);
+  return result.exitCode === 0 && result.stdout.trim() ? result.stdout.trim() : "unknown";
 }
 
 function buildProfileCommand(action: string, profile: ResolvedProfileConfig, container: string): string {

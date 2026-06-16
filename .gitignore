@@ -137,6 +137,7 @@ overnight_bench_v2.sh
 # pgx-cli local state and generated artifacts
 /.pgx-cli/runs/
 /.pgx-cli/evidence/
+/.pgx-cli/gate-state/
 /.pgx-cli/sync-probes/
 pgx-cli.local.yaml
 pgx-cli/node_modules/

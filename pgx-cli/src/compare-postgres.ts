@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { StreamingCommandRunner } from "./commands.js";
 import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
+import { satisfyGateFailureState } from "./gate-memory.js";
 import {
   compareResultBlocks,
   parseCompareDiagnostics,
@@ -169,7 +170,27 @@ export async function runComparePostgresCliCommand(
     requireMutagenProof: true,
     artifactPaths: [managedOutputDir(options)]
   });
+  await clearMatchingGateMemory(["test", "compare-postgres", ...args], result.workflowExitCode, runner, io, config);
   return result.workflowExitCode;
+}
+
+async function clearMatchingGateMemory(
+  argv: string[],
+  exitCode: number,
+  runner: StreamingCommandRunner,
+  output: Io,
+  config: ManagedOperationConfig
+): Promise<void> {
+  if (exitCode !== 0) return;
+  const currentHead = await readCurrentHead(runner, config);
+  const previousFailure = satisfyGateFailureState({ root: config.localProjectPath, currentHead, argv });
+  if (!previousFailure) return;
+  output.stdout += `gate memory: focused reproducer passed; cleared review gate block for ${previousFailure.stepName}\n`;
+}
+
+async function readCurrentHead(runner: StreamingCommandRunner, config: ManagedOperationConfig): Promise<string> {
+  const result = await runner.run("git", ["-C", config.localProjectPath, "rev-parse", "HEAD"]);
+  return result.exitCode === 0 && result.stdout.trim() ? result.stdout.trim() : "unknown";
 }
 
 export async function runComparePostgresInternalCommand(

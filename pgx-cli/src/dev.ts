@@ -9,6 +9,13 @@ import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
 import { applyTotalOutputBudget } from "./managed-runner.js";
 import { runDevPreflightCommand } from "./dev-preflight.js";
+import {
+  clearGateFailureState,
+  readGateFailureState,
+  recordGateFailure,
+  satisfyGateFailureState,
+  shouldBlockReviewGate
+} from "./gate-memory.js";
 
 export type WorkflowStep = {
   name: string;
@@ -108,12 +115,20 @@ export async function runDevCommand(
 
   if (command === "lint") {
     const [lintCommand, ...lintArgs] = rest;
-    if (lintCommand === "diff") return runLintDiff(runner, output, config);
+    if (lintCommand === "diff") {
+      const exitCode = await runLintDiff(runner, output, config);
+      await clearMatchingGateMemory(["lint", "diff"], exitCode, runner, output, config);
+      return exitCode;
+    }
     if (lintCommand === "file" && lintArgs.length === 1) {
-      return runLintFiles(runner, output, config, lintArgs);
+      const exitCode = await runLintFiles(runner, output, config, lintArgs);
+      await clearMatchingGateMemory(["lint", "file", ...lintArgs], exitCode, runner, output, config);
+      return exitCode;
     }
     if (lintCommand === "files" && lintArgs.length > 0) {
-      return runLintFiles(runner, output, config, lintArgs);
+      const exitCode = await runLintFiles(runner, output, config, lintArgs);
+      await clearMatchingGateMemory(["lint", "files", ...lintArgs], exitCode, runner, output, config);
+      return exitCode;
     }
     output.stderr += "Usage: dev lint <file <path>|files <paths...>|diff>\n";
     return 1;
@@ -121,23 +136,43 @@ export async function runDevCommand(
 
   if (command === "check") {
     const [checkCommand] = rest;
-    if (checkCommand === "diff") return runCheckDiff(runner, output, config);
+    if (checkCommand === "diff") {
+      const exitCode = await runCheckDiff(runner, output, config);
+      await clearMatchingGateMemory(["check", "diff"], exitCode, runner, output, config);
+      return exitCode;
+    }
     output.stderr += "Usage: dev check diff\n";
     return 1;
   }
 
   if (command === "format") {
     const [formatCommand] = rest;
-    if (formatCommand === "diff") return runFormatDiff(runner, output, config);
+    if (formatCommand === "diff") {
+      const exitCode = await runFormatDiff(runner, output, config);
+      await clearMatchingGateMemory(["format", "diff"], exitCode, runner, output, config);
+      return exitCode;
+    }
     output.stderr += "Usage: dev format diff\n";
     return 1;
   }
 
   if (command === "test") {
     const [testCommand, testArg] = rest;
-    if (testCommand === "unit" && testArg) return runPostgresUnitTests(runner, output, config, testArg);
-    if (testCommand === "tpch") return runTpchTests(runner, output, config);
-    if (testCommand === "focused") return runPostgresUnitTests(runner, output, config);
+    if (testCommand === "unit" && testArg) {
+      const exitCode = await runPostgresUnitTests(runner, output, config, testArg);
+      await clearMatchingGateMemory(["test", "unit", testArg], exitCode, runner, output, config);
+      return exitCode;
+    }
+    if (testCommand === "tpch") {
+      const exitCode = await runTpchTests(runner, output, config);
+      await clearMatchingGateMemory(["test", "tpch"], exitCode, runner, output, config);
+      return exitCode;
+    }
+    if (testCommand === "focused") {
+      const exitCode = await runPostgresUnitTests(runner, output, config);
+      await clearMatchingGateMemory(["test", "focused"], exitCode, runner, output, config);
+      return exitCode;
+    }
     output.stderr += "Usage: dev test <unit <suite>|tpch|focused>\n";
     return 1;
   }
@@ -164,39 +199,78 @@ export async function runDevCommand(
       ]);
     }
     if (gateCommand === "review") {
+      const currentHead = await readCurrentHead(runner, config);
+      const previousFailure = readGateFailureState({ root: config.localProjectPath });
+      const decision = shouldBlockReviewGate({
+        strict: true,
+        currentHead,
+        previousFailure,
+        argv: ["gate", "review", ...rest.slice(1)]
+      });
+      if (decision.stale) {
+        clearGateFailureState({ root: config.localProjectPath });
+        output.stderr += `${decision.message}\n`;
+      } else if (decision.blocked) {
+        output.stderr += `${decision.message}\n`;
+        return 1;
+      } else if (decision.message) {
+        output.stderr += `${decision.message}\n`;
+      }
       return runWorkflow(output, config, "dev-gate-review", [
         {
           name: "check diff",
           command: ["pgx-cli", "dev", "check", "diff"],
+          focusedCommand: ["pgx-cli", "dev", "check", "diff"],
           run: (stepOutput) => runCheckDiff(runner, stepOutput, config)
         },
         {
           name: "lint",
           command: ["pgx-cli", "dev", "lint", "all"],
+          focusedCommand: ["pgx-cli", "dev", "lint", "diff"],
           run: (stepOutput) => runFullLint(runner, stepOutput, config)
         },
         {
           name: "compile",
           command: ["pgx-cli", "dev", "build", "compile", "--profile", "debug"],
+          focusedCommand: ["pgx-cli", "dev", "build", "compile", "--profile", "debug"],
           logPath: "/tmp/pgx-compile.out",
           run: (stepOutput) => runCompile(runner, stepOutput, config)
         },
         {
           name: "utest-pg",
           command: ["pgx-cli", "dev", "test", "focused"],
+          focusedCommand: ["pgx-cli", "dev", "test", "focused"],
           run: (stepOutput) => runPostgresUnitTests(runner, stepOutput, config)
         },
         {
           name: "test",
           command: ["pgx-cli", "dev", "test", "all"],
+          focusedCommand: ["pgx-cli", "dev", "test", "focused"],
           run: (stepOutput) => runFullTests(runner, stepOutput, config)
         },
         {
           name: "compare-postgres",
           command: ["pgx-cli", "test", "compare-postgres", "--workload", "tpch-correctness"],
+          focusedCommand: ["pgx-cli", "test", "compare-postgres", "--workload", "tpch-correctness"],
           run: (stepOutput) => runComparePostgresGate(runner, stepOutput, config)
         }
-      ]);
+      ], {
+        onStepFailure: ({ step, stepOutput }) => {
+          const evidence = workflowStepEvidence(stepOutput);
+          recordGateFailure({
+            root: config.localProjectPath,
+            gate: "review",
+            head: currentHead,
+            stepName: step.name,
+            stepCommand: step.focusedCommand ?? step.command,
+            runId: evidence.runId,
+            transcript: evidence.transcript
+          });
+        },
+        onWorkflowSuccess: () => {
+          clearGateFailureState({ root: config.localProjectPath });
+        }
+      });
     }
     output.stderr += "Usage: dev gate <batch|review> [--no-bench]\n";
     return 1;
@@ -210,7 +284,15 @@ async function runWorkflow(
   output: OperationOutput,
   config: DevConfig,
   workflowName: string,
-  steps: Array<{ name: string; command: string[]; logPath?: string; run: (stepOutput: OperationOutput) => Promise<number> }>
+  steps: Array<WorkflowRuntimeStep>,
+  options: {
+    onStepFailure?: (input: {
+      step: WorkflowRuntimeStep;
+      stepOutput: OperationOutput;
+      exitCode: number;
+    }) => void;
+    onWorkflowSuccess?: () => void;
+  } = {}
 ): Promise<number> {
   const results: WorkflowStep[] = [];
   appendLiveStdout(output, `pgx-cli: starting ${workflowName}\n`);
@@ -227,27 +309,64 @@ async function runWorkflow(
       summary: stepSummary
     });
     if (exitCode !== 0) {
+      options.onStepFailure?.({ step, stepOutput, exitCode });
       parts.push(renderFailedStepOutput(stepOutput));
       parts.push(formatWorkflowSummary(results));
       output.stdout += applyTotalOutputBudget(parts, config.output.max_lines_total).text;
       return exitCode;
     }
   }
+  options.onWorkflowSuccess?.();
   parts.push(formatWorkflowSummary(results));
   output.stdout += applyTotalOutputBudget(parts, config.output.max_lines_total).text;
   return 0;
 }
 
 function workflowStepSummary(output: OperationOutput, logPath?: string): string | undefined {
-  const combined = `${output.stdout}\n${output.stderr}`;
-  const runId = combined.match(/^run id: (.+)$/m)?.[1];
-  const transcript = combined.match(/^transcript: (.+)$/m)?.[1];
+  const { runId, transcript } = workflowStepEvidence(output);
   const details = [
     ...(logPath ? [`log ${logPath}`] : []),
     ...(runId ? [`run ${runId}`] : []),
     ...(transcript ? [`transcript: ${transcript}`] : [])
   ];
   return details.length > 0 ? details.join(" - ") : undefined;
+}
+
+function workflowStepEvidence(output: OperationOutput): { runId?: string; transcript?: string } {
+  const combined = `${output.stdout}\n${output.stderr}`;
+  const runId = combined.match(/^run id: (.+)$/m)?.[1];
+  const transcript = combined.match(/^transcript: (.+)$/m)?.[1];
+  return {
+    ...(runId ? { runId } : {}),
+    ...(transcript ? { transcript } : {})
+  };
+}
+
+type WorkflowRuntimeStep = {
+  name: string;
+  command: string[];
+  focusedCommand?: string[];
+  logPath?: string;
+  run: (stepOutput: OperationOutput) => Promise<number>;
+};
+
+async function clearMatchingGateMemory(
+  argv: string[],
+  exitCode: number,
+  runner: StreamingCommandRunner,
+  output: OperationOutput,
+  config: DevConfig
+): Promise<void> {
+  if (exitCode !== 0) return;
+  const currentHead = await readCurrentHead(runner, config);
+  const previousFailure = satisfyGateFailureState({ root: config.localProjectPath, currentHead, argv });
+  if (!previousFailure) return;
+  output.stdout += `gate memory: focused reproducer passed; cleared review gate block for ${previousFailure.stepName}\n`;
+}
+
+async function readCurrentHead(runner: StreamingCommandRunner, config: DevConfig): Promise<string> {
+  const result = await runner.run("git", ["-C", config.localProjectPath, "rev-parse", "HEAD"]);
+  return result.exitCode === 0 && result.stdout.trim() ? result.stdout.trim() : "unknown";
 }
 
 function renderFailedStepOutput(output: OperationOutput): string {
