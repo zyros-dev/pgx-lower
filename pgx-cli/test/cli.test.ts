@@ -203,6 +203,7 @@ describe("runCli", () => {
     expect(io.stdout).toContain("pgx-cli dev lint diff");
     expect(io.stdout).toContain("pgx-cli dev gate batch");
     expect(io.stdout).toContain("pgx-cli dev gate review");
+    expect(io.stdout).toContain("pgx-cli test compare-postgres --workload <name>");
     expect(io.stdout).toContain("pgx-cli dev build explain --profile <name>");
     expect(io.stdout).toContain("pgx-cli docker status");
     expect(io.stdout).toContain("pgx-cli docker build ptest");

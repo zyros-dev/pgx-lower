@@ -201,6 +201,29 @@ try {
     process.exit();
   }
 
+  if (argv[0] === "test" && argv[1] === "compare-postgres") {
+    const { runComparePostgresCliCommand } = await import("./compare-postgres.js");
+    process.exitCode = await runComparePostgresCliCommand(argv.slice(2), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
+    flushIo();
+    process.exit();
+  }
+
+  if (argv[0] === "test" && argv[1] === "compare-postgres-internal") {
+    const { runComparePostgresInternalCommand } = await import("./compare-postgres.js");
+    process.exitCode = await runComparePostgresInternalCommand(argv.slice(2), runner, io);
+    flushIo();
+    process.exit();
+  }
+
   if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
     process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
     flushIo();

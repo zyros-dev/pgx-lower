@@ -57,6 +57,7 @@ pgx-cli dev gate review
 pgx-cli dev build explain --profile debug
 pgx-cli dev build compile --profile debug
 pgx-cli test route-check --help
+pgx-cli test compare-postgres --workload tpch-correctness
 pgx-cli test unit-sql --root .
 pgx-cli test psql-regression-burndown --help
 pgx-cli docker status
@@ -91,6 +92,9 @@ run the needed thor/Docker/task-spooler steps through managed output and Mutagen
 preflight.
 `pgx-cli test route-check` validates pg_regress route notices against SQL
 directives and writes a route summary without contacting CLion MCP.
+`pgx-cli test compare-postgres --workload tpch-correctness` compares stock
+PostgreSQL rows against pgx-lower rows through the managed thor/dev path and
+writes Markdown/JSON artifacts under `build-artifacts/test-runs/...`.
 `pgx-cli test unit-sql` generates pg_regress SQL wrappers for PGX_TEST_FN C++
 unit tests.
 `pgx-cli test psql-regression-burndown` runs the opt-in upstream PostgreSQL
@@ -224,6 +228,20 @@ pgx-cli test route-check \
 
 Use `--pg-regress -- <pg_regress command...>` to run pg_regress before checking
 route notices.
+
+## Compare-Postgres
+
+```sh
+pgx-cli test compare-postgres --workload tpch-correctness
+```
+
+Use compare-postgres for row-value truth checks against stock PostgreSQL.
+Existing pg_regress `.out` files still catch output shape, route notices, and
+harness regressions. A compare-postgres mismatch is a correctness failure; a
+route-check mismatch is a routing failure; a `.out` mismatch is fixture/log
+evidence until compare-postgres confirms row divergence. File-level workload
+exclusions require reasons in `tests/workloads.yaml`; do not add per-query
+compare flags.
 
 ## PostgreSQL Regression Burndown
 

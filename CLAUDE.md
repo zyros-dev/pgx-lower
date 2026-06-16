@@ -66,6 +66,11 @@ build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
 - Use `pgx-cli dev lint diff`, `pgx-cli dev test focused`,
   `pgx-cli dev test tpch`, `pgx-cli dev build compile --profile debug`, and
   `pgx-cli queue status` before reaching for raw workflow commands.
+- Use `pgx-cli test compare-postgres --workload tpch-correctness` when row
+  values need stock PostgreSQL truth. Existing `.out` files remain regression
+  fixtures for output shape, route notices, and harness behavior; they are not
+  proof that row values are correct. Inspect the Markdown summary and JSON diff,
+  not full raw result output.
 - Use `pgx-cli run thor -- ...`, `pgx-cli run docker -- ...`, and
   `pgx-cli run psql ...` when no typed pgx-cli command exists yet.
 - Mutagen-dependent commands fail closed before remote execution when session
@@ -95,8 +100,9 @@ build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
   large stdout/stderr payload into the conversation, add or extend a `pgx-cli`
   shorthand for that workflow and use the `pgx-cli` form thereafter.
 - Long-running commands such as `pgx-cli dev gate review`, full compile/test
-  gates, and benchmarks get one start note and one final result. Do not narrate
-  ordinary waits or repeated polling.
+  gates, and benchmarks get one start note and one final result. Use a blocking
+  wait with a long timeout instead of repeated polling, and do not narrate
+  ordinary waits.
 - Before adding a new script, just recipe, or direct SSH workflow, first add or
   extend a `pgx-cli` command.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow

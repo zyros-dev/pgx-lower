@@ -33,6 +33,7 @@ function lintShellCommand(workspace: string, options: LintOptions): string {
         )}; exit 2; }`
       ].join(" && ")
     : [
+        cleanWorkspaceCmakeArtifactsCommand(workspace),
         `mkdir -p ${quoteShell(lintDir)}`,
         `cd ${quoteShell(lintDir)}`,
         `[ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ${quoteShell(
@@ -40,6 +41,9 @@ function lintShellCommand(workspace: string, options: LintOptions): string {
         )}`,
         "cmake --build ."
       ].join(" && ");
+  const pgxCliPrelude = options.skipBuild
+    ? []
+    : ["npm --prefix pgx-cli install", "npm --prefix pgx-cli run build"];
   const tidyArgs = [
     `-p ${quoteShell(lintDir)}`,
     "--quiet",
@@ -50,6 +54,7 @@ function lintShellCommand(workspace: string, options: LintOptions): string {
   return [
     "set -o pipefail",
     `cd ${quoteShell(workspace)}`,
+    ...pgxCliPrelude,
     buildBlock,
     `cd ${quoteShell(workspace)}`,
     fileSetup,
@@ -66,6 +71,22 @@ function lintShellCommand(workspace: string, options: LintOptions): string {
 function dockerLintCommand(workspace: string, container: string, shellCommand: string): string {
   void workspace;
   return `docker exec ${quoteShell(container)} bash -lc ${quoteShell(shellCommand)}`;
+}
+
+function cleanWorkspaceCmakeArtifactsCommand(workspace: string): string {
+  return [
+    `rm -rf ${quoteShell(`${workspace}/CMakeFiles`)} ${quoteShell(`${workspace}/include/runtime-defs`)}`,
+    `rm -f ${[
+      "CMakeCache.txt",
+      "build.ninja",
+      ".ninja_deps",
+      ".ninja_log",
+      "tablegen_compile_commands.yml",
+      "CTestTestfile.cmake",
+      "cmake_install.cmake"
+    ].map((name) => quoteShell(`${workspace}/${name}`)).join(" ")}`,
+    `find ${quoteShell(`${workspace}/src/lingodb/mlir`)} \\( -name CMakeFiles -o -name CTestTestfile.cmake -o -name cmake_install.cmake -o -name '*.inc' -o -name '*.inc.d' -o -name '*.o' -o -name '*.a' \\) -exec rm -rf {} +`
+  ].join(" && ");
 }
 
 function quoteShell(value: string): string {

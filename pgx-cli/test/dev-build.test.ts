@@ -80,7 +80,12 @@ test("dev build configure runs cmake in the configured docker container", async 
   const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
   expect(commands).toContain("mutagen sync flush pgx-lower");
   expect(commands).toContain("ssh comfy bash -c");
-  expect(commands).toContain("docker exec pgx-lower-dev cmake -S /workspace -B build-artifacts/ptest -G Ninja -DCMAKE_BUILD_TYPE=Debug");
+  expect(commands).toContain("npm --prefix pgx-cli install && npm --prefix pgx-cli run build");
+  expect(commands.indexOf("npm --prefix pgx-cli install")).toBeLessThan(commands.indexOf("docker exec pgx-lower-dev bash -lc"));
+  expect(commands).toContain("rm -f /workspace/CMakeCache.txt");
+  expect(commands).toContain("CTestTestfile.cmake");
+  expect(commands).toContain("/workspace/src/lingodb/mlir");
+  expect(commands).toContain("cmake -S /workspace -B build-artifacts/ptest -G Ninja -DCMAKE_BUILD_TYPE=Debug");
   expect(output.stdout).toContain("run id:");
   expect(output.stdout).toContain("transcript:");
 });

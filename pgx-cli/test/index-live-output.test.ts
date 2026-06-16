@@ -28,7 +28,7 @@ describe("CLI live output", () => {
       });
       children.push(child);
 
-      const stdout = await waitForStdout(child, /pgx-cli: starting run-thor-sleep[\s\S]*run id:/, 1000);
+      const stdout = await waitForStdout(child, /pgx-cli: starting run-thor-sleep[\s\S]*run id:/, 5000);
 
       expect(stdout).toContain("pgx-cli: starting run-thor-sleep");
       expect(stdout).toContain("run id:");

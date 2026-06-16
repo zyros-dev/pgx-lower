@@ -26,10 +26,7 @@ if(NOT BUILDING_UNIT_TESTS)
 
     set(PGX_CLI_EXECUTABLE "${CMAKE_SOURCE_DIR}/pgx-cli/dist/index.js")
     if(NOT EXISTS "${PGX_CLI_EXECUTABLE}")
-        find_program(PGX_CLI_EXECUTABLE pgx-cli)
-        if(NOT PGX_CLI_EXECUTABLE)
-            set(PGX_CLI_EXECUTABLE pgx-cli)
-        endif()
+        message(FATAL_ERROR "Missing in-repo pgx-cli/dist/index.js; build pgx-cli before configuring CMake")
     endif()
 
     add_postgresql_mixed_extension(
@@ -190,6 +187,22 @@ if(PG_REGRESS)
                 --require-route-directives
     )
     set_tests_properties(pgx_lower_tpch_routes PROPERTIES DEPENDS pgx_lower_tpch_regress)
+
+    add_test(
+        NAME pgx_lower_compare_postgres_tpch
+        COMMAND ${CMAKE_COMMAND}
+                -E
+                env
+                PGX_COMPARE_POSTGRES_INTERNAL=1
+                ${PGX_CLI_EXECUTABLE}
+                test
+                compare-postgres-internal
+                --workload tpch-correctness
+                --root ${CMAKE_SOURCE_DIR}
+                --output-dir ${CMAKE_SOURCE_DIR}/build-artifacts/test-runs/ctest-tpch-correctness/compare-postgres
+                --from-managed-runner
+    )
+    set_tests_properties(pgx_lower_compare_postgres_tpch PROPERTIES DEPENDS pgx_lower_tpch_regress)
 endif()
 
 if(PGX_LOWER_ENABLE_POSTGRES_REGRESS)

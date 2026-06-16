@@ -185,6 +185,11 @@ export async function runDevCommand(
           name: "test",
           command: ["pgx-cli", "dev", "test", "all"],
           run: (stepOutput) => runFullTests(runner, stepOutput, config)
+        },
+        {
+          name: "compare-postgres",
+          command: ["pgx-cli", "test", "compare-postgres", "--workload", "tpch-correctness"],
+          run: (stepOutput) => runComparePostgresGate(runner, stepOutput, config)
         }
       ]);
     }
@@ -351,6 +356,7 @@ async function runTpchTests(runner: StreamingCommandRunner, output: OperationOut
   const command = [
     "set -euo pipefail",
     "export PATH=/usr/local/pgsql/bin:$PATH",
+    cleanWorkspaceCmakeArtifactsCommand(),
     "mkdir -p /workspace/build-artifacts/ptest /workspace/build-artifacts/ptest/extension",
     "cd /workspace/build-artifacts/ptest",
     "([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache /workspace)",
@@ -369,7 +375,7 @@ async function runTpchTests(runner: StreamingCommandRunner, output: OperationOut
     output,
     config,
     commandName: "dev-test-tpch",
-    shellCommand: queuedDockerCommand(config, config.buildQueue, command),
+    shellCommand: `${buildCliCommand()} && ${queuedDockerCommand(config, config.buildQueue, command)}`,
     requireMutagenProof: true,
     postprocess: pgRegressPostprocessor(config),
     artifactPaths: [
@@ -386,7 +392,7 @@ async function runCompile(runner: StreamingCommandRunner, output: OperationOutpu
     output,
     config,
     commandName: "dev-build-compile-debug",
-    shellCommand: compileScript(config),
+    shellCommand: `${buildCliCommand()} && ${compileScript(config)}`,
     requireMutagenProof: true,
     metadata: {
       profile: {
@@ -429,6 +435,31 @@ async function runFullTests(runner: StreamingCommandRunner, output: OperationOut
       "/tmp/ctest.out",
       "/tmp/pgx_ir"
     ]
+  });
+  return result.workflowExitCode;
+}
+
+async function runComparePostgresGate(
+  runner: StreamingCommandRunner,
+  output: OperationOutput,
+  config: DevConfig
+): Promise<number> {
+  const command = [
+    buildAndInstallCommand(),
+    "chmod -R o+rX /workspace",
+    "PGX_COMPARE_POSTGRES_INTERNAL=1 /workspace/pgx-cli/dist/index.js test compare-postgres-internal --workload tpch-correctness --root /workspace --output-dir /workspace/build-artifacts/test-runs/tpch-correctness/compare-postgres --from-managed-runner"
+  ].join(" && ");
+  const result = await runManagedRemoteShell({
+    runner,
+    output,
+    config,
+    commandName: "test-compare-postgres-tpch-correctness",
+    shellCommand: `${buildCliCommand()} && ${queuedDockerCommand(config, config.buildQueue, command)}`,
+    requireMutagenProof: true,
+    metadata: {
+      workload: "tpch-correctness"
+    },
+    artifactPaths: ["/workspace/build-artifacts/test-runs/tpch-correctness/compare-postgres"]
   });
   return result.workflowExitCode;
 }
@@ -518,16 +549,25 @@ function compileScript(config: DevConfig): string {
 }
 
 function buildCliCommand(): string {
-  return "([ -d pgx-cli/node_modules ] || npm --prefix pgx-cli install) && npm --prefix pgx-cli run build";
+  return "npm --prefix pgx-cli install && npm --prefix pgx-cli run build";
 }
 
 function buildAndInstallCommand(): string {
   return [
+    cleanWorkspaceCmakeArtifactsCommand(),
     "mkdir -p /workspace/build-artifacts/ptest",
     "cd /workspace/build-artifacts/ptest",
     "([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache /workspace)",
     "cmake --build .",
     "cmake --install ."
+  ].join(" && ");
+}
+
+function cleanWorkspaceCmakeArtifactsCommand(): string {
+  return [
+    "rm -rf /workspace/CMakeFiles /workspace/include/runtime-defs",
+    "rm -f /workspace/CMakeCache.txt /workspace/build.ninja /workspace/.ninja_deps /workspace/.ninja_log /workspace/tablegen_compile_commands.yml /workspace/CTestTestfile.cmake /workspace/cmake_install.cmake",
+    "find /workspace/src/lingodb/mlir \\( -name CMakeFiles -o -name CTestTestfile.cmake -o -name cmake_install.cmake -o -name '*.inc' -o -name '*.inc.d' -o -name '*.o' -o -name '*.a' \\) -exec rm -rf {} +"
   ].join(" && ");
 }
 

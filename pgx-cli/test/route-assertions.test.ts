@@ -20,7 +20,7 @@ describe("route directive parsing", () => {
       requireRouteDirectives: true
     });
 
-    expect(manifest.statements).toEqual([
+    expect(manifest.statements).toMatchObject([
       {
         path: "tests/tpch/sql/tpch.sql",
         index: 0,

@@ -20,6 +20,13 @@ const blockedCommands = [
 
 const localInspectionCommands = new Set(["rg", "sed", "find", "ls", "pwd", "nl", "wc"]);
 
+const retiredWorkflowScripts = [
+  "benchmark/tpch/aggregate.py",
+  "benchmark/tpch/fxt_to_flamegraph.py",
+  "benchmark/tpch/metrics_collector.py",
+  "benchmark/tpch/run.py"
+];
+
 export function classifyAgentCommand(
   argv: string[],
   options: { root?: string; workflowScripts?: string[] } = {}
@@ -48,11 +55,12 @@ export function classifyAgentCommand(
 }
 
 export function discoverWorkflowScripts(root: string): string[] {
-  return [
+  return [...new Set([
     ...filesIn(join(root, "scripts"), "scripts", (name) => name.endsWith(".sh")),
     ...filesIn(join(root, "tools", "scripts"), "tools/scripts", (name) => name.endsWith(".sh") || name.endsWith(".py")),
-    ...filesIn(join(root, "benchmark"), "benchmark", (name) => name.endsWith(".py"))
-  ].sort();
+    ...filesIn(join(root, "benchmark"), "benchmark", (name) => name.endsWith(".py")),
+    ...retiredWorkflowScripts
+  ])].sort();
 }
 
 export function renderDefaultRules(options: { root?: string; workflowScripts?: string[] } = {}): string {

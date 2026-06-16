@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type { StreamSample } from "./output.js";
 
 export type RunResult = {
@@ -36,22 +37,20 @@ export class NodeCommandRunner implements StreamingCommandRunner {
   async run(command: string, args: string[]): Promise<RunResult> {
     return new Promise((resolve) => {
       const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-      let stdout = "";
-      let stderr = "";
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
 
-      child.stdout.on("data", (chunk) => {
-        const text = chunk.toString();
-        stdout += text;
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout.push(chunk);
       });
-      child.stderr.on("data", (chunk) => {
-        const text = chunk.toString();
-        stderr += text;
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr.push(chunk);
       });
       child.on("error", (error) => {
-        resolve({ exitCode: 1, stdout, stderr: stderr + `${error.message}\n` });
+        resolve({ exitCode: 1, stdout: decodeBuffers(stdout), stderr: `${decodeBuffers(stderr)}${error.message}\n` });
       });
       child.on("close", (code) => {
-        resolve({ exitCode: code ?? 1, stdout, stderr });
+        resolve({ exitCode: code ?? 1, stdout: decodeBuffers(stdout), stderr: decodeBuffers(stderr) });
       });
     });
   }
@@ -118,22 +117,17 @@ class StreamSampler {
   private tail = "";
   private totalBytes = 0;
   private totalLines = 0;
+  private readonly decoder = new StringDecoder("utf8");
+  private decoderEnded = false;
 
   push(chunk: Buffer): void {
-    const text = chunk.toString();
     this.totalBytes += chunk.length;
-    this.totalLines += (text.match(/\n/g) ?? []).length;
-    if (this.head.length < this.maxHeadBytes) {
-      const remaining = this.maxHeadBytes - this.head.length;
-      this.head += text.slice(0, remaining);
-      const leftover = text.slice(remaining);
-      if (leftover) this.pushTail(leftover);
-      return;
-    }
-    this.pushTail(text);
+    const text = this.decoder.write(chunk);
+    this.pushText(text);
   }
 
   sample(): StreamSample {
+    this.flushDecoder();
     const capturedBytes = Buffer.byteLength(this.head) + Buffer.byteLength(this.tail);
     const truncated = this.totalBytes > capturedBytes;
     return {
@@ -143,6 +137,29 @@ class StreamSampler {
       omittedBytes: truncated ? this.totalBytes - capturedBytes : 0,
       omittedLines: truncated ? Math.max(0, this.totalLines - countLines(this.head) - countLines(this.tail)) : 0
     };
+  }
+
+  private flushDecoder(): void {
+    if (this.decoderEnded) {
+      return;
+    }
+    this.decoderEnded = true;
+    this.pushText(this.decoder.end());
+  }
+
+  private pushText(text: string): void {
+    if (!text) {
+      return;
+    }
+    this.totalLines += (text.match(/\n/g) ?? []).length;
+    if (this.head.length < this.maxHeadBytes) {
+      const remaining = this.maxHeadBytes - this.head.length;
+      this.head += text.slice(0, remaining);
+      const leftover = text.slice(remaining);
+      if (leftover) this.pushTail(leftover);
+      return;
+    }
+    this.pushTail(text);
   }
 
   private pushTail(text: string): void {
@@ -156,6 +173,10 @@ class StreamSampler {
       this.tail = this.tail.slice(nextNewline + 1);
     }
   }
+}
+
+function decodeBuffers(buffers: Buffer[]): string {
+  return Buffer.concat(buffers).toString("utf8");
 }
 
 function countLines(text: string): number {

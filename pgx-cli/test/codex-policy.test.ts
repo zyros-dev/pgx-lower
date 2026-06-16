@@ -56,19 +56,28 @@ describe("codex policy", () => {
       writeFileSync(join(root, "benchmark", "tpch", "run.py"), "");
 
       const scripts = discoverWorkflowScripts(root);
-      expect(scripts).toEqual(["benchmark/c.py", "benchmark/tpch/run.py", "scripts/a.sh", "tools/scripts/b.py"]);
+      expect(scripts).toEqual([
+        "benchmark/c.py",
+        "benchmark/tpch/aggregate.py",
+        "benchmark/tpch/fxt_to_flamegraph.py",
+        "benchmark/tpch/metrics_collector.py",
+        "benchmark/tpch/run.py",
+        "scripts/a.sh",
+        "tools/scripts/b.py"
+      ]);
 
       for (const script of scripts) {
         expect(classifyAgentCommand([script], { workflowScripts: scripts }).decision).toBe("forbidden");
         expect(classifyAgentCommand([`./${script}`], { workflowScripts: scripts }).decision).toBe("forbidden");
       }
 
-	      const rules = renderDefaultRules({ root, workflowScripts: scripts });
-	      expect(rules).toContain('pattern = ["ssh"]');
-	      expect(rules).toContain('match: ssh comfy true');
-	      expect(rules).toContain('pattern = ["./scripts/a.sh"]');
-	      expect(rules).not.toMatch(/\n\n$/);
-	    } finally {
+      const rules = renderDefaultRules({ root, workflowScripts: scripts });
+      expect(rules).toContain('pattern = ["ssh"]');
+      expect(rules).toContain('match: ssh comfy true');
+      expect(rules).toContain('pattern = ["benchmark/tpch/aggregate.py"]');
+      expect(rules).toContain('pattern = ["./scripts/a.sh"]');
+      expect(rules).not.toMatch(/\n\n$/);
+    } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });

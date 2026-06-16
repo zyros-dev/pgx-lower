@@ -12,7 +12,7 @@ CREATE TABLE region (
                           r_name          CHAR(25)       NOT NULL,
                           r_comment       VARCHAR(152)   NOT NULL,
                           PRIMARY KEY (r_regionkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE nation (
                           n_nationkey     INTEGER        NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE nation (
                           n_regionkey     INTEGER        NOT NULL,
                           n_comment       VARCHAR(152)   NOT NULL,
                           PRIMARY KEY (n_nationkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE part (
                           p_partkey       INTEGER        NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE part (
                           p_retailprice   DECIMAL(12, 2) NOT NULL,
                           p_comment       VARCHAR(23)    NOT NULL,
                           PRIMARY KEY (p_partkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE supplier (
                           s_suppkey       INTEGER        NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE supplier (
                           s_acctbal       DECIMAL(12, 2) NOT NULL,
                           s_comment       VARCHAR(101)   NOT NULL,
                           PRIMARY KEY (s_suppkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE partsupp (
                           ps_partkey      INTEGER        NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE partsupp (
                           ps_supplycost   DECIMAL(12, 2) NOT NULL,
                           ps_comment      VARCHAR(199)   NOT NULL,
                           PRIMARY KEY (ps_partkey, ps_suppkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE customer (
                           c_custkey       INTEGER        NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE customer (
                           c_mktsegment    CHAR(10)       NOT NULL,
                           c_comment       VARCHAR(117)   NOT NULL,
                           PRIMARY KEY (c_custkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE orders (
                           o_orderkey      INTEGER        NOT NULL,
@@ -78,7 +78,7 @@ CREATE TABLE orders (
                           o_shippriority  INTEGER        NOT NULL,
                           o_comment       VARCHAR(79)    NOT NULL,
                           PRIMARY KEY (o_orderkey)
-);
+) WITH (autovacuum_enabled = false);
 
 CREATE TABLE lineitem (
                           l_orderkey      INTEGER        NOT NULL,
@@ -98,7 +98,7 @@ CREATE TABLE lineitem (
                           l_shipmode      CHAR(10)       NOT NULL,
                           l_comment       VARCHAR(44)    NOT NULL,
                           PRIMARY KEY (l_orderkey, l_linenumber)
-);
+) WITH (autovacuum_enabled = false);
 
 INSERT INTO region(r_regionkey, r_name, r_comment)
 VALUES 
@@ -86958,4 +86958,3 @@ VALUES
        (60000, 271, 53, 4, 29, 33966.83, 0.02, 0.01, 'N', 'O', '1995-07-25', '1995-06-07', '1995-08-17', 'COLLECT COD', 'SHIP', 'ly final ideas boost s'),
        (60000, 585, 16, 5, 31, 46052.98, 0.00, 0.05, 'N', 'O', '1995-08-06', '1995-07-18', '1995-08-19', 'TAKE BACK RETURN', 'TRUCK', 'ly even instr'),
        (60000, 836, 3, 6, 45, 78157.35, 0.04, 0.08, 'N', 'O', '1995-07-23', '1995-07-17', '1995-07-24', 'DELIVER IN PERSON', 'TRUCK', 'ke final packages. carefully final fo');
-

@@ -219,6 +219,18 @@ describe("dev commands", () => {
   });
 
 
+  test("dev gate review builds pgx-cli before full-lint CMake configure in a clean checkout", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, makeDevConfig());
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("npm --prefix pgx-cli install && npm --prefix pgx-cli run build");
+    expect(commands.indexOf("npm --prefix pgx-cli install")).toBeLessThan(commands.indexOf("build-docker-lint"));
+  });
+
+
   test("dev focused unit tests use generated unit-tests path", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
@@ -237,11 +249,18 @@ describe("dev commands", () => {
 
     expect(extensionCmake).toContain("pgx_lower_regress_routes");
     expect(extensionCmake).toContain("pgx_lower_tpch_routes");
+    expect(extensionCmake).toContain("pgx_lower_compare_postgres_tpch");
     expect(extensionCmake).toContain("pgx_lower_regress_unit");
     expect(extensionCmake).toContain("route-check");
+    expect(extensionCmake).toContain("compare-postgres-internal");
+    expect(extensionCmake).toContain("PGX_COMPARE_POSTGRES_INTERNAL=1");
+    expect(extensionCmake).toContain("test-runs/ctest-tpch-correctness/compare-postgres");
     expect(extensionCmake).toContain("tests/unit-tests/sql");
     expect(extensionCmake).toContain("test unit-sql");
     expect(extensionCmake).toContain("pgx-cli/dist/index.js");
+    expect(extensionCmake).toContain("build pgx-cli before configuring CMake");
+    expect(extensionCmake).not.toContain("find_program(PGX_CLI_EXECUTABLE pgx-cli)");
+    expect(extensionCmake).not.toContain("set(PGX_CLI_EXECUTABLE pgx-cli)");
     expect(extensionCmake).not.toContain("npm --prefix");
     expect(extensionCmake).not.toContain("dist/unit-sql.js");
   });
@@ -276,13 +295,16 @@ describe("dev commands", () => {
     expect(commands).toContain("npm --prefix pgx-cli run build");
     expect(commands).not.toContain("npm --prefix /workspace/pgx-cli run build");
     expect(commands).toContain("ctest -V");
+    expect(commands).toContain("compare-postgres-internal --workload tpch-correctness");
+    expect(commands).toContain("PGX_COMPARE_POSTGRES_INTERNAL=1");
+    expect(output.stdout).toContain("pgx-cli test compare-postgres --workload tpch-correctness");
     const waitIndex = commands.indexOf('tsp -w "$id"');
     const catIndex = commands.indexOf('tsp -c "$id"');
     expect(waitIndex).toBeGreaterThan(-1);
     expect(catIndex).toBeGreaterThan(waitIndex);
 	    expect(commands).not.toContain(oldBaselineScript);
-	    expect(commands).not.toContain("just");
-	    expect(output.stdout).not.toContain("stdout preview:");
+    expect(commands).not.toContain("just");
+    expect(output.stdout).not.toContain("stdout preview:");
 	  });
 
   test("dev gate review no-bench does not run bench", async () => {
@@ -292,5 +314,15 @@ describe("dev commands", () => {
 
     expect(exitCode).toBe(0);
     expect(output.stdout).not.toContain("bench");
+  });
+
+  test("dev gate batch does not run compare-postgres", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runDevCommand(["gate", "batch"], runner, output, makeDevConfig());
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).not.toContain("compare-postgres");
   });
 });

@@ -18,21 +18,25 @@ export async function runDockerCommand(
     return runManagedDocker(runner, output, config, "docker-status", `docker ps --format '{{.Names}}' | grep -E '^${quoteRegex(config.dockerContainer)}$'`);
   }
   if (command === "build" && subcommand === "ptest") {
-    return runManagedDocker(runner, output, config, "docker-build-ptest", ptestCommand(config.dockerContainer));
+    return runManagedDocker(runner, output, config, "docker-build-ptest", `${buildCliCommand()} && ${ptestCommand(config.dockerContainer)}`);
   }
   if (command === "build" && subcommand === "release") {
-    return runManagedDocker(runner, output, config, "docker-build-release", releaseCommand(config.dockerContainer));
+    return runManagedDocker(runner, output, config, "docker-build-release", `${buildCliCommand()} && ${releaseCommand(config.dockerContainer)}`);
   }
 
   output.stderr += "Usage: docker <status|build <ptest|release>>\n";
   return 1;
 }
 
+function buildCliCommand(): string {
+  return "npm --prefix pgx-cli install && npm --prefix pgx-cli run build";
+}
+
 function ptestCommand(container: string): string {
   return `docker exec ${quoteShell(container)} bash -lc ${quoteShell(
     [
       "cd /workspace",
-      "rm -f CMakeCache.txt",
+      cleanWorkspaceCmakeArtifactsCommand(),
       "mkdir -p build-artifacts/docker/ptest",
       "cd build-artifacts/docker/ptest",
       "rm -f CMakeCache.txt",
@@ -48,6 +52,7 @@ function releaseCommand(container: string): string {
   return `docker exec ${quoteShell(container)} bash -lc ${quoteShell(
     [
       "cd /workspace",
+      cleanWorkspaceCmakeArtifactsCommand(),
       "rm -rf build-artifacts/docker/ptest-release",
       "mkdir -p build-artifacts/docker/ptest-release",
       "cd build-artifacts/docker/ptest-release",
@@ -56,6 +61,14 @@ function releaseCommand(container: string): string {
       "strip --strip-debug extension/pgx_lower.so"
     ].join(" && ")
   )}`;
+}
+
+function cleanWorkspaceCmakeArtifactsCommand(): string {
+  return [
+    "rm -rf CMakeFiles include/runtime-defs",
+    "rm -f CMakeCache.txt build.ninja .ninja_deps .ninja_log tablegen_compile_commands.yml CTestTestfile.cmake cmake_install.cmake",
+    "find src/lingodb/mlir \\( -name CMakeFiles -o -name CTestTestfile.cmake -o -name cmake_install.cmake -o -name '*.inc' -o -name '*.inc.d' -o -name '*.o' -o -name '*.a' \\) -exec rm -rf {} +"
+  ].join(" && ");
 }
 
 async function runManagedDocker(

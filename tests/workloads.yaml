@@ -17,6 +17,8 @@ workloads:
     sql: tests/tpch/sql
     expected: tests/tpch/expected
     setup: tests/tpch/sql/init_tpch.sql
+    compare_postgres:
+      expected_comparable_count: 44
 
   unit-tests:
     kind: pg-unit-tests

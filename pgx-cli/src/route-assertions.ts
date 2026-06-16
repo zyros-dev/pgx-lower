@@ -1,24 +1,28 @@
-export const validRoutes = ["lower", "fallback", "ignore", "not_asserted"] as const;
-export type RouteExpectation = (typeof validRoutes)[number];
+import {
+  RouteConfigError,
+  isQueryStatement,
+  parseSqlManifest,
+  validateGlobalIds,
+  validRoutes
+} from "./sql-manifest.js";
+import type {
+  RouteExecutionMode,
+  RouteExpectation,
+  SqlManifest,
+  StatementManifestEntry
+} from "./sql-manifest.js";
 
-export type RouteExecutionMode = "stock" | "extension-auto" | "force-fallback" | "force-lower";
-
-export type StatementDirective = {
-  autoShouldRouteTo: RouteExpectation;
-  id: string | undefined;
+export {
+  RouteConfigError,
+  parseSqlManifest,
+  validateGlobalIds,
+  validRoutes
 };
-
-export type StatementManifestEntry = {
-  path: string;
-  index: number;
-  sql: string;
-  autoShouldRouteTo: RouteExpectation;
-  id: string | undefined;
-};
-
-export type SqlManifest = {
-  path: string;
-  statements: StatementManifestEntry[];
+export type {
+  RouteExecutionMode,
+  RouteExpectation,
+  SqlManifest,
+  StatementManifestEntry
 };
 
 export type RouteEvent = {
@@ -44,83 +48,8 @@ export type RouteReport = {
   failures: RouteFailure[];
 };
 
-export class RouteConfigError extends Error {}
-
-const directiveRe = /^\/\*\s*<<pgx-lower-config>>:\s*(.*?)\s*\*\/$/s;
-const keyValueRe = /^([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)$/;
 const routeNoticeRe =
   /^NOTICE:\s+\[PGX-LOWER\] \[ROUTE:NOTICE\] fallback (?<kind>[a-z_]+): (?<message>.*?)(?: at (?<location>.*))?$/;
-
-export function parseSqlManifest(options: {
-  sql: string;
-  path: string;
-  defaultRoute: RouteExpectation;
-  requireRouteDirectives: boolean;
-}): SqlManifest {
-  const statements = splitSqlStatements(options.sql, options.path);
-  let pending: StatementDirective | undefined;
-  let statementIndex = 0;
-  const manifestStatements: StatementManifestEntry[] = [];
-
-  for (const item of statements) {
-    if (item.kind === "directive") {
-      if (pending) {
-        throw new RouteConfigError(`${options.path}: route directive is not attached to a statement`);
-      }
-      pending = parseDirective(item.text, options.path);
-      continue;
-    }
-
-    const sql = item.text.trim();
-    if (!sql) {
-      continue;
-    }
-
-    const query = isQueryStatement(sql);
-    if (options.requireRouteDirectives && query && !pending) {
-      throw new RouteConfigError(`${options.path}: statement ${statementIndex} missing route directive`);
-    }
-
-    const route = pending?.autoShouldRouteTo ?? (isSetupStatement(sql) ? "ignore" : options.defaultRoute);
-    if (options.requireRouteDirectives && query && !pending?.id) {
-      throw new RouteConfigError(`${options.path}: statement ${statementIndex} requires an id`);
-    }
-
-    manifestStatements.push({
-      path: options.path,
-      index: statementIndex,
-      sql,
-      autoShouldRouteTo: route,
-      id: pending?.id
-    });
-    pending = undefined;
-    statementIndex++;
-  }
-
-  if (pending) {
-    throw new RouteConfigError(`${options.path}: route directive is not attached to a following statement`);
-  }
-
-  return { path: options.path, statements: manifestStatements };
-}
-
-export function validateGlobalIds(manifests: readonly SqlManifest[]): void {
-  const seen = new Map<string, StatementManifestEntry>();
-  for (const manifest of manifests) {
-    for (const statement of manifest.statements) {
-      if (!statement.id) {
-        continue;
-      }
-      const existing = seen.get(statement.id);
-      if (existing) {
-        throw new RouteConfigError(
-          `duplicate route directive id ${statement.id}: ${existing.path}:${existing.index} and ${statement.path}:${statement.index}`
-        );
-      }
-      seen.set(statement.id, statement);
-    }
-  }
-}
 
 export function normalizeRouteNotices(outputText: string): string {
   return outputText
@@ -213,285 +142,6 @@ export function writeRouteSummary(report: RouteReport): string {
   }
 
   return `${lines.join("\n")}`;
-}
-
-type SplitItem = { kind: "directive" | "statement"; text: string };
-
-function splitSqlStatements(sql: string, path: string): SplitItem[] {
-  const items: SplitItem[] = [];
-  let current = "";
-  let i = 0;
-
-  while (i < sql.length) {
-    const ch = sql[i];
-    const next = sql[i + 1];
-
-    if (ch === "\\" && sqlPrefixIsOnlyWhitespaceAndComments(current)) {
-      const end = sql.indexOf("\n", i);
-      const statement = (end === -1 ? sql.slice(i) : sql.slice(i, end)).trim();
-      if (statement) {
-        items.push({ kind: "statement", text: statement });
-      }
-      current = "";
-      i = end === -1 ? sql.length : end + 1;
-      continue;
-    }
-
-    if (ch === "'") {
-      const [text, end] = readSingleQuoted(sql, i);
-      current += text;
-      i = end;
-      continue;
-    }
-
-    if (ch === '"') {
-      const [text, end] = readDoubleQuoted(sql, i);
-      current += text;
-      i = end;
-      continue;
-    }
-
-    if (ch === "$") {
-      const dollar = tryReadDollarQuoted(sql, i);
-      if (dollar) {
-        current += dollar.text;
-        i = dollar.end;
-        continue;
-      }
-    }
-
-    if (ch === "-" && next === "-") {
-      const end = sql.indexOf("\n", i + 2);
-      const comment = end === -1 ? sql.slice(i) : sql.slice(i, end + 1);
-      current += comment;
-      i += comment.length;
-      continue;
-    }
-
-    if (ch === "/" && next === "*") {
-      const { text, end } = readBlockComment(sql, i, path);
-      if (text.includes("pgx-lower-config") && !directiveRe.test(text.trim())) {
-        throw new RouteConfigError(`${path}: malformed pgx-lower-config directive`);
-      }
-      const directiveMatch = directiveRe.exec(text.trim());
-      if (directiveMatch) {
-        if (!sqlPrefixIsOnlyWhitespaceAndComments(current)) {
-          throw new RouteConfigError(`${path}: route directive appears in the middle of a statement`);
-        }
-        current = "";
-        items.push({ kind: "directive", text: text.trim() });
-      } else {
-        current += text;
-      }
-      i = end;
-      continue;
-    }
-
-    current += ch;
-    i++;
-
-    if (ch === ";") {
-      const statement = current.trim();
-      if (statement) {
-        items.push({ kind: "statement", text: statement });
-      }
-      current = "";
-    }
-  }
-
-  if (current.trim() && !sqlPrefixIsOnlyWhitespaceAndComments(current)) {
-    items.push({ kind: "statement", text: current.trim() });
-  }
-
-  return items;
-}
-
-function sqlPrefixIsOnlyWhitespaceAndComments(text: string): boolean {
-  let i = 0;
-  while (i < text.length) {
-    if (/\s/.test(text[i] ?? "")) {
-      i++;
-      continue;
-    }
-    if (text[i] === "-" && text[i + 1] === "-") {
-      const end = text.indexOf("\n", i + 2);
-      i = end === -1 ? text.length : end + 1;
-      continue;
-    }
-    if (text[i] === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      if (end === -1) {
-        return false;
-      }
-      i = end + 2;
-      continue;
-    }
-    return false;
-  }
-  return true;
-}
-
-function parseDirective(text: string, path: string): StatementDirective {
-  const match = directiveRe.exec(text);
-  const body = match?.[1];
-  if (body === undefined) {
-    throw new RouteConfigError(`${path}: malformed route directive`);
-  }
-
-  const directive: Partial<StatementDirective> = {};
-  const seen = new Set<string>();
-  for (const token of body.trim().split(/\s+/).filter((item) => item.length > 0)) {
-    const kv = keyValueRe.exec(token);
-    if (!kv) {
-      throw new RouteConfigError(`${path}: malformed route directive token ${token}`);
-    }
-    const key = kv[1];
-    const value = kv[2];
-    if (!key || !value) {
-      throw new RouteConfigError(`${path}: malformed route directive token ${token}`);
-    }
-    if (seen.has(key)) {
-      throw new RouteConfigError(`${path}: duplicate route directive key ${key}`);
-    }
-    seen.add(key);
-
-    if (key === "auto_should_route_to") {
-      if (!isRouteExpectation(value)) {
-        throw new RouteConfigError(`${path}: invalid auto_should_route_to value ${value}`);
-      }
-      directive.autoShouldRouteTo = value;
-    } else if (key === "id") {
-      directive.id = value;
-    } else {
-      throw new RouteConfigError(`${path}: unknown route directive key ${key}`);
-    }
-  }
-
-  if (!directive.autoShouldRouteTo) {
-    throw new RouteConfigError(`${path}: route directive missing auto_should_route_to`);
-  }
-  return { autoShouldRouteTo: directive.autoShouldRouteTo, id: directive.id };
-}
-
-function readSingleQuoted(sql: string, start: number): [string, number] {
-  let i = start + 1;
-  while (i < sql.length) {
-    if (sql[i] === "'" && sql[i + 1] === "'") {
-      i += 2;
-      continue;
-    }
-    if (sql[i] === "'") {
-      return [sql.slice(start, i + 1), i + 1];
-    }
-    i++;
-  }
-  return [sql.slice(start), sql.length];
-}
-
-function readDoubleQuoted(sql: string, start: number): [string, number] {
-  let i = start + 1;
-  while (i < sql.length) {
-    if (sql[i] === '"' && sql[i + 1] === '"') {
-      i += 2;
-      continue;
-    }
-    if (sql[i] === '"') {
-      return [sql.slice(start, i + 1), i + 1];
-    }
-    i++;
-  }
-  return [sql.slice(start), sql.length];
-}
-
-function tryReadDollarQuoted(sql: string, start: number): { text: string; end: number } | undefined {
-  const tag = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u.exec(sql.slice(start))?.[0];
-  if (!tag) {
-    return undefined;
-  }
-  const close = sql.indexOf(tag, start + tag.length);
-  if (close === -1) {
-    return { text: sql.slice(start), end: sql.length };
-  }
-  return { text: sql.slice(start, close + tag.length), end: close + tag.length };
-}
-
-function readBlockComment(sql: string, start: number, path: string): { text: string; end: number } {
-  let depth = 1;
-  let i = start + 2;
-  while (i < sql.length && depth > 0) {
-    if (sql[i] === "/" && sql[i + 1] === "*") {
-      depth++;
-      i += 2;
-      continue;
-    }
-    if (sql[i] === "*" && sql[i + 1] === "/") {
-      depth--;
-      i += 2;
-      continue;
-    }
-    i++;
-  }
-  if (depth !== 0) {
-    throw new RouteConfigError(`${path}: unterminated block comment`);
-  }
-  return { text: sql.slice(start, i), end: i };
-}
-
-function isRouteExpectation(value: string): value is RouteExpectation {
-  return (validRoutes as readonly string[]).includes(value);
-}
-
-function isQueryStatement(sql: string): boolean {
-  const keyword = firstKeyword(sql);
-  return keyword === "select" || keyword === "with";
-}
-
-function isSetupStatement(sql: string): boolean {
-  const keyword = firstKeyword(sql);
-  return keyword === "load" ||
-    keyword === "create" ||
-    keyword === "insert" ||
-    keyword === "update" ||
-    keyword === "delete" ||
-    keyword === "drop" ||
-    keyword === "alter" ||
-    keyword === "set" ||
-    keyword === "reset" ||
-    keyword === "copy" ||
-    keyword === "do" ||
-    keyword.startsWith("\\");
-}
-
-function firstKeyword(sql: string): string {
-  const cleaned = stripLeadingComments(sql);
-  if (cleaned.startsWith("\\")) {
-    return "\\";
-  }
-  return /^[A-Za-z_][A-Za-z0-9_]*/u.exec(cleaned)?.[0]?.toLowerCase() ?? "";
-}
-
-function stripLeadingComments(sql: string): string {
-  let i = 0;
-  while (i < sql.length) {
-    while (/\s/.test(sql[i] ?? "")) {
-      i++;
-    }
-    if (sql[i] === "-" && sql[i + 1] === "-") {
-      const end = sql.indexOf("\n", i + 2);
-      i = end === -1 ? sql.length : end + 1;
-      continue;
-    }
-    if (sql[i] === "/" && sql[i + 1] === "*") {
-      const end = sql.indexOf("*/", i + 2);
-      if (end === -1) {
-        return sql.slice(i);
-      }
-      i = end + 2;
-      continue;
-    }
-    return sql.slice(i);
-  }
-  return "";
 }
 
 function extractRouteEvents(manifest: SqlManifest, output: string): RouteEvent[] {

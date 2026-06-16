@@ -54,6 +54,11 @@ cmake-build-*/
 _deps/
 
 # CMake generated files anywhere (prevents in-source builds)
+/CMakeCache.txt
+/build.ninja
+/.ninja_deps
+/.ninja_log
+/tablegen_compile_commands.yml
 **/CMakeFiles/
 **/cmake_install.cmake
 **/CTestTestfile.cmake
@@ -74,6 +79,10 @@ tests/psql-regression/logs/
 # TableGen generated files (MLIR)
 *.cpp.inc
 *.h.inc
+src/lingodb/mlir/**/*.inc
+
+# Runtime header generator output from accidental in-source builds
+include/runtime-defs/*.h
 
 runtime-header-tool
 # CLion configuration - allow shared project files, ignore personal workspace

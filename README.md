@@ -79,6 +79,18 @@ pgx-cli dev gate batch
 The pre-push hook runs `pgx-cli dev gate batch` so normal pushes stay quick.
 Run `pgx-cli dev gate review` explicitly before handing a PR to a human.
 
+For row-value correctness, use the stock PostgreSQL oracle gate:
+
+```bash
+pgx-cli test compare-postgres --workload tpch-correctness
+```
+
+This managed command runs through thor/dev infrastructure from a local checkout
+and compares pgx-lower result rows against stock PostgreSQL. Existing `.out`
+files remain fixture, route-notice, and harness checks; inspect the
+compare-postgres Markdown summary and JSON diff rather than pasting raw result
+sets into chat.
+
 ### IDE setup (compile_commands.json)
 
 The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from

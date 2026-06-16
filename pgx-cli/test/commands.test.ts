@@ -23,6 +23,29 @@ describe("command runner", () => {
     expect(result).toEqual({ exitCode: 0, stdout: "hello\n", stderr: "" });
   });
 
+  test("decodes buffered stdout after split UTF-8 chunks are complete", async () => {
+    const runner = new NodeCommandRunner();
+
+    const result = await runner.run(process.execPath, [
+      "-e",
+      "process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 10);"
+    ]);
+
+    expect(result).toEqual({ exitCode: 0, stdout: "é", stderr: "" });
+  });
+
+  test("decodes streaming samples after split UTF-8 chunks are complete", async () => {
+    const runner = new NodeCommandRunner();
+
+    const result = await runner.runStreaming(process.execPath, [
+      "-e",
+      "process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 10);"
+    ], {});
+
+    expect(result.childExitCode).toBe(0);
+    expect(result.stdoutSample.head).toBe("é");
+  });
+
   test("streams stdout and stderr before process close", async () => {
     const runner = new NodeCommandRunner();
     const stdout = new RecordingWritable();

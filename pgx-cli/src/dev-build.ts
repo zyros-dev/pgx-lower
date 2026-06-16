@@ -57,12 +57,25 @@ export async function runDevBuildCommand(
 
 function buildProfileCommand(action: string, profile: ResolvedProfileConfig, container: string): string {
   const configure = renderConfigureCommand(profile, "/workspace").map(quoteShell).join(" ");
-  if (action === "configure") return `docker exec ${quoteShell(container)} ${configure}`;
+  const configureShell = `${cleanWorkspaceCmakeArtifactsCommand()} && ${configure}`;
+  if (action === "configure") return `${buildCliCommand()} && docker exec ${quoteShell(container)} bash -lc ${quoteShell(configureShell)}`;
   if (action === "compile") return `docker exec ${quoteShell(container)} cmake --build ${quoteShell(profile.build.build_dir)}`;
   if (action === "install") return `docker exec ${quoteShell(container)} cmake --install ${quoteShell(profile.build.build_dir)}`;
   if (action === "clean") return `docker exec ${quoteShell(container)} cmake --build ${quoteShell(profile.build.build_dir)} --target clean`;
-  if (action === "reconfigure") return `docker exec ${quoteShell(container)} ${configure}`;
+  if (action === "reconfigure") return `${buildCliCommand()} && docker exec ${quoteShell(container)} bash -lc ${quoteShell(configureShell)}`;
   throw new Error(`unknown build profile action: ${action}`);
+}
+
+function buildCliCommand(): string {
+  return "npm --prefix pgx-cli install && npm --prefix pgx-cli run build";
+}
+
+function cleanWorkspaceCmakeArtifactsCommand(): string {
+  return [
+    "rm -rf /workspace/CMakeFiles /workspace/include/runtime-defs",
+    "rm -f /workspace/CMakeCache.txt /workspace/build.ninja /workspace/.ninja_deps /workspace/.ninja_log /workspace/tablegen_compile_commands.yml /workspace/CTestTestfile.cmake /workspace/cmake_install.cmake",
+    "find /workspace/src/lingodb/mlir \\( -name CMakeFiles -o -name CTestTestfile.cmake -o -name cmake_install.cmake -o -name '*.inc' -o -name '*.inc.d' -o -name '*.o' -o -name '*.a' \\) -exec rm -rf {} +"
+  ].join(" && ");
 }
 
 function quoteShell(value: string): string {

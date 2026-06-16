@@ -74,6 +74,7 @@ describe("docker commands", () => {
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("npm --prefix pgx-cli install && npm --prefix pgx-cli run build");
     expect(commands).toContain("build-artifacts/docker/ptest");
     expect(commands).toContain("ctest --output-on-failure");
     expect(commands).not.toContain(oldPtestWrapper);
@@ -86,6 +87,7 @@ describe("docker commands", () => {
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("npm --prefix pgx-cli install && npm --prefix pgx-cli run build");
     expect(commands).toContain("RelWithDebInfo");
     expect(commands).toContain("strip --strip-debug");
     expect(commands).not.toContain(oldReleaseWrapper);
