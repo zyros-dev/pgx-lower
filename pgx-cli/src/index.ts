@@ -175,7 +175,7 @@ try {
 
   if (argv[0] === "codex-policy") {
     process.exitCode = runCodexPolicyCommand(argv.slice(1), io);
-    flushIo();
+    flushIo({ truncate: argv[1] !== "rules" });
     process.exit();
   }
 
@@ -301,13 +301,13 @@ try {
   process.exitCode = 1;
 }
 
-function flushIo(): void {
+function flushIo(options: { truncate?: boolean } = {}): void {
   const stdoutStart = io.flushedStdoutLength ?? 0;
   const stderrStart = io.flushedStderrLength ?? 0;
   const rendered = renderBufferedOutput({
     stdout: io.stdout.slice(stdoutStart),
     stderr: io.stderr.slice(stderrStart)
-  });
+  }, options);
   if (rendered.stdout) process.stdout.write(rendered.stdout);
   if (rendered.stderr) process.stderr.write(rendered.stderr);
   io.flushedStdoutLength = io.stdout.length;

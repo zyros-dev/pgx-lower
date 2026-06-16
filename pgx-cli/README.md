@@ -119,8 +119,12 @@ Mutagen-dependent commands fail closed before remote execution when the session
 is missing, paused, disconnected, conflicted, stale, or the sync proof fails.
 Use `pgx-cli sync status` and `pgx-cli sync doctor` to diagnose those failures.
 Project-local Codex rules live in `.codex/rules/default.rules`; Codex CLI must
-trust the project `.codex/` layer for raw workflow command blocks to load. Hook
-enforcement for opaque `bash -lc` scripts is intentionally deferred.
+trust the project `.codex/` layer for raw workflow command prefix blocks to
+load. `pgx-cli codex-policy check` also inspects common
+`bash -lc`/`zsh -c`/`sh -c` wrappers for raw workflow commands, large log/IR
+reads, and unsafe `gh pr comment --body` backticks. Automatic external Codex
+hook wiring beyond the project rules and classifier is still outside this
+repo-local workflow.
 
 `pgx-cli request feature ...` and `pgx-cli request complaint ...` write timestamped Markdown notes to `~/.config/pgx-cli/requests/`. They are local inbox commands for agents to lodge friction quickly and continue with the current task.
 

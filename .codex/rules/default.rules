@@ -3,6 +3,20 @@
 # match: docker ps
 # match: psql -c 'SELECT 1'
 
+# ## Agent Efficiency Rules
+#
+# - Use `pgx-cli` for high-risk commands: thor, Docker, PostgreSQL, CTest, CMake,
+#   Ninja, task-spooler, Mutagen, benchmarks, and migrated helper scripts.
+# - Do not raw-cat large logs or IR dumps. Use `pgx-cli logs ...` or
+#   `pgx-cli ir inspect ...`.
+# - After a full gate failure, run the focused reproducer before rerunning the
+#   full gate.
+# - Before claiming PR-ready, run the evidence/readiness checks required by the
+#   active spec.
+# - Edit local files and run compute on thor. Do not edit source directly in the
+#   thor checkout.
+# - Treat generated and ignored artifacts as execution state that must be fresh.
+
 prefix_rule(
     pattern = ["ssh"],
     decision = "forbidden",

@@ -9,6 +9,20 @@
 
 Comments: would a human write this? If a comment restates what well-named code says, delete it. File-header banners are noise unless they encode a non-obvious WHY. In tests, the test names ARE the documentation.
 
+## Agent Efficiency Rules
+
+- Use `pgx-cli` for high-risk commands: thor, Docker, PostgreSQL, CTest, CMake,
+  Ninja, task-spooler, Mutagen, benchmarks, and migrated helper scripts.
+- Do not raw-cat large logs or IR dumps. Use `pgx-cli logs ...` or
+  `pgx-cli ir inspect ...`.
+- After a full gate failure, run the focused reproducer before rerunning the
+  full gate.
+- Before claiming PR-ready, run the evidence/readiness checks required by the
+  active spec.
+- Edit local files and run compute on thor. Do not edit source directly in the
+  thor checkout.
+- Treat generated and ignored artifacts as execution state that must be fresh.
+
 ## Code & comment standard
 
 - **clang-tidy is the floor, not the ceiling.** `pgx-cli dev gate review` must
@@ -85,9 +99,12 @@ build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
   transcript excerpts without rerunning the command; use `--head N`, `--tail N`,
   or `--full` when you need a different view.
 - Codex CLI must trust the project `.codex/` layer for
-  `.codex/rules/default.rules` to block raw workflow commands. This Codex
-  version treats `bash -lc` wrappers as opaque to `execpolicy`; hook enforcement
-  for that bypass is deferred.
+  `.codex/rules/default.rules` to block raw workflow command prefixes. The
+  `pgx-cli codex-policy check` classifier also inspects common
+  `bash -lc`/`zsh -c`/`sh -c` wrappers for raw workflow commands, large
+  log/IR reads, and unsafe `gh pr comment --body` backticks. Automatic external
+  Codex hook wiring beyond the project rules and classifier is still outside
+  this repo-local workflow.
 - Use `pgx-cli logs errors --lines 50` instead of raw
   `ssh comfy "docker exec ... tail ... /tmp/pgx_errors.log"` when inspecting
   PostgreSQL/backend error logs.

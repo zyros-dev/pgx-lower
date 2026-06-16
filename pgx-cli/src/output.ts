@@ -18,6 +18,7 @@ export type BufferedOutput = {
 type RenderOptions = {
   maxLines?: number;
   transcriptPath?: string;
+  truncate?: boolean;
 };
 
 const defaultMaxLines = 50;
@@ -39,6 +40,9 @@ export function renderBufferedOutput(
   output: BufferedOutput,
   options: RenderOptions = {}
 ): BufferedOutput {
+  if (options.truncate === false) {
+    return output;
+  }
   const maxLines = options.maxLines ?? defaultMaxLines;
   const stdout = limitStream(output.stdout, maxLines);
   const stderr = limitStream(output.stderr, maxLines);

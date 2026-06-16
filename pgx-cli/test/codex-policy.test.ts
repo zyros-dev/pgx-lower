@@ -29,7 +29,25 @@ describe("codex policy", () => {
   });
 
   test.each([
+    [["bash", "-lc", "ssh comfy true"], "pgx-cli run thor -- ..."],
+    [["zsh", "-c", "docker exec pgx-lower-dev true"], "pgx-cli run docker -- ..."],
+    [["sh", "-c", "psql -c 'SELECT 1'"], "pgx-cli run psql ..."],
+    [["bash", "-lc", "cat /tmp/pgx_errors.log"], "pgx-cli logs errors"],
+    [["bash", "-lc", "cat /tmp/pgx_ir/latest.mlir"], "pgx-cli ir inspect"],
+    [["bash", "-lc", "find /tmp/pgx_ir -type f -print"], "pgx-cli ir inspect"],
+    [["cat", "/tmp/pgx_errors.log"], "pgx-cli logs errors"],
+    [["tail", "-n", "200", "/tmp/pgx_ir/latest.mlir"], "pgx-cli ir inspect"],
+    [["gh", "pr", "comment", "1", "--body", "`pgx-cli dev gate review`"], "gh pr comment --body-file"]
+  ])("forbids opaque unsafe wrapper %#", (argv, replacement) => {
+    expect(classifyAgentCommand(argv)).toMatchObject({
+      decision: "forbidden",
+      replacement
+    });
+  });
+
+  test.each([
     ["pgx-cli", "run", "thor", "--", "true"],
+    ["bash", "-lc", "pgx-cli run thor -- true"],
     ["rg", "needle"],
     ["sed", "-n", "1,5p", "file"],
     ["find", "."],
