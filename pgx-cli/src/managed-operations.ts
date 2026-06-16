@@ -157,6 +157,10 @@ export async function runManagedRemoteShell(input: {
     return { childExitCode: 1, workflowExitCode: 1, managedRun, artifact };
   }
 
+  const installGitHead = installCapableShellCommand(input.shellCommand)
+    ? await readLocalGitHead(input.runner, input.config.localProjectPath)
+    : undefined;
+
   const managedRun = await new ManagedCommandRunner(input.runner).runManaged({
     command,
     args,
@@ -168,6 +172,7 @@ export async function runManagedRemoteShell(input: {
     postprocess: input.postprocess,
     summary: {
       ...(input.metadata ?? {}),
+      ...(installGitHead ? { gitHead: installGitHead } : {}),
       mutagenPreflight: preflight,
       target,
       project,
@@ -191,6 +196,15 @@ export async function runManagedRemoteShell(input: {
     managedRun,
     artifact
   };
+}
+
+async function readLocalGitHead(runner: StreamingCommandRunner, localProjectPath: string): Promise<string | undefined> {
+  const result = await runner.run("git", ["-C", localProjectPath, "rev-parse", "HEAD"]);
+  return result.exitCode === 0 && result.stdout.trim().length > 0 ? result.stdout.trim() : undefined;
+}
+
+function installCapableShellCommand(shellCommand: string): boolean {
+  return /\bcmake\s+--install\b/.test(shellCommand);
 }
 
 function outputBudget(output: ResolvedOutputConfig, fullOutput?: boolean): OutputBudget {

@@ -11,10 +11,28 @@ class FakeRunner implements StreamingCommandRunner {
 
   async run(command: string, args: string[]): Promise<RunResult> {
     this.calls.push({ command, args });
+    const rendered = [command, ...args].join(" ");
+    if (command === "git" && rendered.includes("branch --show-current")) {
+      return { exitCode: 0, stdout: "feature-a\n", stderr: "" };
+    }
+    if (command === "git" && rendered.includes("status --short")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (command === "git" && rendered.includes("rev-parse HEAD")) {
+      return { exitCode: 0, stdout: "abc123\n", stderr: "" };
+    }
+    if (command === "ssh" && rendered.includes("git branch --show-current")) {
+      return { exitCode: 0, stdout: "feature-a\n", stderr: "" };
+    }
+    if (command === "ssh" && rendered.includes("git status --short") && !rendered.includes("--branch")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (command === "ssh" && rendered.includes("git rev-parse HEAD")) {
+      return { exitCode: 0, stdout: "abc123\n", stderr: "" };
+    }
     if (command === "mutagen" && args[1] === "list") {
       return { exitCode: 0, stdout: healthyJson(), stderr: "" };
     }
-    const rendered = [command, ...args].join(" ");
     if (rendered.includes("pg_regress") || rendered.includes("ctest -V")) {
       return { exitCode: 0, stdout: "1: ok 1 - 1_one_tuple 10 ms\n", stderr: "" };
     }
@@ -75,9 +93,30 @@ const devConfigBase = {
 
 function makeDevConfig() {
   const root = mkdtempSync(join(tmpdir(), "pgx-dev-test-"));
+  mkdirSync(join(root, "pgx-cli/src"), { recursive: true });
+  mkdirSync(join(root, "pgx-cli/dist"), { recursive: true });
   mkdirSync(join(root, "src/pgx-lower/test"), { recursive: true });
-  mkdirSync(join(root, "tests"), { recursive: true });
+  mkdirSync(join(root, "tests/unit-tests/sql"), { recursive: true });
+  mkdirSync(join(root, ".pgx-cli/runs/install"), { recursive: true });
+  writeFileSync(join(root, "pgx-cli/src/index.ts"), "export {};\n");
+  writeFileSync(join(root, "pgx-cli/dist/index.js"), "export {};\n");
   writeFileSync(join(root, "src/pgx-lower/test/type_mapping_tests.cpp"), "PGX_TEST_FN(type_mapping_smoke) {}\n");
+  writeFileSync(join(root, "tests/unit-tests/sql/type_mapping.sql"), "select 1;\n");
+  writeFileSync(join(root, ".pgx-cli/runs/install/summary.json"), JSON.stringify({
+    runId: "install",
+    commandName: "dev-build-install-debug",
+    command: [
+      "ssh",
+      "comfy",
+      "bash",
+      "-c",
+      "'export PATH=$HOME/.local/bin:$PATH && cd /home/zel/repos/pgx-lower && docker exec pgx-lower-dev cmake --install build-artifacts/ptest'"
+    ],
+    workflowExitCode: 0,
+    finishedAt: "2099-01-01T00:00:00.000Z",
+    gitHead: "abc123",
+    artifactPaths: ["/workspace/build-artifacts/ptest"]
+  }, null, 2) + "\n");
   writeFileSync(join(root, "tests/pg_regress_baseline.txt"), "");
   return { ...devConfigBase, localProjectPath: root };
 }
@@ -148,6 +187,22 @@ describe("dev commands", () => {
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
     expect(commands).toContain("TS_SOCKET=/tmp/pgx-build.sock tsp -t 7");
     expect(output.stdout).toContain("transcript:");
+  });
+
+  test("dev preflight dispatches to strict preflight", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const exitCode = await runDevCommand(["preflight", "--strict"], runner, output, makeDevConfig());
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("dev preflight: ok");
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("git -C");
+    expect(commands).toContain("branch --show-current");
+    expect(commands).toContain("status --short");
+    expect(commands).toContain("rev-parse HEAD");
+    expect(commands).toContain("mutagen sync list pgx-lower");
+    expect(commands).toContain(".pgx-cli/sync-probes/dev-preflight.txt");
   });
 
   test.each([

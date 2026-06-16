@@ -8,6 +8,7 @@ import type { OperationOutput } from "./operations.js";
 import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
 import { applyTotalOutputBudget } from "./managed-runner.js";
+import { runDevPreflightCommand } from "./dev-preflight.js";
 
 export type WorkflowStep = {
   name: string;
@@ -99,6 +100,10 @@ export async function runDevCommand(
     }
     output.stderr += "Usage: dev logs <latest|job-id>\n";
     return 1;
+  }
+
+  if (command === "preflight") {
+    return runDevPreflightCommand(rest, runner, output, config);
   }
 
   if (command === "lint") {
@@ -197,7 +202,7 @@ export async function runDevCommand(
     return 1;
   }
 
-  output.stderr += "Usage: dev <status|check|format|lint|test|gate|logs>\n";
+  output.stderr += "Usage: dev <status|check|format|lint|test|gate|logs|preflight>\n";
   return 1;
 }
 

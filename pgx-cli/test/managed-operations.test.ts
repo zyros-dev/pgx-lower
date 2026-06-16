@@ -12,6 +12,10 @@ class FakeRunner implements StreamingCommandRunner {
   results: Array<{ exitCode: number; stdout: string; stderr?: string }> = [];
 
   async run(command: string, args: string[]) {
+    this.calls.push({ command, args, options: {} });
+    if (command === "git" && args.join(" ").endsWith(" rev-parse HEAD")) {
+      return { exitCode: 0, stdout: "abc123\n", stderr: "" };
+    }
     const result = await this.runStreaming(command, args, {});
     return { exitCode: result.childExitCode, stdout: result.stdoutSample.head, stderr: result.stderrSample.head };
   }
@@ -64,6 +68,66 @@ function makeConfig(root: string): ManagedOperationConfig {
 }
 
 describe("managed operations", () => {
+  test("writes current git head evidence for install-capable managed summaries", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-managed-install-head-"));
+    try {
+      const runner = new FakeRunner();
+      runner.results = [
+        { exitCode: 0, stdout: healthyJson() },
+        { exitCode: 0, stdout: "" },
+        { exitCode: 0, stdout: healthyJson() },
+        { exitCode: 0, stdout: "installed\n" }
+      ];
+      const output = { stdout: "", stderr: "" };
+
+      const result = await runManagedRemoteShell({
+        runner,
+        output,
+        config: makeConfig(root),
+        commandName: "dev-build-install-debug",
+        shellCommand: "docker exec pgx-lower-dev cmake --install build-artifacts/ptest",
+        requireMutagenProof: false
+      });
+
+      expect(result.workflowExitCode).toBe(0);
+      const summary = JSON.parse(readFileSync(result.artifact.summaryPath, "utf8"));
+      expect(summary.gitHead).toBe("abc123");
+      expect(runner.calls.some((call) => [call.command, ...call.args].join(" ") === "git -C " + root + " rev-parse HEAD")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("does not write install git head evidence for compile-only managed summaries", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-managed-compile-head-"));
+    try {
+      const runner = new FakeRunner();
+      runner.results = [
+        { exitCode: 0, stdout: healthyJson() },
+        { exitCode: 0, stdout: "" },
+        { exitCode: 0, stdout: healthyJson() },
+        { exitCode: 0, stdout: "compiled\n" }
+      ];
+      const output = { stdout: "", stderr: "" };
+
+      const result = await runManagedRemoteShell({
+        runner,
+        output,
+        config: makeConfig(root),
+        commandName: "dev-build-compile-debug",
+        shellCommand: "docker exec pgx-lower-dev cmake --build build-artifacts/ptest",
+        requireMutagenProof: false
+      });
+
+      expect(result.workflowExitCode).toBe(0);
+      const summary = JSON.parse(readFileSync(result.artifact.summaryPath, "utf8"));
+      expect(summary.gitHead).toBeUndefined();
+      expect(runner.calls.some((call) => [call.command, ...call.args].join(" ") === "git -C " + root + " rev-parse HEAD")).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("runs mutagen preflight before ssh and emits bounded output", async () => {
     const root = mkdtempSync(join(tmpdir(), "pgx-managed-op-"));
     try {
