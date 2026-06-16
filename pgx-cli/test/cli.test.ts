@@ -212,6 +212,8 @@ describe("runCli", () => {
     expect(io.stdout).toContain("pgx-cli logs docker [--lines N]");
     expect(io.stdout).toContain("pgx-cli logs file <path> [--lines N]");
     expect(io.stdout).toContain("pgx-cli rg [--lines N] [--glob G] <pattern> [path...]");
+    expect(io.stdout).toContain("pgx-cli agent evidence init --claim id:text");
+    expect(io.stdout).toContain("pgx-cli agent evidence check");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");
