@@ -6,6 +6,7 @@ import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingR
 import { DEFAULT_OUTPUT_CONFIG, DEFAULT_SYNC_CONFIG } from "../src/config.js";
 import {
   buildPsqlRegressionExecutionCommand,
+  buildPsqlRegressionOutputDirPreflightCommand,
   buildPsqlRegressionPgRegressCommand,
   classifyPsqlRegressionDelta,
   missingPsqlRegressionSourceMessage,
@@ -240,6 +241,14 @@ describe("psql regression burndown command", () => {
     });
   });
 
+  test("builds an output-dir preflight command only when running as root", () => {
+    expect(buildPsqlRegressionOutputDirPreflightCommand("/tmp/out", () => 1000)).toBeUndefined();
+    expect(buildPsqlRegressionOutputDirPreflightCommand("/tmp/out", () => 0)).toEqual({
+      command: "sh",
+      args: ["-c", "mkdir -p /tmp/out && chown -R postgres:postgres /tmp/out && chmod 0775 /tmp/out"]
+    });
+  });
+
   test("defaults pg_regress to the installed pgxs path used by the dev container", () => {
     const options = parsePsqlRegressionBurndownArgs([]);
 
@@ -384,6 +393,35 @@ describe("psql regression burndown command", () => {
     expect(readFileSync(join(fixture.outputDir, "route-check.log"), "utf8")).toContain("OK: route assertions passed");
     expect(readFileSync(fixture.summary, "utf8")).toContain("# PostgreSQL Regression Burndown");
     expect(readFileSync(fixture.routeSummary, "utf8")).toContain("# Route Summary");
+  });
+
+  test("preflights a fresh output dir for postgres before running pg_regress as root", async () => {
+    const fixture = makeCommandFixture(["boolean"]);
+    const runner = new FakeRunner();
+    const io = { stdout: "", stderr: "" };
+    const originalGetuid = process.getuid;
+    (process as NodeJS.Process & { getuid?: () => number }).getuid = () => 0;
+
+    try {
+      const exitCode = await runPsqlRegressionBurndownCommand(fixture.args, runner, io);
+
+      expect(exitCode).toBe(0);
+      expect(runner.calls[0]).toEqual({
+        command: "sh",
+        args: [
+          "-c",
+          `mkdir -p ${fixture.outputDir} && chown -R postgres:postgres ${fixture.outputDir} && chmod 0775 ${fixture.outputDir}`
+        ],
+        streaming: false
+      });
+      expect(runner.calls[1]).toMatchObject({
+        command: "su",
+        args: ["postgres", "-c", expect.stringContaining(`--outputdir=${fixture.outputDir}`)],
+        streaming: true
+      });
+    } finally {
+      (process as NodeJS.Process & { getuid?: typeof originalGetuid }).getuid = originalGetuid;
+    }
   });
 });
 

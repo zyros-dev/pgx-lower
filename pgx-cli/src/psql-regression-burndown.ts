@@ -2,6 +2,7 @@ import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, re
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { finished } from "node:stream/promises";
 import type { StreamingCommandRunner } from "./commands.js";
+import type { RunResult } from "./commands.js";
 import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
@@ -357,7 +358,7 @@ export async function runPsqlRegressionBurndownCommand(
   }
 
   const pgRegressLog = join(options.outputDir, "pg_regress.log");
-  await runStreamingToLog(runner, command, commandArgs, pgRegressLog);
+  await runStreamingToLog(runner, command, commandArgs, pgRegressLog, options.outputDir);
   const pgRegressTranscript = readFileSync(pgRegressLog, "utf8");
 
   const parsed = parsePgRegressStatusLines(pgRegressTranscript);
@@ -433,9 +434,18 @@ async function runStreamingToLog(
   runner: StreamingCommandRunner,
   command: string,
   args: string[],
-  logPath: string
+  logPath: string,
+  outputDir: string
 ): Promise<number> {
   const log = createWriteStream(logPath, { flags: "w" });
+  const preflight = await ensurePgRegressOutputDirWritable(runner, outputDir);
+  if (preflight && preflight.exitCode !== 0) {
+    log.write(preflight.stdout);
+    log.write(preflight.stderr);
+    log.end();
+    await finished(log);
+    return preflight.exitCode;
+  }
   const execution = buildPsqlRegressionExecutionCommand(command, args);
   const result = await runner.runStreaming(execution.command, execution.args, { stdout: log, stderr: log });
   log.end();
@@ -512,12 +522,40 @@ export function buildPsqlRegressionExecutionCommand(
   return { command, args: [...args] };
 }
 
+export function buildPsqlRegressionOutputDirPreflightCommand(
+  outputDir: string,
+  getuid: (() => number | undefined) | undefined = defaultGetuid()
+): { command: string; args: string[] } | undefined {
+  const uid = getuid?.();
+  if (uid !== 0) {
+    return undefined;
+  }
+  return {
+    command: "sh",
+    args: [
+      "-c",
+      `mkdir -p ${quoteShell(outputDir)} && chown -R postgres:postgres ${quoteShell(outputDir)} && chmod 0775 ${quoteShell(outputDir)}`
+    ]
+  };
+}
+
 function defaultGetuid(): (() => number | undefined) | undefined {
   const getuid = process.getuid;
   if (typeof getuid !== "function") {
     return undefined;
   }
   return () => getuid.call(process);
+}
+
+async function ensurePgRegressOutputDirWritable(
+  runner: StreamingCommandRunner,
+  outputDir: string
+): Promise<RunResult | undefined> {
+  const preflight = buildPsqlRegressionOutputDirPreflightCommand(outputDir);
+  if (!preflight) {
+    return undefined;
+  }
+  return runner.run(preflight.command, preflight.args);
 }
 
 function stripManagedRunnerFlag(args: readonly string[]): { normalizedArgs: string[]; fromManagedRunner: boolean } {
