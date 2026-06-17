@@ -185,7 +185,7 @@ order by
         o_totalprice desc,
         o_orderdate
 limit 100;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback missing_metadata: aggregate grouping metadata is incomplete at Plan
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported HAVING-only aggregate at Plan.lefttree.lefttree.lefttree.righttree.lefttree.lefttree.righttree.lefttree.qual
  c_name | c_custkey | o_orderkey | o_orderdate | o_totalprice | sum 
 --------+-----------+------------+-------------+--------------+-----
 (0 rows)

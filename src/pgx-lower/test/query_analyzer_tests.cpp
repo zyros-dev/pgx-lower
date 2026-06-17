@@ -723,6 +723,32 @@ PGX_TEST_FN(query_analyzer_accepts_agg_group_operator_for_child_target_type) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_having_only_aggregate) {
+    AggPlanFixture fixture;
+
+    auto argValue = makeTypedConst(INT4OID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto havingAggregate = Aggref{};
+    havingAggregate.xpr.type = T_Aggref;
+    havingAggregate.aggfnoid = F_SUM_INT4;
+    havingAggregate.aggtype = INT8OID;
+    havingAggregate.aggcollid = InvalidOid;
+    havingAggregate.inputcollid = InvalidOid;
+    havingAggregate.args = list_make1(&argTarget);
+    havingAggregate.aggargtypes = list_make1_oid(INT4OID);
+    havingAggregate.aggno = 7;
+    fixture.agg.plan.qual = list_make1(&havingAggregate);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_agg_grouping_sets) {
     AggPlanFixture fixture;
     fixture.agg.groupingSets = list_make1_int(1);

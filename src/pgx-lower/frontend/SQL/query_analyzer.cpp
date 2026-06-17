@@ -26,6 +26,7 @@ extern Oid g_jit_table_oid;
 #endif
 
 #include <iterator>
+#include <set>
 
 #ifdef POSTGRESQL_EXTENSION
 
@@ -585,6 +586,91 @@ static auto targetListEntryType(const List* targetList, const AttrNumber column)
     return InvalidOid;
 }
 
+static auto collectAggregateRefs(const Node* expr, std::set<Index>& aggNos) -> void {
+    if (!expr) {
+        return;
+    }
+
+    switch (nodeTag(expr)) {
+    case T_Aggref: {
+        const auto* aggref = reinterpret_cast<const Aggref*>(expr);
+        aggNos.insert(aggref->aggno);
+        break;
+    }
+    case T_TargetEntry: {
+        const auto* target = reinterpret_cast<const TargetEntry*>(expr);
+        collectAggregateRefs(reinterpret_cast<const Node*>(target->expr), aggNos);
+        break;
+    }
+    case T_OpExpr: {
+        const auto* op = reinterpret_cast<const OpExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, op->args) {
+            collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+        }
+        break;
+    }
+    case T_BoolExpr: {
+        const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, boolExpr->args) {
+            collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+        }
+        break;
+    }
+    case T_FuncExpr: {
+        const auto* func = reinterpret_cast<const FuncExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, func->args) {
+            collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+        }
+        break;
+    }
+    case T_CoalesceExpr: {
+        const auto* coalesce = reinterpret_cast<const CoalesceExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, coalesce->args) {
+            collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+        }
+        break;
+    }
+    case T_RelabelType: {
+        const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
+        collectAggregateRefs(reinterpret_cast<const Node*>(relabel->arg), aggNos);
+        break;
+    }
+    case T_CoerceViaIO: {
+        const auto* coerce = reinterpret_cast<const CoerceViaIO*>(expr);
+        collectAggregateRefs(reinterpret_cast<const Node*>(coerce->arg), aggNos);
+        break;
+    }
+    case T_NullTest: {
+        const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
+        collectAggregateRefs(reinterpret_cast<const Node*>(nullTest->arg), aggNos);
+        break;
+    }
+    default: break;
+    }
+}
+
+static auto collectTargetListAggregateRefs(const List* targetList) -> std::set<Index> {
+    auto aggNos = std::set<Index>{};
+    ListCell* lc = nullptr;
+    foreach (lc, targetList) {
+        collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+    }
+    return aggNos;
+}
+
+static auto collectExpressionListAggregateRefs(const List* expressions) -> std::set<Index> {
+    auto aggNos = std::set<Index>{};
+    ListCell* lc = nullptr;
+    foreach (lc, expressions) {
+        collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+    }
+    return aggNos;
+}
+
 static auto groupingOperatorMatchesTargetType(const Oid operatorOid, const Oid keyType) -> bool {
     if (operatorOid == InvalidOid || keyType == InvalidOid) {
         return false;
@@ -674,6 +760,16 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
     if (agg->numCols < 0 || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations))) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
                                            "aggregate grouping metadata is incomplete", location);
+    }
+    if (agg->plan.qual && list_length(agg->plan.qual) > 0) {
+        const auto targetAggs = collectTargetListAggregateRefs(agg->plan.targetlist);
+        const auto qualAggs = collectExpressionListAggregateRefs(agg->plan.qual);
+        for (const auto aggNo : qualAggs) {
+            if (!targetAggs.contains(aggNo)) {
+                result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node,
+                                            "unsupported HAVING-only aggregate", location + ".qual");
+            }
+        }
     }
 
     for (auto index = 0; index < agg->numCols; ++index) {

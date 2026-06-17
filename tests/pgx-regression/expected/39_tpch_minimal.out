@@ -310,7 +310,7 @@ where
   and n_name = 'CANADA'
 order by
     s_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 337 at Plan.lefttree.lefttree.lefttree.lefttree.righttree
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 23 at Plan.lefttree.lefttree.lefttree.lefttree.righttree.qual[0].args[1]
  s_name | s_address 
 --------+-----------
 (0 rows)

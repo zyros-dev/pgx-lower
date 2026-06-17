@@ -124,6 +124,7 @@ if(NOT BUILDING_UNIT_TESTS)
             50_min_text_fallback
             51_aggorder_fallback
             52_aggdistinct_fallback
+            53_bpchar_predicate
 )
 
 
