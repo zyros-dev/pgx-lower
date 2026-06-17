@@ -984,6 +984,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate filter",
                                         location);
         }
+        if (agg->aggorder && list_length(agg->aggorder) > 0) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate ordering",
+                                        location);
+        }
         if (!isCollationSupported(agg->inputcollid) || !isCollationSupported(agg->aggcollid)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported aggregate collation",
                                         location);
