@@ -984,6 +984,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
     case T_Aggref: {
         const auto* agg = reinterpret_cast<const Aggref*>(expr);
         const auto aggregateSupported = isAggregateSupported(agg);
+        if (agg->aggfilter) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate filter",
+                                        location);
+        }
         if (!aggregateSupported) {
             const auto functionName = postgresFunctionName(agg->aggfnoid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,

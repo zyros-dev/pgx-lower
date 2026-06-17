@@ -574,6 +574,25 @@ PGX_TEST_FN(query_analyzer_rejects_agg_chain) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_aggregate_filter) {
+    auto filter = makeBoolConst();
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_COUNT_ANY;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.aggfilter = reinterpret_cast<Expr*>(&filter);
+    aggregate.aggargtypes = NIL;
+    aggregate.args = NIL;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_seq_scan_without_sort_metadata) {
     auto value = makeIntConst();
     auto target = TargetEntry{};

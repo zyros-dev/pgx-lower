@@ -120,6 +120,7 @@ if(NOT BUILDING_UNIT_TESTS)
             46_sql_3vl_expressions
             47_pg_bool_predicate_truth
             48_grouping_sets_fallback
+            49_aggref_filter_fallback
 )
 
 
