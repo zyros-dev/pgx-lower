@@ -36,6 +36,12 @@ FROM qa_bpchar3 a
 JOIN qa_bpchar5 b ON a.c = b.c
 ORDER BY a.id, b.id;
 
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_63_string_varlena_runtime_003 */
+SELECT 'auto' AS mode, a.id, b.id
+FROM qa_bpchar3 a
+JOIN qa_bpchar5 b ON a.c = b.c
+ORDER BY a.id, b.id;
+
 RESET enable_hashjoin;
 RESET enable_mergejoin;
 RESET enable_nestloop;

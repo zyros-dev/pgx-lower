@@ -165,34 +165,19 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
 
     TranslationResult result;
     result.op = sortOp;
+    result.columns = childResult.columns;
+    result.current_scope = childResult.current_scope;
+    result.left_child_column_count = childResult.left_child_column_count;
 
     if (sort->plan.targetlist) {
-        result.columns.clear();
-        ListCell* lc = nullptr;
-        foreach (lc, sort->plan.targetlist) {
-            const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (!tle) {
-                continue;
-            }
-
-            if (tle->expr && IsA(tle->expr, Var)) {
-                const auto* var = reinterpret_cast<Var*>(tle->expr);
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Sort targetentry: resjunk=%d, varattno=%d, childResult.columns.size()=%zu",
-                        tle->resjunk, var->varattno, childResult.columns.size());
-                if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
-                    const auto& col = childResult.columns[var->varattno - 1];
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "  Adding column: %s.%s", col.table_name.c_str(), col.column_name.c_str());
-                    result.columns.push_back(col);
-                }
-            }
-        }
-    } else {
-        result.columns = childResult.columns;
+        const TranslationResult* merged_join_child = result.left_child_column_count > 0 ? &childResult : nullptr;
+        return apply_projection_from_target_list(ctx, result, sort->plan.targetlist, merged_join_child);
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Sort returning %zu columns:", result.columns.size());
     for (size_t i{}; i < result.columns.size(); i++) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s", i, result.columns[i].table_name.c_str(), result.columns[i].column_name.c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s", i, result.columns[i].table_name.c_str(),
+                result.columns[i].column_name.c_str());
     }
 
     return result;
@@ -852,6 +837,14 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 const auto* var = reinterpret_cast<const Var*>(tle->expr);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "    Var: varno=%d, varattno=%d", var->varno, var->varattno);
 
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(input.columns.size())) {
+                    const auto& col = input.columns[var->varattno - 1];
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Using positional input column %d: %s.%s", var->varattno,
+                            col.table_name.c_str(), col.column_name.c_str());
+                    intermediateResult.columns.push_back(col);
+                    continue;
+                }
+
                 // Resolve the Var to get table and column name
                 std::string tableName{};
                 std::string colName{};
@@ -885,7 +878,8 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                     }
                 }
                 if (!found) {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Column %s.%s not found in input", tableName.c_str(), colName.c_str());
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "    Column %s.%s not found in input", tableName.c_str(),
+                            colName.c_str());
                 }
             } else {
                 // This is a computed expression - use the computedIdx

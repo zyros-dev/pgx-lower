@@ -1,6 +1,8 @@
 #include <cstring>
+#include <array>
 
 #include "lingodb/runtime/RuntimeSpecifications.h"
+#include "lingodb/runtime/helpers.h"
 #include "pgx-lower/utility/logging.h"
 
 extern "C" {
@@ -76,37 +78,17 @@ NumericDatumCarrier load_numeric_datum_carrier(const uint8_t* src) {
 }
 
 size_t extract_varlen32_string(const uint8_t* varlen32_data, char* dest, size_t max_len) {
-    // VarLen32 16-byte storage layout:
-    // Case 1 (lazy flag SET): Runtime pointer-based string from table scan
-    //   bytes[0-3]:   len | 0x80000000
-    //   bytes[4-7]:   unused
-    //   bytes[8-15]:  valid pointer to string data
-    // Case 2 (lazy flag CLEAR, len <= 12): inline VarLen32 bytes
-    //   bytes[0-3]:   len (no flag)
-    //   bytes[4-15]:  inline string bytes
-    // Case 3 (lazy flag CLEAR, len > 12): normal VarLen32 long-string layout
-    //   bytes[0-3]:   len (no flag)
-    //   bytes[4-7]:   first 4 bytes of string
-    //   bytes[8-15]:  pointer to string data
+    uint8_t dummy = 0;
+    VarLen32 decoded(&dummy, 0);
+    static_assert(sizeof(decoded) == 16, "VarLen32 layout changed");
+    memcpy(&decoded, varlen32_data, sizeof(decoded));
 
-    const uint32_t len_with_flag = *reinterpret_cast<const uint32_t*>(varlen32_data);
-    const bool is_lazy = (len_with_flag & 0x80000000u) != 0;
-    const size_t len = len_with_flag & ~0x80000000u;
-
-    // Safety check
+    const size_t len = decoded.getLen();
     const size_t copy_len = (len > max_len) ? max_len : len;
 
-    if (is_lazy || len > 12) {
-        const char* str_ptr = *reinterpret_cast<char* const*>(varlen32_data + 8);
-        memcpy(dest, str_ptr, copy_len);
-    } else {
-        const size_t first = (copy_len < 4) ? copy_len : 4;
-        memcpy(dest, varlen32_data + 4, first);
-        if (copy_len > 4) {
-            memcpy(dest + 4, varlen32_data + 8, copy_len - 4);
-        }
+    if (copy_len > 0) {
+        memcpy(dest, decoded.getPtr(), copy_len);
     }
-
     dest[copy_len] = '\0';
     return len;
 }
