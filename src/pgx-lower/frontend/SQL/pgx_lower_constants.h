@@ -42,8 +42,6 @@ constexpr auto NUMERIC_PRECISION_SHIFT = 16;
 constexpr auto NUMERIC_PRECISION_MASK = 0xFFFF;
 constexpr auto NUMERIC_SCALE_MASK = 0xFFFF;
 
-constexpr auto AVERAGE_DAYS_PER_MONTH = 30.4167;
-
 constexpr auto BOOL_BIT_WIDTH = 1;
 constexpr auto INT2_BIT_WIDTH = 16;
 constexpr auto INT4_BIT_WIDTH = 32;

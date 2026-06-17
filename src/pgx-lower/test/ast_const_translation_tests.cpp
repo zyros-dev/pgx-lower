@@ -5,6 +5,7 @@ extern "C" {
 #include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
+#include "utils/timestamp.h"
 }
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -75,6 +76,18 @@ struct Fixture {
     static Const make_text_const(Oid oid, int32_t typmod, const char* value, Oid collation) {
         auto c = make_const(oid, typmod, CStringGetTextDatum(value), false, collation);
         c.constbyval = false;
+        return c;
+    }
+
+    static Const make_interval_const(int64_t time, int32_t day, int32_t month) {
+        auto* interval = static_cast<Interval*>(palloc(sizeof(Interval)));
+        interval->time = time;
+        interval->day = day;
+        interval->month = month;
+
+        auto c = make_const(INTERVALOID, -1, IntervalPGetDatum(interval));
+        c.constbyval = false;
+        c.constlen = sizeof(Interval);
         return c;
     }
 };
@@ -183,6 +196,46 @@ PGX_TEST_FN(ast_const_date) {
     REQUIRE(op);
     REQUIRE(mlir::isa<mlir::db::ConstantOp>(op));
     requirePgIdentity(v.getType(), DATEOID, -1, InvalidOid, mlir::db::PgNullability::Never);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(ast_const_interval_preserves_day_time) {
+    Fixture f;
+    auto c = Fixture::make_interval_const(123456, 90, 0);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    REQUIRE(v);
+    auto* op = v.getDefiningOp();
+    REQUIRE(op);
+    auto constant = mlir::dyn_cast<mlir::db::ConstantOp>(op);
+    REQUIRE(constant);
+    requirePgIdentity(v.getType(), INTERVALOID, -1, InvalidOid, mlir::db::PgNullability::Never);
+
+    auto tupleAttr = mlir::dyn_cast_or_null<mlir::ArrayAttr>(constant.getConstantValue());
+    REQUIRE(tupleAttr);
+    REQUIRE(tupleAttr.size() == 3);
+    REQUIRE(mlir::cast<mlir::IntegerAttr>(tupleAttr[0]).getInt() == 123456);
+    REQUIRE(mlir::cast<mlir::IntegerAttr>(tupleAttr[1]).getInt() == 90);
+    REQUIRE(mlir::cast<mlir::IntegerAttr>(tupleAttr[2]).getInt() == 0);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(ast_const_interval_preserves_month) {
+    Fixture f;
+    auto c = Fixture::make_interval_const(0, 0, 1);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    REQUIRE(v);
+    auto* op = v.getDefiningOp();
+    REQUIRE(op);
+    auto constant = mlir::dyn_cast<mlir::db::ConstantOp>(op);
+    REQUIRE(constant);
+    requirePgIdentity(v.getType(), INTERVALOID, -1, InvalidOid, mlir::db::PgNullability::Never);
+
+    auto tupleAttr = mlir::dyn_cast_or_null<mlir::ArrayAttr>(constant.getConstantValue());
+    REQUIRE(tupleAttr);
+    REQUIRE(tupleAttr.size() == 3);
+    REQUIRE(mlir::cast<mlir::IntegerAttr>(tupleAttr[0]).getInt() == 0);
+    REQUIRE(mlir::cast<mlir::IntegerAttr>(tupleAttr[1]).getInt() == 0);
+    REQUIRE(mlir::cast<mlir::IntegerAttr>(tupleAttr[2]).getInt() == 1);
     PG_RETURN_VOID();
 }
 

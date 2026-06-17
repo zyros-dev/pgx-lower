@@ -7,6 +7,7 @@
 #include "lingodb/runtime/PgSortRuntime.h"
 #include "lingodb/runtime/RuntimeSpecifications.h"
 #include "lingodb/runtime/helpers.h"
+#include "pgx-lower/runtime/temporal_types.h"
 #include "pgx-lower/utility/logging.h"
 
 extern "C" {
@@ -21,6 +22,7 @@ extern "C" {
 #include "varatt.h"
 #include "utils/builtins.h"
 #include "utils/numeric.h"
+#include "utils/timestamp.h"
 #include "fmgr.h"
 }
 
@@ -64,6 +66,7 @@ void PgSortState::log_specification(const char* context) const {
             case PhysicalType::FLOAT64: phys_type_name = "FLOAT64"; break;
             case PhysicalType::VARLEN32: phys_type_name = "VARLEN32"; break;
             case PhysicalType::NUMERIC_DATUM: phys_type_name = "NUMERIC_DATUM"; break;
+            case PhysicalType::INTERVAL: phys_type_name = "INTERVAL"; break;
             }
             PGX_LOG(RUNTIME, DEBUG,
                     "    Layout[%zu]: tuple_offset=%zu, null_flag_offset=%zu, value_offset=%zu, "
@@ -133,7 +136,7 @@ void PgSortState::build_tuple_desc() {
 
     for (int32_t i = 0; i < spec->num_columns; i++) {
         uint32_t tuple_desc_oid = spec->columns[i].type_oid;
-        if (tuple_desc_oid == DATEOID || tuple_desc_oid == TIMESTAMPOID || tuple_desc_oid == INTERVALOID) {
+        if (tuple_desc_oid == DATEOID || tuple_desc_oid == TIMESTAMPOID) {
             tuple_desc_oid = INT8OID;
             PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: Mapping datetime type_oid=%u to INT8OID for column '%s'",
                     spec->columns[i].type_oid, spec->columns[i].column_name);
@@ -266,6 +269,18 @@ void PgSortState::unpack_mlir_to_datums(const uint8_t* mlir_tuple, void* values_
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
+        case PhysicalType::INTERVAL: {
+            pgx_lower::runtime::PgIntervalValue val{};
+            memcpy(&val, &mlir_tuple[layout.value_offset], sizeof(val));
+            auto* interval = static_cast<Interval*>(palloc(sizeof(Interval)));
+            interval->time = val.time;
+            interval->day = val.day;
+            interval->month = val.month;
+            values[i] = IntervalPGetDatum(interval);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] interval: time=%ld day=%d month=%d", i, val.time, val.day,
+                    val.month);
+            break;
+        }
         default:
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu]: Unknown physical type %d", i,
                     static_cast<int>(layout.phys_type));
@@ -354,6 +369,14 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
         case PhysicalType::NUMERIC_DATUM: {
             store_numeric_datum_carrier(&mlir_tuple[layout.value_offset], values[i]);
             PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] numeric datum: datum passthrough", i);
+            break;
+        }
+        case PhysicalType::INTERVAL: {
+            const auto* interval = DatumGetIntervalP(values[i]);
+            pgx_lower::runtime::PgIntervalValue val{interval->time, interval->day, interval->month};
+            memcpy(&mlir_tuple[layout.value_offset], &val, sizeof(val));
+            PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] interval: time=%ld day=%d month=%d", i, val.time, val.day,
+                    val.month);
             break;
         }
         default:

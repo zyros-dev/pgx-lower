@@ -23,6 +23,7 @@
 #include "lingodb/runtime/helpers.h"
 #include "pgx-lower/runtime/tuple_access.h"
 #include "pgx-lower/runtime/runtime_templates.h"
+#include "pgx-lower/runtime/temporal_types.h"
 #include "pgx-lower/utility/logging.h"
 
 // Need access to g_computed_results for decimal handling
@@ -155,7 +156,7 @@ const char* pgx_lower_runtime_unsupported_message_for_testing(const Oid typeOid)
 enum class DecodeKind : uint8_t {
     STRING, // VARDATA_ANY + length, datumTransfer
     NUMERIC, // Numeric datum copied into batch context
-    INTERVAL, // Interval struct → microseconds
+    INTERVAL, // Interval time/day/month fields copied into PgIntervalValue
     DATUM_BYVAL, // pass-through Datum, no copy
     DATUM_BYREF, // datumTransfer to batch context
 };
@@ -182,6 +183,7 @@ struct BatchStorage {
     uint8_t*** string_data_ptrs{};
 
     ::runtime::NumericDatumCarrier** numeric_values{};
+    pgx_lower::runtime::PgIntervalValue** interval_values{};
 };
 
 struct DataSourceIterator {
@@ -396,6 +398,17 @@ void TableBuilder::addNumericDatum(const bool is_valid, const ::runtime::Numeric
     }
 }
 
+void TableBuilder::addInterval(const bool is_valid, const pgx_lower::runtime::PgIntervalValue* value) {
+    PGX_IO(RUNTIME);
+    pgx_lower::runtime::table_builder_add_interval(this, is_valid, value);
+}
+
+void TableBuilder::addIntervalFields(const bool is_valid, const int64_t time, const int32_t day, const int32_t month) {
+    PGX_IO(RUNTIME);
+    const pgx_lower::runtime::PgIntervalValue value{time, day, month};
+    pgx_lower::runtime::table_builder_add_interval(this, is_valid, &value);
+}
+
 void TableBuilder::addFixedSized(const bool is_valid, const int64_t value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
@@ -594,6 +607,8 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
     batch->string_data_ptrs = static_cast<uint8_t***>(palloc(num_cols * sizeof(uint8_t**)));
     batch->numeric_values = static_cast<::runtime::NumericDatumCarrier**>(
         palloc(num_cols * sizeof(::runtime::NumericDatumCarrier*)));
+    batch->interval_values = static_cast<pgx_lower::runtime::PgIntervalValue**>(
+        palloc(num_cols * sizeof(pgx_lower::runtime::PgIntervalValue*)));
 
     for (size_t col{}; col < num_cols; col++) {
         batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
@@ -608,6 +623,10 @@ static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_
         batch->numeric_values[col] = static_cast<::runtime::NumericDatumCarrier*>(
             palloc(capacity * sizeof(::runtime::NumericDatumCarrier)));
         memset(batch->numeric_values[col], 0, capacity * sizeof(::runtime::NumericDatumCarrier));
+
+        batch->interval_values[col] = static_cast<pgx_lower::runtime::PgIntervalValue*>(
+            palloc(capacity * sizeof(pgx_lower::runtime::PgIntervalValue)));
+        memset(batch->interval_values[col], 0, capacity * sizeof(pgx_lower::runtime::PgIntervalValue));
     }
 
     MemoryContextSwitchTo(oldContext);
@@ -792,16 +811,11 @@ void process_tuple_into_batch(DataSourceIterator* iter, TupleDesc tupleDesc, Dat
         }
         case DecodeKind::INTERVAL: {
             if (is_null) {
-                iter->batch->column_values[json_col_idx][row_idx] = 0;
-                iter->batch->column_nulls[json_col_idx][row_idx] = false;
+                iter->batch->interval_values[json_col_idx][row_idx] = pgx_lower::runtime::PgIntervalValue{};
             } else {
-                Interval* interval = DatumGetIntervalP(value);
-                int64_t totalMicroseconds = interval->time + (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
-                if (interval->month != 0) {
-                    constexpr int64_t AVERAGE_DAYS_PER_MONTH = 30;
-                    totalMicroseconds += static_cast<int64_t>(interval->month) * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY;
-                }
-                iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
+                const Interval* interval = DatumGetIntervalP(value);
+                iter->batch->interval_values[json_col_idx][row_idx] = pgx_lower::runtime::PgIntervalValue{
+                    interval->time, interval->day, interval->month};
             }
             break;
         }
@@ -938,6 +952,9 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
             PGX_LOG(RUNTIME, DEBUG, "access() col=%zu NUMERIC carrier at %p, value=%lld", col,
                     &iter->batch->numeric_values[col][row_idx],
                     static_cast<long long>(iter->batch->numeric_values[col][row_idx]));
+        } else if (iter->columns[col].type == ::ColumnType::INTERVAL) {
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->interval_values[col][row_idx]);
+            column_info_ptr[VARLEN_BUFFER_IDX] = 0;
         } else {
             // Pass address of Datum itself (contains value)
             column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);

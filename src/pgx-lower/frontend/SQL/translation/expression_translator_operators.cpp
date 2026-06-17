@@ -241,11 +241,19 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
                                           get_base_type(lhs.getType()))
                                       || mlir::isa<mlir::db::IntervalType, mlir::db::PgIntervalType>(
                                           get_base_type(rhs.getType()));
+    const bool is_date_interval_pair = (mlir::isa<mlir::db::DateType, mlir::db::PgDateType>(get_base_type(lhs.getType()))
+                                        && mlir::isa<mlir::db::IntervalType, mlir::db::PgIntervalType>(
+                                            get_base_type(rhs.getType())))
+                                       || (mlir::isa<mlir::db::IntervalType, mlir::db::PgIntervalType>(
+                                               get_base_type(lhs.getType()))
+                                           && mlir::isa<mlir::db::DateType, mlir::db::PgDateType>(
+                                               get_base_type(rhs.getType())));
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[ARITHMETIC] op=%s, has_date_or_interval=%d, opresulttype=%u", op.c_str(),
             has_date_or_interval, op_expr->opresulttype);
 
-    auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
+    auto [convertedLhs, convertedRhs] = is_date_interval_pair ? std::make_pair(lhs, rhs)
+                                                              : upcast_binary_operation(ctx, lhs, rhs);
 
     const bool has_pg_operand = mlir::db::isPgValueType(convertedLhs.getType())
                                 || mlir::db::isPgValueType(convertedRhs.getType());

@@ -213,22 +213,11 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case INTERVALOID: {
 #ifdef POSTGRESQL_EXTENSION
-        // TODO Don't, thanks. Our datetime representation needs to be smarter
-        // Convert all intervals to daytime representation for column homogeneity
         const auto* interval = DatumGetIntervalP(constNode->constvalue);
-
-        int64_t totalMicroseconds = interval->time; // Start with time component
-        totalMicroseconds += static_cast<int64_t>(interval->day) * USECS_PER_DAY;
-
-        // Convert months to microseconds using the standard approximation
-        if (interval->month != 0) {
-            const int64_t monthMicroseconds = static_cast<int64_t>(interval->month * AVERAGE_DAYS_PER_MONTH
-                                                                   * USECS_PER_DAY);
-            totalMicroseconds += monthMicroseconds;
-        }
-
-        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
-                                                    builder.getI64IntegerAttr(totalMicroseconds));
+        return builder.create<mlir::db::ConstantOp>(
+            builder.getUnknownLoc(), mlirType,
+            builder.getArrayAttr({builder.getI64IntegerAttr(interval->time), builder.getI32IntegerAttr(interval->day),
+                                  builder.getI32IntegerAttr(interval->month)}));
 #else
         int64_t microseconds = static_cast<int64_t>(constNode->constvalue);
         return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,

@@ -119,6 +119,7 @@ T extract_field(int32_t field_index, bool* is_null) {
 template int16_t extract_field<int16_t>(int32_t, bool*);
 template int32_t extract_field<int32_t>(int32_t, bool*);
 template int64_t extract_field<int64_t>(int32_t, bool*);
+template PgIntervalValue extract_field<PgIntervalValue>(int32_t, bool*);
 template bool extract_field<bool>(int32_t, bool*);
 template float extract_field<float>(int32_t, bool*);
 template double extract_field<double>(int32_t, bool*);
@@ -250,6 +251,23 @@ void table_builder_add_numeric(void* builder, bool is_null, Numeric value) {
     } else {
         const auto datum = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
         g_computed_results.setResult(0, datum, is_null, NUMERICOID);
+    }
+}
+
+void table_builder_add_interval(void* builder, bool is_valid, const PgIntervalValue* value) {
+    auto* tb = static_cast<::runtime::TableBuilder*>(builder);
+    const bool is_null = !is_valid;
+    const Datum datum = is_null ? static_cast<Datum>(0) : toDatum<PgIntervalValue>(*value);
+
+    if (tb) {
+        if (tb->current_column_index >= g_computed_results.numComputedColumns) {
+            prepare_computed_results(tb->current_column_index + 1);
+        }
+        g_computed_results.setResult(tb->current_column_index, datum, is_null, INTERVALOID);
+        tb->current_column_index++;
+        tb->total_columns = std::max(tb->current_column_index, tb->total_columns);
+    } else {
+        g_computed_results.setResult(0, datum, is_null, INTERVALOID);
     }
 }
 
@@ -548,14 +566,11 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
         throw std::runtime_error("Unsupported temporal type");
 
     case INTERVALOID: {
-        // Since psql stores intervals in a different way to how we do, we need to
-        // build their representation. At some point we're going to have to do some
-        // overhaul of how we store intervals internally.
-        int64_t totalMicroseconds = DatumGetInt64(value);
+        const auto* source = DatumGetIntervalP(value);
         auto* interval = (Interval*)palloc(sizeof(Interval));
-        interval->month = 0;
-        interval->day = 0;
-        interval->time = totalMicroseconds;
+        interval->time = source->time;
+        interval->day = source->day;
+        interval->month = source->month;
         return IntervalPGetDatum(interval);
     }
 

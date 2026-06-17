@@ -19,6 +19,7 @@ extern "C" {
 #include "nodes/nodeFuncs.h"
 #include "nodes/print.h"
 #include "utils/lsyscache.h"
+#include "utils/timestamp.h"
 
 extern Oid g_jit_table_oid;
 }
@@ -352,23 +353,23 @@ static constexpr const char* arithmeticOperatorNames[] = {"+", "-", "*", "/"};
 static constexpr const char* likeOperatorNames[] = {"~~", "!~~"};
 
 static constexpr PgOperatorTypeSignature supportedEqualityOperatorSignatures[] = {
-    {BOOLOID, BOOLOID, BOOLOID},           {BOOLOID, INT2OID, INT2OID},         {BOOLOID, INT4OID, INT4OID},
-    {BOOLOID, INT8OID, INT8OID},           {BOOLOID, INT2OID, INT4OID},         {BOOLOID, INT4OID, INT2OID},
-    {BOOLOID, INT2OID, INT8OID},           {BOOLOID, INT8OID, INT2OID},         {BOOLOID, INT4OID, INT8OID},
-    {BOOLOID, INT8OID, INT4OID},           {BOOLOID, FLOAT4OID, FLOAT4OID},     {BOOLOID, FLOAT8OID, FLOAT8OID},
-    {BOOLOID, FLOAT4OID, FLOAT8OID},       {BOOLOID, FLOAT8OID, FLOAT4OID},     {BOOLOID, NUMERICOID, NUMERICOID},
-    {BOOLOID, DATEOID, DATEOID},           {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID},
-    {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, INTERVALOID, INTERVALOID}, {BOOLOID, BPCHAROID, BPCHAROID},
+    {BOOLOID, BOOLOID, BOOLOID},           {BOOLOID, INT2OID, INT2OID},      {BOOLOID, INT4OID, INT4OID},
+    {BOOLOID, INT8OID, INT8OID},           {BOOLOID, INT2OID, INT4OID},      {BOOLOID, INT4OID, INT2OID},
+    {BOOLOID, INT2OID, INT8OID},           {BOOLOID, INT8OID, INT2OID},      {BOOLOID, INT4OID, INT8OID},
+    {BOOLOID, INT8OID, INT4OID},           {BOOLOID, FLOAT4OID, FLOAT4OID},  {BOOLOID, FLOAT8OID, FLOAT8OID},
+    {BOOLOID, FLOAT4OID, FLOAT8OID},       {BOOLOID, FLOAT8OID, FLOAT4OID},  {BOOLOID, NUMERICOID, NUMERICOID},
+    {BOOLOID, DATEOID, DATEOID},           {BOOLOID, DATEOID, TIMESTAMPOID}, {BOOLOID, TIMESTAMPOID, DATEOID},
+    {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, BPCHAROID, BPCHAROID},
 };
 
 static constexpr PgOperatorTypeSignature supportedOrderingOperatorSignatures[] = {
-    {BOOLOID, INT2OID, INT2OID},         {BOOLOID, INT4OID, INT4OID},       {BOOLOID, INT8OID, INT8OID},
-    {BOOLOID, INT2OID, INT4OID},         {BOOLOID, INT4OID, INT2OID},       {BOOLOID, INT2OID, INT8OID},
-    {BOOLOID, INT8OID, INT2OID},         {BOOLOID, INT4OID, INT8OID},       {BOOLOID, INT8OID, INT4OID},
-    {BOOLOID, FLOAT4OID, FLOAT4OID},     {BOOLOID, FLOAT8OID, FLOAT8OID},   {BOOLOID, FLOAT4OID, FLOAT8OID},
-    {BOOLOID, FLOAT8OID, FLOAT4OID},     {BOOLOID, NUMERICOID, NUMERICOID}, {BOOLOID, DATEOID, DATEOID},
-    {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID},  {BOOLOID, TIMESTAMPOID, TIMESTAMPOID},
-    {BOOLOID, INTERVALOID, INTERVALOID}, {BOOLOID, BPCHAROID, BPCHAROID},
+    {BOOLOID, INT2OID, INT2OID},      {BOOLOID, INT4OID, INT4OID},       {BOOLOID, INT8OID, INT8OID},
+    {BOOLOID, INT2OID, INT4OID},      {BOOLOID, INT4OID, INT2OID},       {BOOLOID, INT2OID, INT8OID},
+    {BOOLOID, INT8OID, INT2OID},      {BOOLOID, INT4OID, INT8OID},       {BOOLOID, INT8OID, INT4OID},
+    {BOOLOID, FLOAT4OID, FLOAT4OID},  {BOOLOID, FLOAT8OID, FLOAT8OID},   {BOOLOID, FLOAT4OID, FLOAT8OID},
+    {BOOLOID, FLOAT8OID, FLOAT4OID},  {BOOLOID, NUMERICOID, NUMERICOID}, {BOOLOID, DATEOID, DATEOID},
+    {BOOLOID, DATEOID, TIMESTAMPOID}, {BOOLOID, TIMESTAMPOID, DATEOID},  {BOOLOID, TIMESTAMPOID, TIMESTAMPOID},
+    {BOOLOID, BPCHAROID, BPCHAROID},
 };
 
 static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[] = {
@@ -386,19 +387,16 @@ static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[]
     {FLOAT8OID, FLOAT4OID, FLOAT8OID},
     {FLOAT8OID, FLOAT8OID, FLOAT4OID},
     {NUMERICOID, NUMERICOID, NUMERICOID},
-    {TIMESTAMPOID, DATEOID, INTERVALOID},
-    {TIMESTAMPOID, INTERVALOID, DATEOID},
-    {TIMESTAMPOID, TIMESTAMPOID, INTERVALOID},
-    {TIMESTAMPOID, INTERVALOID, TIMESTAMPOID},
-    {INTERVALOID, TIMESTAMPOID, TIMESTAMPOID},
     {DATEOID, DATEOID, INT4OID},
     {DATEOID, INT4OID, DATEOID},
-    {INTERVALOID, INTERVALOID, INTERVALOID},
 };
 
 static constexpr PgOperatorTypeSignature supportedLikeOperatorSignatures[] = {
     {BOOLOID, TEXTOID, TEXTOID},
 };
+
+static auto operatorExprTouchesIntervalSemantics(const OpExpr* op) -> bool;
+static auto intervalOperatorSignatureIsLowerable(const OpExpr* op) -> bool;
 
 static auto
 operatorSignatureIsLowerable(const Oid operatorOid, const Oid resultType, const Oid lhsType, const Oid rhsType) -> bool {
@@ -437,6 +435,9 @@ operatorSignatureIsLowerable(const Oid operatorOid, const Oid resultType, const 
 }
 
 static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
+    if (operatorExprTouchesIntervalSemantics(op)) {
+        return intervalOperatorSignatureIsLowerable(op);
+    }
     const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
     const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
     return operatorSignatureIsLowerable(op->opno, op->opresulttype, exprType(const_cast<Node*>(lhs)),
@@ -552,14 +553,12 @@ static constexpr PgFunctionSignature supportedAggregates[] = {
     {"sum", PROKIND_AGGREGATE, INT8OID, 1, {INT4OID, InvalidOid, InvalidOid}},
     {"sum", PROKIND_AGGREGATE, FLOAT4OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
     {"sum", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
-    {"sum", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
     {"sum", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {INT8OID, InvalidOid, InvalidOid}},
     {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {INT2OID, InvalidOid, InvalidOid}},
     {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {INT4OID, InvalidOid, InvalidOid}},
     {"avg", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
     {"avg", PROKIND_AGGREGATE, FLOAT8OID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
-    {"avg", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
     {"avg", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"min", PROKIND_AGGREGATE, INT8OID, 1, {INT8OID, InvalidOid, InvalidOid}},
     {"min", PROKIND_AGGREGATE, INT2OID, 1, {INT2OID, InvalidOid, InvalidOid}},
@@ -569,7 +568,6 @@ static constexpr PgFunctionSignature supportedAggregates[] = {
     {"min", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"min", PROKIND_AGGREGATE, DATEOID, 1, {DATEOID, InvalidOid, InvalidOid}},
     {"min", PROKIND_AGGREGATE, TIMESTAMPOID, 1, {TIMESTAMPOID, InvalidOid, InvalidOid}},
-    {"min", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, INT8OID, 1, {INT8OID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, INT2OID, 1, {INT2OID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, INT4OID, 1, {INT4OID, InvalidOid, InvalidOid}},
@@ -578,7 +576,11 @@ static constexpr PgFunctionSignature supportedAggregates[] = {
     {"max", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, DATEOID, 1, {DATEOID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, TIMESTAMPOID, 1, {TIMESTAMPOID, InvalidOid, InvalidOid}},
-    {"max", PROKIND_AGGREGATE, INTERVALOID, 1, {INTERVALOID, InvalidOid, InvalidOid}},
+};
+
+static constexpr PgFunctionSignature supportedCountAggregates[] = {
+    {"count", PROKIND_AGGREGATE, INT8OID, 0, {InvalidOid, InvalidOid, InvalidOid}},
+    {"count", PROKIND_AGGREGATE, INT8OID, 1, {ANYOID, InvalidOid, InvalidOid}},
 };
 
 static auto postgresFunctionName(const Oid functionOid) -> std::string {
@@ -600,6 +602,127 @@ static auto exprArgumentType(const List* expressions, const int index) -> Oid {
     }
     const auto* expr = static_cast<const Node*>(lfirst(list_nth_cell(expressions, index)));
     return expr ? exprType(const_cast<Node*>(expr)) : InvalidOid;
+}
+
+static auto operatorName(const Oid operatorOid) -> std::string {
+    char* rawOperatorName = get_opname(operatorOid);
+    if (!rawOperatorName) {
+        return {};
+    }
+    auto name = std::string(rawOperatorName);
+    pfree(rawOperatorName);
+    return name;
+}
+
+static auto intervalConstMonthValue(const Node* expr, int32_t& month) -> bool {
+    if (!expr || nodeTag(expr) != T_Const) {
+        return false;
+    }
+
+    const auto* constExpr = reinterpret_cast<const Const*>(expr);
+    if (constExpr->consttype != INTERVALOID || constExpr->constisnull) {
+        return false;
+    }
+
+    const auto* interval = DatumGetIntervalP(constExpr->constvalue);
+    if (!interval) {
+        return false;
+    }
+    month = interval->month;
+    return true;
+}
+
+static auto intervalOperandIsMonthlessConst(const Node* expr) -> bool {
+    auto month = int32_t{0};
+    return intervalConstMonthValue(expr, month) && month == 0;
+}
+
+static auto intervalOperandHasMonths(const Node* expr) -> bool {
+    auto month = int32_t{0};
+    return intervalConstMonthValue(expr, month) && month != 0;
+}
+
+static auto operatorExprTouchesIntervalSemantics(const OpExpr* op) -> bool {
+    if (!op) {
+        return false;
+    }
+    return op->opresulttype == INTERVALOID || exprArgumentType(op->args, 0) == INTERVALOID
+           || exprArgumentType(op->args, 1) == INTERVALOID;
+}
+
+static auto intervalDateArithmeticIsLowerable(const OpExpr* op) -> bool {
+    if (!op || !op->args || list_length(op->args) != 2 || op->opresulttype != TIMESTAMPOID) {
+        return false;
+    }
+
+    const auto name = operatorName(op->opno);
+    if (name != "+" && name != "-") {
+        return false;
+    }
+
+    const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+    const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+    const auto lhsType = lhs ? exprType(const_cast<Node*>(lhs)) : InvalidOid;
+    const auto rhsType = rhs ? exprType(const_cast<Node*>(rhs)) : InvalidOid;
+
+    if (lhsType == DATEOID && rhsType == INTERVALOID) {
+        return intervalOperandIsMonthlessConst(rhs);
+    }
+    if (name == "+" && lhsType == INTERVALOID && rhsType == DATEOID) {
+        return intervalOperandIsMonthlessConst(lhs);
+    }
+    return false;
+}
+
+static auto intervalOperatorUnsupportedMessage(const OpExpr* op) -> std::string {
+    if (!op || !op->args || list_length(op->args) != 2) {
+        return "unsupported interval semantics for malformed operator";
+    }
+
+    const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+    const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+    const auto lhsType = lhs ? exprType(const_cast<Node*>(lhs)) : InvalidOid;
+    const auto rhsType = rhs ? exprType(const_cast<Node*>(rhs)) : InvalidOid;
+    const bool dateIntervalArithmetic = op->opresulttype == TIMESTAMPOID
+                                        && ((lhsType == DATEOID && rhsType == INTERVALOID)
+                                            || (lhsType == INTERVALOID && rhsType == DATEOID));
+
+    if (dateIntervalArithmetic && (intervalOperandHasMonths(lhs) || intervalOperandHasMonths(rhs))) {
+        return "unsupported interval month-bearing date arithmetic";
+    }
+    if (dateIntervalArithmetic) {
+        return "unsupported interval semantics for nonconstant date interval arithmetic";
+    }
+    return "unsupported interval semantics for operator OID " + std::to_string(op->opno);
+}
+
+static auto intervalOperatorSignatureIsLowerable(const OpExpr* op) -> bool {
+    return intervalDateArithmeticIsLowerable(op);
+}
+
+static auto aggregateUsesIntervalSemantics(const Aggref* agg) -> bool {
+    if (!agg) {
+        return false;
+    }
+    if (catalogFunctionMatchesAny(agg->aggfnoid, supportedCountAggregates, std::size(supportedCountAggregates))) {
+        return false;
+    }
+    if (agg->aggtype == INTERVALOID) {
+        return true;
+    }
+    ListCell* lc = nullptr;
+    foreach (lc, agg->aggargtypes) {
+        if (lfirst_oid(lc) == INTERVALOID) {
+            return true;
+        }
+    }
+    foreach (lc, agg->args) {
+        const auto* target = static_cast<const TargetEntry*>(lfirst(lc));
+        if (target && target->expr && exprType(reinterpret_cast<Node*>(target->expr)) == INTERVALOID) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static auto functionExprUsesStringScalarBoundary(const FuncExpr* func) -> bool {
@@ -1260,7 +1383,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
                                         location);
         } else if (!isOperatorSupported(op)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
-                                        "unsupported operator OID " + std::to_string(op->opno), location);
+                                        operatorExprTouchesIntervalSemantics(op)
+                                            ? intervalOperatorUnsupportedMessage(op)
+                                            : "unsupported operator OID " + std::to_string(op->opno),
+                                        location);
         }
         if (!isCollationSupported(op->inputcollid) || !isCollationSupported(op->opcollid)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported operator collation",
@@ -1405,7 +1531,8 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_Aggref: {
         const auto* agg = reinterpret_cast<const Aggref*>(expr);
-        const auto aggregateSupported = isAggregateSupported(agg);
+        const auto intervalAggregate = aggregateUsesIntervalSemantics(agg);
+        const auto aggregateSupported = !intervalAggregate && isAggregateSupported(agg);
         if (agg->aggfilter) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate filter",
                                         location);
@@ -1439,7 +1566,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
             result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
                                         "BYTEA-typed aggregate requires aggargtypes metadata", location + ".aggargtypes");
         }
-        if (!aggregateSupported) {
+        if (intervalAggregate) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
+                                        "unsupported interval aggregate semantics", location);
+        } else if (!aggregateSupported) {
             const auto functionName = postgresFunctionName(agg->aggfnoid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
                                         functionName.empty()

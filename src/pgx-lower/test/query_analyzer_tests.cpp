@@ -7,8 +7,10 @@ extern "C" {
 #include "catalog/pg_type.h"
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
+#include "nodes/nodeFuncs.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/timestamp.h"
 }
 
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
@@ -70,6 +72,18 @@ auto makeTypedConst(Oid typeOid, int32_t typmod = -1, Oid collation = InvalidOid
     return value;
 }
 
+auto makeIntervalConst(int64_t time, int32_t day, int32_t month) -> Const {
+    auto* interval = static_cast<Interval*>(palloc0(sizeof(Interval)));
+    interval->time = time;
+    interval->day = day;
+    interval->month = month;
+
+    auto value = makeTypedConst(INTERVALOID);
+    value.constlen = sizeof(Interval);
+    value.constvalue = IntervalPGetDatum(interval);
+    return value;
+}
+
 void requireUnsupportedTemporalConst(Oid typeOid) {
     auto value = makeTypedConst(typeOid);
 
@@ -90,6 +104,56 @@ auto makeIntVar(AttrNumber attno) -> Var {
     value.varlevelsup = 0;
     return value;
 }
+
+auto makeTypedVar(Oid typeOid, AttrNumber attno) -> Var {
+    auto value = Var{};
+    value.xpr.type = T_Var;
+    value.varno = OUTER_VAR;
+    value.varattno = attno;
+    value.vartype = typeOid;
+    value.vartypmod = -1;
+    value.varcollid = InvalidOid;
+    value.varlevelsup = 0;
+    return value;
+}
+
+auto makeBinaryOperatorExpr(const char* name, Oid resultType, Node* lhs, Node* rhs) -> OpExpr {
+    const auto lhsType = exprType(lhs);
+    const auto rhsType = exprType(rhs);
+    const Oid opOid = OpernameGetOprid(list_make1(makeString(const_cast<char*>(name))), lhsType, rhsType);
+
+    auto op = OpExpr{};
+    op.xpr.type = T_OpExpr;
+    op.opno = opOid;
+    op.opfuncid = get_opcode(opOid);
+    op.opresulttype = resultType;
+    op.inputcollid = InvalidOid;
+    op.opcollid = InvalidOid;
+    op.args = list_make2(lhs, rhs);
+    return op;
+}
+
+struct IntervalAggregateFixture {
+    Const value{};
+    TargetEntry argument{};
+    Aggref aggregate{};
+
+    explicit IntervalAggregateFixture(Oid aggregateFunctionOid) {
+        value = makeIntervalConst(0, 1, 1);
+
+        argument.xpr.type = T_TargetEntry;
+        argument.expr = reinterpret_cast<Expr*>(&value);
+        argument.resno = 1;
+
+        aggregate.xpr.type = T_Aggref;
+        aggregate.aggfnoid = aggregateFunctionOid;
+        aggregate.aggtype = INTERVALOID;
+        aggregate.aggcollid = InvalidOid;
+        aggregate.inputcollid = InvalidOid;
+        aggregate.args = list_make1(&argument);
+        aggregate.aggargtypes = list_make1_oid(INTERVALOID);
+    }
+};
 
 struct SortPlanFixture {
     Const value{};
@@ -559,6 +623,154 @@ PGX_TEST_FN(query_analyzer_rejects_unsupported_temporal_type_oids) {
     requireUnsupportedTemporalConst(TIMEOID);
     requireUnsupportedTemporalConst(TIMETZOID);
     requireUnsupportedTemporalConst(TIMESTAMPTZOID);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_interval_projection) {
+    auto interval = makeIntervalConst(123456789, -7, 14);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&interval));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_day_interval_date_arithmetic) {
+    auto date = makeTypedConst(DATEOID);
+    auto dayInterval = makeIntervalConst(0, 90, 0);
+
+    auto datePlusInterval = makeBinaryOperatorExpr("+", TIMESTAMPOID, reinterpret_cast<Node*>(&date),
+                                                   reinterpret_cast<Node*>(&dayInterval));
+    const auto plusResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&datePlusInterval));
+    REQUIRE(plusResult.isSupported());
+
+    auto dateMinusInterval = makeBinaryOperatorExpr("-", TIMESTAMPOID, reinterpret_cast<Node*>(&date),
+                                                    reinterpret_cast<Node*>(&dayInterval));
+    const auto minusResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&dateMinusInterval));
+    REQUIRE(minusResult.isSupported());
+
+    auto intervalPlusDate = makeBinaryOperatorExpr("+", TIMESTAMPOID, reinterpret_cast<Node*>(&dayInterval),
+                                                   reinterpret_cast<Node*>(&date));
+    const auto commutedResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(
+        reinterpret_cast<Node*>(&intervalPlusDate));
+    REQUIRE(commutedResult.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_month_interval_date_arithmetic) {
+    auto date = makeTypedConst(DATEOID);
+    auto monthInterval = makeIntervalConst(0, 0, 1);
+    auto op = makeBinaryOperatorExpr("+", TIMESTAMPOID, reinterpret_cast<Node*>(&date),
+                                     reinterpret_cast<Node*>(&monthInterval));
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(result.humanSummary().find("interval month") != std::string::npos);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_nonconstant_date_interval_arithmetic) {
+    auto date = makeTypedConst(DATEOID);
+    auto intervalVar = makeTypedVar(INTERVALOID, 1);
+    auto op = makeBinaryOperatorExpr("+", TIMESTAMPOID, reinterpret_cast<Node*>(&date),
+                                     reinterpret_cast<Node*>(&intervalVar));
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(result.humanSummary().find("unsupported interval semantics") != std::string::npos);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_interval_comparison) {
+    auto lhs = makeIntervalConst(0, 0, 1);
+    auto rhs = makeIntervalConst(0, 1, 0);
+
+    auto equality = makeBinaryOperatorExpr("=", BOOLOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+    const auto equalityResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&equality));
+    REQUIRE(!equalityResult.isSupported());
+    REQUIRE(equalityResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    auto ordering = makeBinaryOperatorExpr("<", BOOLOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+    const auto orderingResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&ordering));
+    REQUIRE(!orderingResult.isSupported());
+    REQUIRE(orderingResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(orderingResult.humanSummary().find("unsupported interval semantics") != std::string::npos);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_timestamp_interval_arithmetic) {
+    auto timestamp = makeTypedConst(TIMESTAMPOID);
+    auto dayInterval = makeIntervalConst(0, 1, 0);
+    auto op = makeBinaryOperatorExpr("+", TIMESTAMPOID, reinterpret_cast<Node*>(&timestamp),
+                                     reinterpret_cast<Node*>(&dayInterval));
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(result.humanSummary().find("unsupported interval semantics") != std::string::npos);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_timestamp_minus_timestamp_interval) {
+    auto lhs = makeTypedConst(TIMESTAMPOID);
+    auto rhs = makeTypedConst(TIMESTAMPOID);
+    auto op = makeBinaryOperatorExpr("-", INTERVALOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(result.humanSummary().find("unsupported interval semantics") != std::string::npos);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_interval_interval_arithmetic) {
+    auto lhs = makeIntervalConst(0, 0, 1);
+    auto rhs = makeIntervalConst(0, 1, 0);
+
+    auto plus = makeBinaryOperatorExpr("+", INTERVALOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+    const auto plusResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&plus));
+    REQUIRE(!plusResult.isSupported());
+    REQUIRE(plusResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    auto minus = makeBinaryOperatorExpr("-", INTERVALOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+    const auto minusResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&minus));
+    REQUIRE(!minusResult.isSupported());
+    REQUIRE(minusResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(minusResult.humanSummary().find("unsupported interval semantics") != std::string::npos);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_interval_aggregates) {
+    for (const auto aggregateOid : {F_SUM_INTERVAL, F_AVG_INTERVAL, F_MIN_INTERVAL, F_MAX_INTERVAL}) {
+        IntervalAggregateFixture fixture(aggregateOid);
+        const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&fixture.aggregate));
+        REQUIRE(!result.isSupported());
+        REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+        REQUIRE(result.humanSummary().find("unsupported interval aggregate") != std::string::npos);
+    }
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_count_interval) {
+    auto value = makeIntervalConst(0, 1, 1);
+
+    auto argument = TargetEntry{};
+    argument.xpr.type = T_TargetEntry;
+    argument.expr = reinterpret_cast<Expr*>(&value);
+    argument.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_COUNT_ANY;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&argument);
+    aggregate.aggargtypes = list_make1_oid(INTERVALOID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(result.isSupported());
     PG_RETURN_VOID();
 }
 

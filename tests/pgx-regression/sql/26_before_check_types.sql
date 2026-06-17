@@ -132,11 +132,17 @@ SELECT MIN(timestamp_col) AS earliest_timestamp,
        COUNT(timestamp_col) AS unique_timestamps
 FROM type_test_table;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_26_before_check_types_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_26_before_check_types_pset_csv_014 */
+\pset format csv
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_26_before_check_types_014 */
 SELECT interval_col,
        interval_col > INTERVAL '1 day' AS more_than_day,
        interval_col < INTERVAL '1 year' AS less_than_year
 FROM type_test_table;
+
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_26_before_check_types_pset_aligned_014 */
+\pset format aligned
 
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_26_before_check_types_015 */
 SELECT int2_col::float4 > float4_col AS int_to_float_compare,
@@ -156,7 +162,13 @@ SELECT COUNT(*) AS total_rows,
        COUNT(interval_col) AS non_null_interval
 FROM type_test_table;
 
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_26_before_check_types_pset_csv_017 */
+\pset format csv
+
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_26_before_check_types_017 */
 SELECT * FROM type_test_table;
+
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_26_before_check_types_pset_aligned_017 */
+\pset format aligned
 
 DROP TABLE type_test_table;

@@ -89,6 +89,32 @@ static bool isPgStringValueType(mlir::Type type) {
     return mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType, mlir::db::PgBpcharType>(type);
 }
 
+static mlir::Type getNonNullablePgBaseType(mlir::Type type) {
+    type = getBaseType(type);
+    if (mlir::db::isPgValueType(type)) {
+        return mlir::db::withPgNullability(type, mlir::db::PgNullability::Never);
+    }
+    return type;
+}
+
+static bool isPgDateValueType(mlir::Type type) {
+    return mlir::isa<mlir::db::PgDateType>(getNonNullablePgBaseType(type));
+}
+
+static bool isPgTimestampValueType(mlir::Type type) {
+    return mlir::isa<mlir::db::PgTimestampType>(getNonNullablePgBaseType(type));
+}
+
+static constexpr int64_t kPgMicrosecondsPerDay = 86400000000LL;
+
+static mlir::Value pgDateDaysToTimestampMicros(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value days) {
+    if (days.getType().isInteger(32)) {
+        days = builder.create<mlir::arith::ExtSIOp>(loc, builder.getI64Type(), days);
+    }
+    mlir::Value multiplier = builder.create<mlir::arith::ConstantIntOp>(loc, kPgMicrosecondsPerDay, 64);
+    return builder.create<mlir::arith::MulIOp>(loc, days, multiplier);
+}
+
 static int getSignedIntegerCarrierWidth(mlir::Type type) {
     if (auto width = getIntegerWidth(type, false)) {
         return width;
@@ -179,7 +205,9 @@ struct NullableOperand {
 };
 
 static NullableOperand unwrapNullableOperand(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value value) {
-    if (mlir::isa<mlir::TupleType>(value.getType())) {
+    if (auto tupleType = mlir::dyn_cast_or_null<mlir::TupleType>(value.getType());
+        tupleType && tupleType.size() == 2 && tupleType.getType(0).isInteger(1))
+    {
         auto unpacked = builder.create<mlir::util::UnPackOp>(loc, value);
         return {unpacked.getVals()[1], unpacked.getVals()[0]};
     }
@@ -431,6 +459,7 @@ class AppendTBLowering : public ConversionPattern {
          val = rewriter.create<mlir::arith::DivSIOp>(loc, val, multiplierConst);
       }
       bool numericDatum = isNumericCarrierType(t);
+      bool intervalCarrier = mlir::isa<mlir::db::PgIntervalType>(getNonNullablePgBaseType(t));
       if (numericDatum && mlir::isa<mlir::TupleType>(val.getType())) {
           auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, val);
           mlir::Value trueValue = rewriter.create<arith::ConstantOp>(loc,
@@ -445,6 +474,9 @@ class AppendTBLowering : public ConversionPattern {
       auto newAppend = rewriter.create<mlir::dsa::Append>(loc, adaptor.getDs(), val, valid);
       if (numericDatum) {
           newAppend->setAttr("pgx_numeric_datum", rewriter.getUnitAttr());
+      }
+      if (intervalCarrier) {
+          newAppend->setAttr("pgx_interval_carrier", rewriter.getUnitAttr());
       }
 
       rewriter.eraseOp(op);
@@ -957,9 +989,69 @@ class DateIntervalArithmeticLowering : public OpConversionPattern<OpClass> {
    using OpConversionPattern<OpClass>::OpConversionPattern;
    using OpAdaptor = typename OpClass::Adaptor;
 
+   static mlir::Value pgIntervalToMicroseconds(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value interval) {
+       auto unpacked = builder.create<mlir::util::UnPackOp>(loc, interval);
+       mlir::Value time = unpacked.getVals()[0];
+       mlir::Value day = unpacked.getVals()[1];
+       if (day.getType().isInteger(32)) {
+           day = builder.create<mlir::arith::ExtSIOp>(loc, builder.getI64Type(), day);
+       }
+       mlir::Value multiplier = builder.create<mlir::arith::ConstantIntOp>(loc, kPgMicrosecondsPerDay, 64);
+       mlir::Value dayMicroseconds = builder.create<mlir::arith::MulIOp>(loc, day, multiplier);
+       return builder.create<mlir::arith::AddIOp>(loc, time, dayMicroseconds);
+   }
+
    LogicalResult matchAndRewrite(OpClass binOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto leftType = getBaseType(binOp.getLeft().getType());
       auto rightType = getBaseType(binOp.getRight().getType());
+
+      const bool leftIsPgDate = isPgDateValueType(leftType);
+      const bool rightIsPgDate = isPgDateValueType(rightType);
+      const bool leftIsPgInterval = mlir::isa<mlir::db::PgIntervalType>(getNonNullablePgBaseType(leftType));
+      const bool rightIsPgInterval = mlir::isa<mlir::db::PgIntervalType>(getNonNullablePgBaseType(rightType));
+
+      if ((leftIsPgDate && rightIsPgInterval) || (leftIsPgInterval && rightIsPgDate)) {
+          auto loc = binOp->getLoc();
+          auto leftOperand = unwrapNullableOperand(rewriter, loc, adaptor.getLeft());
+          auto rightOperand = unwrapNullableOperand(rewriter, loc, adaptor.getRight());
+
+          mlir::Value dateMicroseconds;
+          mlir::Value intervalMicroseconds;
+          if (leftIsPgDate && rightIsPgInterval) {
+              if (!mlir::isa<mlir::TupleType>(rightOperand.payload.getType())) {
+                  return failure();
+              }
+              dateMicroseconds = pgDateDaysToTimestampMicros(rewriter, loc, leftOperand.payload);
+              intervalMicroseconds = pgIntervalToMicroseconds(rewriter, loc, rightOperand.payload);
+          } else {
+              if (!mlir::isa<mlir::TupleType>(leftOperand.payload.getType())) {
+                  return failure();
+              }
+              dateMicroseconds = pgDateDaysToTimestampMicros(rewriter, loc, rightOperand.payload);
+              intervalMicroseconds = pgIntervalToMicroseconds(rewriter, loc, leftOperand.payload);
+          }
+
+          mlir::Value result;
+          if constexpr (std::is_same_v<OpClass, mlir::db::AddOp>) {
+              result = rewriter.create<mlir::arith::AddIOp>(loc, dateMicroseconds, intervalMicroseconds);
+          } else {
+              if (!leftIsPgDate || !rightIsPgInterval) {
+                  return failure();
+              }
+              result = rewriter.create<mlir::arith::SubIOp>(loc, dateMicroseconds, intervalMicroseconds);
+          }
+
+          if (mlir::Value isNull = combineNullFlags(rewriter, loc, leftOperand.isNull, rightOperand.isNull)) {
+              auto convertedResultType = this->typeConverter->convertType(binOp.getType());
+              if (mlir::isa<mlir::TupleType>(convertedResultType)) {
+                  rewriter.replaceOpWithNewOp<mlir::util::PackOp>(binOp, convertedResultType,
+                                                                  mlir::ValueRange{isNull, result});
+                  return success();
+              }
+          }
+          rewriter.replaceOp(binOp, result);
+          return success();
+      }
 
       // Match if either operand is DateType or IntervalType
       bool leftIsDateTime = mlir::isa<mlir::db::DateType, mlir::db::IntervalType>(leftType);
@@ -1118,6 +1210,25 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
    LogicalResult matchAndRewrite(mlir::db::ConstantOp constantOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto type = constantOp.getType();
       auto stdType = typeConverter->convertType(type);
+      if (mlir::isa<mlir::db::PgIntervalType>(type)) {
+          auto tupleType = stdType.dyn_cast_or_null<mlir::TupleType>();
+          auto fields = constantOp.getConstantValue().dyn_cast_or_null<ArrayAttr>();
+          if (!tupleType || !fields || fields.size() != 3) {
+              return failure();
+          }
+          auto time = mlir::cast<IntegerAttr>(fields[0]).getInt();
+          auto day = mlir::cast<IntegerAttr>(fields[1]).getInt();
+          auto month = mlir::cast<IntegerAttr>(fields[2]).getInt();
+          mlir::Value timeValue = rewriter.create<arith::ConstantOp>(
+              constantOp->getLoc(), tupleType.getType(0), rewriter.getIntegerAttr(tupleType.getType(0), time));
+          mlir::Value dayValue = rewriter.create<arith::ConstantOp>(constantOp->getLoc(), tupleType.getType(1),
+                                                                    rewriter.getIntegerAttr(tupleType.getType(1), day));
+          mlir::Value monthValue = rewriter.create<arith::ConstantOp>(
+              constantOp->getLoc(), tupleType.getType(2), rewriter.getIntegerAttr(tupleType.getType(2), month));
+          rewriter.replaceOpWithNewOp<mlir::util::PackOp>(constantOp, tupleType,
+                                                          mlir::ValueRange{timeValue, dayValue, monthValue});
+          return success();
+      }
       auto [arrowType, param1, param2] = convertTypeToArrow(type);
 
       if (arrowType == 0) {
@@ -1251,6 +1362,34 @@ class CmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
       return arith::CmpFPredicate::OEQ;
    }
    LogicalResult matchAndRewrite(mlir::db::CmpOp cmpOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+       const bool leftIsPgDate = isPgDateValueType(cmpOp.getLeft().getType());
+       const bool rightIsPgDate = isPgDateValueType(cmpOp.getRight().getType());
+       const bool leftIsPgTimestamp = isPgTimestampValueType(cmpOp.getLeft().getType());
+       const bool rightIsPgTimestamp = isPgTimestampValueType(cmpOp.getRight().getType());
+       if ((leftIsPgDate && rightIsPgTimestamp) || (leftIsPgTimestamp && rightIsPgDate)) {
+           auto loc = cmpOp->getLoc();
+           auto leftOperand = unwrapNullableOperand(rewriter, loc, adaptor.getLeft());
+           auto rightOperand = unwrapNullableOperand(rewriter, loc, adaptor.getRight());
+           mlir::Value leftPayload = leftIsPgDate ? pgDateDaysToTimestampMicros(rewriter, loc, leftOperand.payload)
+                                                  : leftOperand.payload;
+           mlir::Value rightPayload = rightIsPgDate ? pgDateDaysToTimestampMicros(rewriter, loc, rightOperand.payload)
+                                                    : rightOperand.payload;
+           mlir::Value result = rewriter.create<arith::CmpIOp>(loc, translateIPredicate(cmpOp.getPredicate()),
+                                                               leftPayload, rightPayload);
+           if (mlir::Value isNull = combineNullFlags(rewriter, loc, leftOperand.isNull, rightOperand.isNull)) {
+               mlir::Type convertedResultType = typeConverter->convertType(cmpOp.getType());
+               if (mlir::isa<mlir::TupleType>(convertedResultType)) {
+                   rewriter.replaceOpWithNewOp<mlir::util::PackOp>(cmpOp, convertedResultType,
+                                                                   mlir::ValueRange{isNull, result});
+                   return success();
+               }
+               mlir::Value falseValue = rewriter.create<arith::ConstantOp>(
+                   loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
+               result = rewriter.create<arith::SelectOp>(loc, isNull, falseValue, result);
+           }
+           rewriter.replaceOp(cmpOp, result);
+           return success();
+       }
        // PGX-LOWER: decimal operands are PG Numeric datums (i64), so they must be
        // compared via numeric_cmp, NOT a raw integer compare (which would compare
        // pointers). Detect via the ORIGINAL db operand type, before the generic

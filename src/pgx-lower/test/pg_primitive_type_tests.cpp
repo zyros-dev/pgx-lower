@@ -118,7 +118,8 @@ PGX_TEST_FN(pg_primitive_type_metadata_and_carriers) {
     assertPgIdentity(mlir::db::PgTimestampType::get(&f.ctx, kTypmodUnconstrained), "!db.pg_timestamp<typmod = -1>",
                      TIMESTAMPOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Never, "i64");
     assertPgIdentity(mlir::db::PgIntervalType::get(&f.ctx, kTypmodUnconstrained), "!db.pg_interval<typmod = -1>",
-                     INTERVALOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Never, "i64");
+                     INTERVALOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Never,
+                     "tuple<i64, i32, i32>");
     assertPgIdentity(mlir::db::PgTextType::get(&f.ctx, kDefaultCollation), "!db.pg_text<collation = 100>", TEXTOID,
                      kTypmodUnconstrained, kDefaultCollation, mlir::db::PgNullability::Never, "!util.varlen32");
     assertPgIdentity(mlir::db::PgVarcharType::get(&f.ctx, kVarcharTypmod, kDefaultCollation),

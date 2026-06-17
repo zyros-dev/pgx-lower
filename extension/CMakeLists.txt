@@ -129,6 +129,7 @@ if(NOT BUILDING_UNIT_TESTS)
             52_aggdistinct_fallback
             53_bpchar_predicate
             60_temporal_support_boundary
+            61_interval_truthfulness
             62_string_support_boundary
             63_string_varlena_runtime
 )

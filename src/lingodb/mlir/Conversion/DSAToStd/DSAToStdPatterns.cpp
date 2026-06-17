@@ -833,7 +833,11 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
       }
       mlir::Type type = getBaseType(val.getType());
       mlir::Type originalType = getBaseType(appendOp.getVal().getType());
-      if (originalType.isa<mlir::db::DecimalType>() || appendOp->hasAttr("pgx_numeric_datum")) {
+      if (mlir::isa<mlir::db::PgIntervalType>(originalType) || appendOp->hasAttr("pgx_interval_carrier")) {
+          auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, val);
+          rt::TableBuilder::addIntervalFields(rewriter, loc)(
+              {builderVal, isValid, unpacked.getVals()[0], unpacked.getVals()[1], unpacked.getVals()[2]});
+      } else if (originalType.isa<mlir::db::DecimalType>() || appendOp->hasAttr("pgx_numeric_datum")) {
           rt::TableBuilder::addNumericDatum(rewriter, loc)({builderVal, isValid, val});
       } else if (isIntegerType(type, 1)) {
           rt::TableBuilder::addBool(rewriter, loc)({builderVal, isValid, val});

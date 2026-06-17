@@ -5,6 +5,7 @@
 
 #include "lingodb/runtime/RuntimeSpecifications.h"
 #include "lingodb/runtime/helpers.h"
+#include "pgx-lower/runtime/temporal_types.h"
 
 namespace runtime {
 
@@ -36,6 +37,8 @@ struct TableBuilder {
    void addFloat32(bool is_valid, float value);
    void addFloat64(bool is_valid, double value);
    void addNumericDatum(bool is_valid, NumericDatumCarrier value);
+   void addInterval(bool is_valid, const pgx_lower::runtime::PgIntervalValue* value);
+   void addIntervalFields(bool is_valid, int64_t time, int32_t day, int32_t month);
    void addFixedSized(bool is_valid, int64_t value);
    void addBinary(bool is_valid, VarLen32 value);
    void setNextDecimalScale(int32_t scale);

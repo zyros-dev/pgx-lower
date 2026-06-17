@@ -20,6 +20,7 @@ enum class PhysicalType {
     FLOAT64,
     VARLEN32,
     NUMERIC_DATUM,
+    INTERVAL,
 };
 
 struct ColumnLayout {

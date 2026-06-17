@@ -5,6 +5,10 @@
 #include "lingodb/runtime/RuntimeSpecifications.h"
 #include "lingodb/runtime/helpers.h"
 
+namespace pgx_lower::runtime {
+struct PgIntervalValue;
+}
+
 namespace runtime {
 class TableBuilder {
    static constexpr size_t maxBatchSize = 100000;
@@ -46,6 +50,8 @@ class TableBuilder {
    void addFloat32(bool is_valid, float);
    void addFloat64(bool is_valid, double);
    void addNumericDatum(bool is_valid, NumericDatumCarrier);
+   void addInterval(bool is_valid, const pgx_lower::runtime::PgIntervalValue*);
+   void addIntervalFields(bool is_valid, int64_t time, int32_t day, int32_t month);
    void addFixedSized(bool is_valid, int64_t);
    void addBinary(bool is_valid, runtime::VarLen32);
    void setNextDecimalScale(int32_t scale);

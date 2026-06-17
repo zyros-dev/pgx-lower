@@ -3,6 +3,7 @@
 
 #include "lingodb/runtime/RuntimeSpecifications.h"
 #include "lingodb/runtime/helpers.h"
+#include "pgx-lower/runtime/temporal_types.h"
 #include "pgx-lower/utility/logging.h"
 
 extern "C" {
@@ -13,7 +14,10 @@ extern "C" {
 namespace runtime {
 
 size_t get_physical_size(uint32_t type_oid) {
-    if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
+    if (type_oid == INTERVALOID) {
+        return sizeof(pgx_lower::runtime::PgIntervalValue);
+    }
+    if (type_oid == DATEOID || type_oid == TIMESTAMPOID) {
         type_oid = INT8OID;
     }
 
@@ -36,7 +40,10 @@ size_t get_physical_size(uint32_t type_oid) {
 }
 
 PhysicalType get_physical_type(uint32_t type_oid) {
-    if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
+    if (type_oid == INTERVALOID) {
+        return PhysicalType::INTERVAL;
+    }
+    if (type_oid == DATEOID || type_oid == TIMESTAMPOID) {
         type_oid = INT8OID;
     }
 

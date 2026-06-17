@@ -2,8 +2,10 @@ extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
 #include "catalog/pg_type.h"
+#include "utils/timestamp.h"
 }
 
+#include "pgx-lower/runtime/runtime_templates.h"
 #include "pgx-lower/test/pgx_test_fn.h"
 
 #include <string>
@@ -18,6 +20,50 @@ extern "C" {
 extern "C" bool pgx_lower_runtime_type_oid_supported_for_testing(Oid typeOid);
 extern "C" const char* pgx_lower_runtime_column_type_name_for_testing(Oid typeOid);
 extern "C" const char* pgx_lower_runtime_unsupported_message_for_testing(Oid typeOid);
+
+PGX_TEST_FN(temporal_interval_from_datum_preserves_fields) {
+    Interval interval{};
+    interval.time = 123456789;
+    interval.day = -7;
+    interval.month = 14;
+
+    const auto value = pgx_lower::runtime::fromDatum<pgx_lower::runtime::PgIntervalValue>(IntervalPGetDatum(&interval),
+                                                                                          INTERVALOID);
+
+    REQUIRE(value.time == 123456789);
+    REQUIRE(value.day == -7);
+    REQUIRE(value.month == 14);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(temporal_interval_to_datum_preserves_fields) {
+    const pgx_lower::runtime::PgIntervalValue value{123456789, -7, 14};
+
+    const Datum datum = pgx_lower::runtime::toDatum<pgx_lower::runtime::PgIntervalValue>(value);
+    const auto* interval = DatumGetIntervalP(datum);
+
+    REQUIRE(interval->time == 123456789);
+    REQUIRE(interval->day == -7);
+    REQUIRE(interval->month == 14);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(temporal_interval_datum_roundtrip_preserves_fields) {
+    Interval source{};
+    source.time = 123456789;
+    source.day = -7;
+    source.month = 14;
+
+    const auto value = pgx_lower::runtime::fromDatum<pgx_lower::runtime::PgIntervalValue>(IntervalPGetDatum(&source),
+                                                                                          INTERVALOID);
+    const Datum roundtripped = pgx_lower::runtime::toDatum<pgx_lower::runtime::PgIntervalValue>(value);
+    const auto* interval = DatumGetIntervalP(roundtripped);
+
+    REQUIRE(interval->time == 123456789);
+    REQUIRE(interval->day == -7);
+    REQUIRE(interval->month == 14);
+    PG_RETURN_VOID();
+}
 
 PGX_TEST_FN(temporal_runtime_rejects_timestamptz_oid) {
     REQUIRE(!pgx_lower_runtime_type_oid_supported_for_testing(TIMESTAMPTZOID));
