@@ -410,6 +410,94 @@ PGX_TEST_FN(query_analyzer_rejects_unsupported_aggregate_collation) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_min_text_aggregate) {
+    auto argValue = makeTypedConst(TEXTOID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_MIN_TEXT;
+    aggregate.aggtype = TEXTOID;
+    aggregate.aggcollid = DEFAULT_COLLATION_OID;
+    aggregate.inputcollid = DEFAULT_COLLATION_OID;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(TEXTOID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_max_text_aggregate) {
+    auto argValue = makeTypedConst(TEXTOID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_MAX_TEXT;
+    aggregate.aggtype = TEXTOID;
+    aggregate.aggcollid = DEFAULT_COLLATION_OID;
+    aggregate.inputcollid = DEFAULT_COLLATION_OID;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(TEXTOID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_min_bpchar_aggregate) {
+    auto argValue = makeTypedConst(BPCHAROID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_MIN_BPCHAR;
+    aggregate.aggtype = BPCHAROID;
+    aggregate.aggcollid = DEFAULT_COLLATION_OID;
+    aggregate.inputcollid = DEFAULT_COLLATION_OID;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(BPCHAROID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_max_bpchar_aggregate) {
+    auto argValue = makeTypedConst(BPCHAROID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_MAX_BPCHAR;
+    aggregate.aggtype = BPCHAROID;
+    aggregate.aggcollid = DEFAULT_COLLATION_OID;
+    aggregate.inputcollid = DEFAULT_COLLATION_OID;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(BPCHAROID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_string_coerce_via_io) {
     auto arg = makeTypedConst(TEXTOID);
     auto coerce = CoerceViaIO{};

@@ -1,0 +1,16 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS min_text_fallback;
+NOTICE:  table "min_text_fallback" does not exist, skipping
+CREATE TABLE min_text_fallback(name text);
+INSERT INTO min_text_fallback VALUES ('delta'), ('alpha'), ('charlie');
+SET pgx_lower.execution_mode = 'auto';
+\pset format unaligned
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_50_min_text_fallback_001 */
+SELECT min(name) AS min_name
+FROM min_text_fallback;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported aggregate function min() at Plan.targetlist[0].expr
+min_name
+alpha
+(1 row)
+\pset format aligned
+DROP TABLE min_text_fallback;

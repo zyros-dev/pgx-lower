@@ -121,6 +121,7 @@ if(NOT BUILDING_UNIT_TESTS)
             47_pg_bool_predicate_truth
             48_grouping_sets_fallback
             49_aggref_filter_fallback
+            50_min_text_fallback
 )
 
 
