@@ -48,6 +48,11 @@ metadata on those PG types; do not introduce `!db.nullable<T>` for PostgreSQL
 values. Internal compiler machinery such as indexes, hash values, offsets,
 loop counters, and null bits should remain ordinary MLIR/helper types.
 
+pgx-lower supports DATE, TIMESTAMP WITHOUT TIME ZONE, and INTERVAL only where
+the analyzer accepts the operation. TIME, TIMETZ, and TIMESTAMPTZ are
+fallback-only until explicit support specs exist. Intervals must preserve
+PostgreSQL time/day/month fields; average-month flattening is forbidden.
+
 ## Merge discipline
 
 Never merge a PR, rebase-merge a PR, squash-merge a PR, delete a PR branch, or

@@ -91,6 +91,13 @@ files remain fixture, route-notice, and harness checks; inspect the
 compare-postgres Markdown summary and JSON diff rather than pasting raw result
 sets into chat.
 
+## Temporal Type Support
+
+pgx-lower supports DATE, TIMESTAMP WITHOUT TIME ZONE, and INTERVAL only where
+the analyzer accepts the operation. TIME, TIMETZ, and TIMESTAMPTZ are
+fallback-only until explicit support specs exist. Intervals must preserve
+PostgreSQL time/day/month fields; average-month flattening is forbidden.
+
 ### IDE setup (compile_commands.json)
 
 The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from
