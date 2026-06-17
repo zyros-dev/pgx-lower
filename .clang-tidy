@@ -123,7 +123,7 @@ WarningsAsErrors: >
   modernize-use-nullptr,
   performance-avoid-endl
 
-HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external).)*$'
+HeaderFilterRegex: '^((?!\/usr\/|\/opt\/|third_party|external|build-docker-lint\/include\/lingodb\/mlir\/Dialect\/.*\.inc).)*$'
 
 # Deliberately disabled after the 2026-06-04 lint inventory:
 # - readability-identifier-naming renames const value parameters like `val` to
