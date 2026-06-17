@@ -24,6 +24,11 @@ CREATE TEMP TABLE interval_timestamp_truthfulness(
     end_ts timestamp
 );
 
+CREATE TEMP TABLE interval_sort_truthfulness(
+    id int4,
+    i interval
+);
+
 INSERT INTO interval_day_truthfulness VALUES
     (1, date '1998-12-01');
 
@@ -32,6 +37,11 @@ INSERT INTO interval_month_truthfulness VALUES
 
 INSERT INTO interval_timestamp_truthfulness VALUES
     (1, timestamp '2000-01-01 00:00:00', timestamp '2000-01-02 00:00:00');
+
+INSERT INTO interval_sort_truthfulness VALUES
+    (2, interval '1 month'),
+    (1, interval '5 days'),
+    (3, NULL);
 
 SET pgx_lower.execution_mode = 'auto';
 
@@ -71,6 +81,10 @@ SELECT i + timestamp '2000-01-01 00:00:00' FROM interval_month_truthfulness WHER
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_61_interval_truthfulness_012 */
 SELECT sum(i), avg(i), min(i), max(i) FROM interval_month_truthfulness;
 
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_61_interval_truthfulness_013 */
+SELECT id, i FROM interval_sort_truthfulness ORDER BY id;
+
 DROP TABLE interval_day_truthfulness;
 DROP TABLE interval_month_truthfulness;
 DROP TABLE interval_timestamp_truthfulness;
+DROP TABLE interval_sort_truthfulness;

@@ -554,6 +554,18 @@ void PgSortState::appendTuple(const uint8_t* tupleData) {
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] numeric datum: datum passthrough", i);
             break;
         }
+        case PhysicalType::INTERVAL: {
+            pgx_lower::runtime::PgIntervalValue val{};
+            memcpy(&val, &tupleData[layout.value_offset], sizeof(val));
+            auto* interval = static_cast<Interval*>(palloc(sizeof(Interval)));
+            interval->time = val.time;
+            interval->day = val.day;
+            interval->month = val.month;
+            values[i] = IntervalPGetDatum(interval);
+            PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu] interval: time=%ld day=%d month=%d", i, val.time, val.day,
+                    val.month);
+            break;
+        }
         default:
             PGX_LOG(RUNTIME, DEBUG, "  unpack Column[%zu]: Unknown physical type %d", i,
                     static_cast<int>(layout.phys_type));
