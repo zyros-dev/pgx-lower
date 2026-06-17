@@ -354,10 +354,11 @@ describe("dev commands", () => {
     expect(output.stdout).toContain("Workflow result: ok");
   });
 
-	  test("dev gate review runs full review checks", async () => {
+  test("dev gate review runs full review checks", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
-    const exitCode = await runDevCommand(["gate", "review"], runner, output, makeDevConfig());
+    const config = makeDevConfig();
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, config);
 
     expect(exitCode).toBe(0);
     const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
@@ -381,6 +382,32 @@ describe("dev commands", () => {
     expect(commands).not.toContain("just");
     expect(output.stdout).not.toContain("stdout preview:");
 	  });
+
+  test("dev gate review persists a full workflow summary for pr readiness", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    const reviewRunId = output.stdout.match(/^run id: (.+dev-gate-review.+)$/m)?.[1];
+    expect(reviewRunId).toEqual(expect.any(String));
+    const summary = JSON.parse(readFileSync(join(config.localProjectPath, ".pgx-cli", "runs", reviewRunId ?? "", "summary.json"), "utf8"));
+    expect(summary).toMatchObject({
+      runId: reviewRunId,
+      commandName: "dev-gate-review",
+      command: ["pgx-cli", "dev", "gate", "review"],
+      workflowExitCode: 0,
+      gitHead: "abc123"
+    });
+    expect(summary.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "compare-postgres",
+        command: ["pgx-cli", "test", "compare-postgres", "--workload", "tpch-correctness"],
+        exitCode: 0
+      })
+    ]));
+  });
 
   test("dev gate review no-bench does not run bench", async () => {
     const runner = new FakeRunner();

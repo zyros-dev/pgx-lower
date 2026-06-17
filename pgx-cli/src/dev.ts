@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StreamingCommandRunner } from "./commands.js";
 import { fullLintShellCommand, targetedLintShellCommand } from "./lint.js";
@@ -9,6 +9,7 @@ import { runManagedRemoteShell } from "./managed-operations.js";
 import type { ManagedOperationConfig } from "./managed-operations.js";
 import { applyTotalOutputBudget } from "./managed-runner.js";
 import { runDevPreflightCommand } from "./dev-preflight.js";
+import { createRunArtifactPaths, writeCommand, writeRunSummary } from "./run-artifacts.js";
 import {
   clearGateFailureState,
   readGateFailureState,
@@ -255,6 +256,9 @@ export async function runDevCommand(
           run: (stepOutput) => runComparePostgresGate(runner, stepOutput, config)
         }
       ], {
+        metadata: {
+          gitHead: currentHead
+        },
         onStepFailure: ({ step, stepOutput }) => {
           const evidence = workflowStepEvidence(stepOutput);
           recordGateFailure({
@@ -286,6 +290,7 @@ async function runWorkflow(
   workflowName: string,
   steps: Array<WorkflowRuntimeStep>,
   options: {
+    metadata?: Record<string, unknown>;
     onStepFailure?: (input: {
       step: WorkflowRuntimeStep;
       stepOutput: OperationOutput;
@@ -294,8 +299,17 @@ async function runWorkflow(
     onWorkflowSuccess?: () => void;
   } = {}
 ): Promise<number> {
+  const artifact = createRunArtifactPaths({
+    root: config.localProjectPath,
+    commandName: workflowName,
+    transcriptDir: config.output.transcript_dir
+  });
+  const startedAt = new Date();
+  const command = workflowCommand(workflowName);
+  writeCommand(artifact, command);
   const results: WorkflowStep[] = [];
   appendLiveStdout(output, `pgx-cli: starting ${workflowName}\n`);
+  appendLiveStdout(output, `run id: ${artifact.runId}\n`);
   const parts: string[] = [];
   for (const step of steps) {
     const stepOutput = { stdout: "", stderr: "" };
@@ -312,14 +326,88 @@ async function runWorkflow(
       options.onStepFailure?.({ step, stepOutput, exitCode });
       parts.push(renderFailedStepOutput(stepOutput));
       parts.push(formatWorkflowSummary(results));
-      output.stdout += applyTotalOutputBudget(parts, config.output.max_lines_total).text;
+      const rendered = applyTotalOutputBudget(parts, config.output.max_lines_total).text;
+      output.stdout += rendered;
+      writeWorkflowArtifact({
+        artifact,
+        workflowName,
+        command,
+        startedAt,
+        exitCode,
+        outputText: rendered,
+        results,
+        metadata: options.metadata
+      });
       return exitCode;
     }
   }
   options.onWorkflowSuccess?.();
   parts.push(formatWorkflowSummary(results));
-  output.stdout += applyTotalOutputBudget(parts, config.output.max_lines_total).text;
+  const rendered = applyTotalOutputBudget(parts, config.output.max_lines_total).text;
+  output.stdout += rendered;
+  writeWorkflowArtifact({
+    artifact,
+    workflowName,
+    command,
+    startedAt,
+    exitCode: 0,
+    outputText: rendered,
+    results,
+    metadata: options.metadata
+  });
   return 0;
+}
+
+function writeWorkflowArtifact(input: {
+  artifact: ReturnType<typeof createRunArtifactPaths>;
+  workflowName: string;
+  command: string[];
+  startedAt: Date;
+  exitCode: number;
+  outputText: string;
+  results: WorkflowStep[];
+  metadata?: Record<string, unknown>;
+}): void {
+  const finishedAt = new Date();
+  writeFileSync(input.artifact.stdoutPath, input.outputText);
+  writeFileSync(input.artifact.stderrPath, "");
+  writeFileSync(input.artifact.combinedPath, input.outputText);
+  writeFileSync(input.artifact.artifactsPath, "", { flag: "a" });
+  writeRunSummary(input.artifact, {
+    runId: input.artifact.runId,
+    commandName: input.workflowName,
+    command: input.command,
+    cwd: process.cwd(),
+    startedAt: input.startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - input.startedAt.getTime(),
+    childExitCode: input.exitCode,
+    workflowExitCode: input.exitCode,
+    timedOut: false,
+    truncated: false,
+    transcripts: {
+      stdoutPath: input.artifact.stdoutPath,
+      stderrPath: input.artifact.stderrPath,
+      combinedPath: input.artifact.combinedPath
+    },
+    artifacts: {
+      registryPath: input.artifact.artifactsPath,
+      commandPath: input.artifact.commandPath,
+      runDir: input.artifact.runDir
+    },
+    steps: input.results,
+    ...(input.metadata ?? {})
+  });
+}
+
+function workflowCommand(workflowName: string): string[] {
+  if (workflowName === "dev-gate-review") {
+    return ["pgx-cli", "dev", "gate", "review"];
+  }
+  if (workflowName === "dev-gate-batch") {
+    return ["pgx-cli", "dev", "gate", "batch"];
+  }
+  return ["pgx-cli", workflowName];
 }
 
 function workflowStepSummary(output: OperationOutput, logPath?: string): string | undefined {

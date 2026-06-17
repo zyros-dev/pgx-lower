@@ -19,6 +19,7 @@ import { runUnitSqlCommand } from "./unit-sql.js";
 import { runGatewayCommand } from "./run.js";
 import { runAgentEvidenceCommand } from "./agent-evidence.js";
 import { runCodexPolicyCommand } from "./codex-policy.js";
+import { runPrReadyCommand } from "./pr-ready.js";
 import {
   runQueueCommand,
   runSetupCommand,
@@ -198,6 +199,15 @@ try {
   if (argv[0] === "agent") {
     process.exitCode = runAgentEvidenceCommand(argv.slice(1), io, {
       localProjectPath: config.localProjectPath
+    });
+    flushIo();
+    process.exit();
+  }
+
+  if (argv[0] === "pr") {
+    process.exitCode = await runPrReadyCommand(argv.slice(1), runner, io, {
+      localProjectPath: config.localProjectPath,
+      output: config.output
     });
     flushIo();
     process.exit();

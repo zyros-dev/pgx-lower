@@ -392,6 +392,7 @@ export function helpText(): string {
     "  pgx-cli agent evidence add --id <id> --green <evidence> [--artifact <path>] [--command <command>] [--file <path>]",
     "  pgx-cli agent evidence defer --id <id> --reason <reason> [--file <path>]",
     "  pgx-cli agent evidence check [--file <path>]",
+    "  pgx-cli pr ready --evidence <path> [--review-run <run-id>] [--allow-no-pr]",
     "  tunnel",
     "  queue status",
     "  queue flush",
