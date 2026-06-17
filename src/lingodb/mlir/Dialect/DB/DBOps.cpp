@@ -7,6 +7,7 @@
 
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/Support/Debug.h>
+#include <limits>
 #include <queue>
 
 constexpr auto MAX_NUMERIC_PRECISION = 32;
@@ -213,6 +214,48 @@ bool mlir::db::RuntimeCall::needsNullWrap() {
       return fn->nullHandleType != RuntimeFunction::HandlesNulls;
    }
    return false;
+}
+
+LogicalResult mlir::db::PgRowGetOp::verify() {
+    auto rowType = mlir::dyn_cast_or_null<mlir::db::PgRowType>(getRow().getType());
+    if (!rowType) {
+        return emitOpError("requires a !db.pg_row operand");
+    }
+    uint64_t index = getIndex();
+    if (index > std::numeric_limits<uint32_t>::max()) {
+        return emitOpError("row field index is outside uint32 range");
+    }
+    auto field = mlir::db::getPgRowFieldByIndex(rowType, static_cast<uint32_t>(index));
+    if (!field) {
+        return emitOpError("row field index is outside the row schema");
+    }
+    if (getResult().getType() != mlir::db::getPgRowFieldType(field)) {
+        return emitOpError("result type must match the selected row field type");
+    }
+    return success();
+}
+
+LogicalResult mlir::db::PgRowProjectOp::verify() {
+    auto inputType = mlir::dyn_cast_or_null<mlir::db::PgRowType>(getRow().getType());
+    if (!inputType) {
+        return emitOpError("requires a !db.pg_row operand");
+    }
+    auto resultType = mlir::dyn_cast_or_null<mlir::db::PgRowType>(getResult().getType());
+    if (!resultType) {
+        return emitOpError("requires a !db.pg_row result");
+    }
+    if (resultType.getSchema() != getSchema()) {
+        return emitOpError("result row schema must match the project schema attribute");
+    }
+    (void)inputType;
+    return success();
+}
+
+LogicalResult mlir::db::PgEmitRowOp::verify() {
+    if (!mlir::isa<mlir::db::PgRowType>(getRow().getType())) {
+        return emitOpError("requires a !db.pg_row operand");
+    }
+    return success();
 }
 
 bool mlir::db::CmpOp::supportsInvalidValues() {

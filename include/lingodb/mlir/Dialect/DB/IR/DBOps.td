@@ -25,6 +25,7 @@ def DB_Dialect : Dialect {
     let name = "db";
     let cppNamespace = "::mlir::db";
     let useDefaultTypePrinterParser = 1;
+    let useDefaultAttributePrinterParser = 1;
     let extraClassDeclaration = [{
         private:
         void registerTypes();
@@ -40,6 +41,7 @@ def DB_Dialect : Dialect {
 class DB_Op<string mnemonic, list<Trait> traits = []> : Op<DB_Dialect, mnemonic, traits>{
 }
 
+class DB_Attr<string name> : AttrDef<DB_Dialect, name>;
 
 class DB_Type<string name, string typeMnemonic> : TypeDef<DB_Dialect, name> {
     let mnemonic = typeMnemonic;
@@ -50,6 +52,45 @@ def DB_PgNullability_Maybe : I64EnumAttrCase<"Maybe", 1, "maybe">;
 def DB_PgNullabilityAttr : I64EnumAttr<"PgNullability", "",
         [DB_PgNullability_Never, DB_PgNullability_Maybe]> {
     let cppNamespace = "::mlir::db";
+}
+
+def DB_PgRowFieldOrigin_Base : I64EnumAttrCase<"base", 0>;
+def DB_PgRowFieldOrigin_Computed : I64EnumAttrCase<"computed", 1>;
+def DB_PgRowFieldOrigin_Aggregate : I64EnumAttrCase<"aggregate", 2>;
+def DB_PgRowFieldOrigin_Join : I64EnumAttrCase<"join", 3>;
+def DB_PgRowFieldOrigin_Subquery : I64EnumAttrCase<"subquery", 4>;
+def DB_PgRowFieldOrigin_Unknown : I64EnumAttrCase<"unknown", 5>;
+def DB_PgRowFieldOriginAttr : I64EnumAttr<"PgRowFieldOrigin", "",
+        [DB_PgRowFieldOrigin_Base, DB_PgRowFieldOrigin_Computed, DB_PgRowFieldOrigin_Aggregate,
+         DB_PgRowFieldOrigin_Join, DB_PgRowFieldOrigin_Subquery, DB_PgRowFieldOrigin_Unknown]> {
+    let cppNamespace = "::mlir::db";
+}
+
+def DB_PgRowFieldAttr : DB_Attr<"PgRowField"> {
+    let mnemonic = "pg_row_field";
+    let parameters = (ins
+        "uint32_t":$index,
+        "PgOid":$relid,
+        "uint32_t":$varno,
+        "int16_t":$attno,
+        "StringAttr":$name,
+        "Type":$type,
+        "PgOid":$oid,
+        "int32_t":$typmod,
+        "PgOid":$collation,
+        "PgNullability":$nullability,
+        "bool":$resjunk,
+        "PgRowFieldOrigin":$origin
+    );
+    let hasCustomAssemblyFormat = 1;
+    let genVerifyDecl = 1;
+}
+
+def DB_PgRowSchemaAttr : DB_Attr<"PgRowSchema"> {
+    let mnemonic = "pg_row_schema";
+    let parameters = (ins ArrayRefParameter<"PgRowFieldAttr">:$fields);
+    let hasCustomAssemblyFormat = 1;
+    let genVerifyDecl = 1;
 }
 
 def NullableType : DB_Type<"Nullable","nullable"> {
@@ -244,6 +285,18 @@ def DB_PgBpcharType : DB_PgType<"PgBpchar", "pg_bpchar"> {
     }];
 }
 
+def DB_PgRowType : DB_Type<"PgRow", "pg_row"> {
+    let summary = "PostgreSQL row value";
+    let parameters = (ins "PgRowSchemaAttr":$schema);
+    let hasCustomAssemblyFormat = 1;
+}
+
+def DB_PgRowStreamType : DB_Type<"PgRowStream", "pg_row_stream"> {
+    let summary = "PostgreSQL row stream";
+    let parameters = (ins "PgRowSchemaAttr":$schema);
+    let hasCustomAssemblyFormat = 1;
+}
+
 def AnyBool: AnyTypeOf<[I1,NullableType,DB_PgBoolType]>;
 def NullableDBType: AnyTypeOf<[AnyType,NullableType]>;
 
@@ -342,6 +395,37 @@ def DB_Hash : DB_Op<"hash", [Pure]> {
     let arguments = (ins AnyType: $val);
     let results = (outs  Index : $hash);
     let assemblyFormat = "$val `:` type($val) attr-dict";
+}
+
+def DB_PgRowGetOp : DB_Op<"pg_row_get", [Pure]> {
+    let summary = "Read a field from a PostgreSQL row value";
+    let arguments = (ins AnyType:$row, I64Attr:$index);
+    let results = (outs AnyType:$result);
+    let builders = [
+        OpBuilder<(ins "Value":$row, "uint32_t":$index), [{
+            auto rowType = mlir::dyn_cast_or_null<mlir::db::PgRowType>(row.getType());
+            auto field = rowType ? mlir::db::getPgRowFieldByIndex(rowType, index) : mlir::db::PgRowFieldAttr();
+            auto resultType = field ? mlir::db::getPgRowFieldType(field) : mlir::Type();
+            build($_builder, $_state, resultType, row, $_builder.getI64IntegerAttr(index));
+        }]>
+    ];
+    let assemblyFormat = "$row `[` $index `]` `:` type($row) `->` type($result) attr-dict";
+    let hasVerifier = 1;
+}
+
+def DB_PgRowProjectOp : DB_Op<"pg_row_project", [Pure]> {
+    let summary = "Project a PostgreSQL row value to a new row schema";
+    let arguments = (ins AnyType:$row, DB_PgRowSchemaAttr:$schema);
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "$row `:` type($row) `->` type($result) attr-dict";
+    let hasVerifier = 1;
+}
+
+def DB_PgEmitRowOp : DB_Op<"pg_emit_row"> {
+    let summary = "Emit a PostgreSQL row value to a PostgreSQL row stream";
+    let arguments = (ins AnyType:$row);
+    let assemblyFormat = "$row `:` type($row) attr-dict";
+    let hasVerifier = 1;
 }
 
 class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :

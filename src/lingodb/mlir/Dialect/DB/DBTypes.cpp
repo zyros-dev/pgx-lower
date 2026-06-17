@@ -7,6 +7,7 @@
 #include "mlir/IR/DialectImplementation.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/ADT/STLExtras.h>
 
 #include <cstdint>
 #include <limits>
@@ -15,6 +16,145 @@ namespace mlir { namespace db {
 
 namespace {
 constexpr int32_t kPgTypmodUnconstrained = -1;
+constexpr PgOid InvalidOid = 0;
+constexpr PgOid BOOLOID = 16;
+constexpr PgOid INT8OID = 20;
+constexpr PgOid INT2OID = 21;
+constexpr PgOid INT4OID = 23;
+constexpr PgOid TEXTOID = 25;
+constexpr PgOid FLOAT4OID = 700;
+constexpr PgOid FLOAT8OID = 701;
+constexpr PgOid BPCHAROID = 1042;
+constexpr PgOid VARCHAROID = 1043;
+constexpr PgOid DATEOID = 1082;
+constexpr PgOid TIMESTAMPOID = 1114;
+constexpr PgOid INTERVALOID = 1186;
+constexpr PgOid NUMERICOID = 1700;
+
+auto parseKeywordEqual(AsmParser& parser, llvm::StringRef keyword) -> ParseResult {
+    if (parser.parseKeyword(keyword) || parser.parseEqual()) {
+        return failure();
+    }
+    return success();
+}
+
+auto parseUInt32Value(AsmParser& parser) -> FailureOr<uint32_t> {
+    uint64_t parsed{};
+    if (parser.parseInteger(parsed)) {
+        return failure();
+    }
+    if (parsed > std::numeric_limits<uint32_t>::max()) {
+        return parser.emitError(parser.getCurrentLocation(), "expected 32-bit unsigned integer");
+    }
+    return static_cast<uint32_t>(parsed);
+}
+
+auto parseInt16Value(AsmParser& parser) -> FailureOr<int16_t> {
+    int64_t parsed{};
+    if (parser.parseInteger(parsed)) {
+        return failure();
+    }
+    if (parsed < std::numeric_limits<int16_t>::min() || parsed > std::numeric_limits<int16_t>::max()) {
+        return parser.emitError(parser.getCurrentLocation(), "expected 16-bit signed integer");
+    }
+    return static_cast<int16_t>(parsed);
+}
+
+auto parseInt32Value(AsmParser& parser) -> FailureOr<int32_t> {
+    int64_t parsed{};
+    if (parser.parseInteger(parsed)) {
+        return failure();
+    }
+    if (parsed < std::numeric_limits<int32_t>::min() || parsed > std::numeric_limits<int32_t>::max()) {
+        return parser.emitError(parser.getCurrentLocation(), "expected 32-bit signed integer");
+    }
+    return static_cast<int32_t>(parsed);
+}
+
+auto parseBoolValue(AsmParser& parser) -> FailureOr<bool> {
+    llvm::StringRef keyword;
+    if (parser.parseKeyword(&keyword)) {
+        return failure();
+    }
+    if (keyword == "true") {
+        return true;
+    }
+    if (keyword == "false") {
+        return false;
+    }
+    return parser.emitError(parser.getCurrentLocation(), "expected true or false");
+}
+
+auto parsePgNullabilityValue(AsmParser& parser) -> FailureOr<PgNullability> {
+    llvm::StringRef keyword;
+    if (parser.parseKeyword(&keyword)) {
+        return failure();
+    }
+    if (keyword == "never") {
+        return PgNullability::Never;
+    }
+    if (keyword == "maybe") {
+        return PgNullability::Maybe;
+    }
+    return parser.emitError(parser.getCurrentLocation(), "expected never or maybe");
+}
+
+auto parsePgRowFieldOriginValue(AsmParser& parser) -> FailureOr<PgRowFieldOrigin> {
+    llvm::StringRef keyword;
+    if (parser.parseKeyword(&keyword)) {
+        return failure();
+    }
+    if (keyword == "base") {
+        return PgRowFieldOrigin::base;
+    }
+    if (keyword == "computed") {
+        return PgRowFieldOrigin::computed;
+    }
+    if (keyword == "aggregate") {
+        return PgRowFieldOrigin::aggregate;
+    }
+    if (keyword == "join") {
+        return PgRowFieldOrigin::join;
+    }
+    if (keyword == "subquery") {
+        return PgRowFieldOrigin::subquery;
+    }
+    if (keyword == "unknown") {
+        return PgRowFieldOrigin::unknown;
+    }
+    return parser.emitError(parser.getCurrentLocation(), "expected row field origin");
+}
+
+void printPgRowNullability(AsmPrinter& printer, PgNullability nullability) {
+    switch (nullability) {
+    case PgNullability::Never: printer << "never"; break;
+    case PgNullability::Maybe: printer << "maybe"; break;
+    }
+}
+
+void printPgRowFieldOrigin(AsmPrinter& printer, PgRowFieldOrigin origin) {
+    switch (origin) {
+    case PgRowFieldOrigin::base: printer << "base"; break;
+    case PgRowFieldOrigin::computed: printer << "computed"; break;
+    case PgRowFieldOrigin::aggregate: printer << "aggregate"; break;
+    case PgRowFieldOrigin::join: printer << "join"; break;
+    case PgRowFieldOrigin::subquery: printer << "subquery"; break;
+    case PgRowFieldOrigin::unknown: printer << "unknown"; break;
+    }
+}
+
+auto verifyPgRowSchemaFields(llvm::function_ref<InFlightDiagnostic()> emitError, llvm::ArrayRef<PgRowFieldAttr> fields)
+    -> LogicalResult {
+    for (auto [position, field] : llvm::enumerate(fields)) {
+        if (!field) {
+            return emitError() << "row schema requires non-null row field attributes";
+        }
+        if (field.getIndex() != position) {
+            return emitError() << "row field index must equal ordered position and be contiguous from zero";
+        }
+    }
+    return success();
+}
 
 auto parseNonPgNullablePayload(AsmParser& parser) -> Type {
     if (parser.parseLess()) {
@@ -176,6 +316,41 @@ void printStringTypmodPgType(TypeT type, AsmPrinter& printer) {
     printer << ">";
 }
 
+auto parsePgRowSchemaTypeParameter(AsmParser& parser) -> PgRowSchemaAttr {
+    if (parser.parseLess()) {
+        return {};
+    }
+    Attribute attr;
+    if (parser.parseAttribute(attr)) {
+        return {};
+    }
+    auto schema = mlir::dyn_cast<PgRowSchemaAttr>(attr);
+    if (!schema) {
+        parser.emitError(parser.getCurrentLocation(), "expected pg_row_schema attribute");
+        return {};
+    }
+    if (parser.parseGreater()) {
+        return {};
+    }
+    return schema;
+}
+
+template<typename TypeT>
+auto parsePgRowContainerType(AsmParser& parser) -> Type {
+    auto schema = parsePgRowSchemaTypeParameter(parser);
+    if (!schema) {
+        return {};
+    }
+    return TypeT::get(parser.getContext(), schema);
+}
+
+template<typename TypeT>
+void printPgRowContainerType(TypeT type, AsmPrinter& printer) {
+    printer << "<";
+    printer.printAttribute(type.getSchema());
+    printer << ">";
+}
+
 } // namespace
 
 Type NullableType::parse(AsmParser& parser) {
@@ -278,10 +453,290 @@ void PgBpcharType::print(AsmPrinter& printer) const {
     printStringTypmodPgType(*this, printer);
 }
 
+Type PgRowType::parse(AsmParser& parser) {
+    return parsePgRowContainerType<PgRowType>(parser);
+}
+
+void PgRowType::print(AsmPrinter& printer) const {
+    printPgRowContainerType(*this, printer);
+}
+
+Type PgRowStreamType::parse(AsmParser& parser) {
+    return parsePgRowContainerType<PgRowStreamType>(parser);
+}
+
+void PgRowStreamType::print(AsmPrinter& printer) const {
+    printPgRowContainerType(*this, printer);
+}
+
+Attribute PgRowFieldAttr::parse(AsmParser& parser, Type odsType) {
+    auto loc = parser.getCurrentLocation();
+    if (parser.parseLess()) {
+        return {};
+    }
+
+    if (failed(parseKeywordEqual(parser, "index"))) {
+        return {};
+    }
+    auto index = parseUInt32Value(parser);
+    if (failed(index) || parser.parseComma() || failed(parseKeywordEqual(parser, "relid"))) {
+        return {};
+    }
+    auto relid = parsePgOidValue(parser);
+    if (failed(relid) || parser.parseComma() || failed(parseKeywordEqual(parser, "varno"))) {
+        return {};
+    }
+    auto varno = parseUInt32Value(parser);
+    if (failed(varno) || parser.parseComma() || failed(parseKeywordEqual(parser, "attno"))) {
+        return {};
+    }
+    auto attno = parseInt16Value(parser);
+    if (failed(attno) || parser.parseComma() || failed(parseKeywordEqual(parser, "name"))) {
+        return {};
+    }
+    StringAttr name;
+    if (parser.parseAttribute(name) || parser.parseComma() || failed(parseKeywordEqual(parser, "type"))) {
+        return {};
+    }
+    Type type;
+    if (parser.parseType(type) || parser.parseComma() || failed(parseKeywordEqual(parser, "oid"))) {
+        return {};
+    }
+    auto oid = parsePgOidValue(parser);
+    if (failed(oid) || parser.parseComma() || failed(parseKeywordEqual(parser, "typmod"))) {
+        return {};
+    }
+    auto typmod = parseInt32Value(parser);
+    if (failed(typmod) || parser.parseComma() || failed(parseKeywordEqual(parser, "collation"))) {
+        return {};
+    }
+    auto collation = parsePgOidValue(parser);
+    if (failed(collation) || parser.parseComma() || failed(parseKeywordEqual(parser, "nullable"))) {
+        return {};
+    }
+    auto nullability = parsePgNullabilityValue(parser);
+    if (failed(nullability) || parser.parseComma() || failed(parseKeywordEqual(parser, "resjunk"))) {
+        return {};
+    }
+    auto resjunk = parseBoolValue(parser);
+    if (failed(resjunk) || parser.parseComma() || failed(parseKeywordEqual(parser, "origin"))) {
+        return {};
+    }
+    auto origin = parsePgRowFieldOriginValue(parser);
+    if (failed(origin) || parser.parseGreater()) {
+        return {};
+    }
+
+    return PgRowFieldAttr::getChecked([&]() { return parser.emitError(loc); }, parser.getContext(), *index, *relid,
+                                      *varno, *attno, name, type, *oid, *typmod, *collation, *nullability, *resjunk,
+                                      *origin);
+}
+
+void PgRowFieldAttr::print(AsmPrinter& printer) const {
+    printer << "<index = " << getIndex() << ", relid = " << getRelid() << ", varno = " << getVarno()
+            << ", attno = " << getAttno() << ", name = ";
+    printer.printAttribute(getName());
+    printer << ", type = ";
+    printer.printStrippedAttrOrType(getType());
+    printer << ", oid = " << getOid() << ", typmod = " << getTypmod() << ", collation = " << getCollation()
+            << ", nullable = ";
+    printPgRowNullability(printer, getNullability());
+    printer << ", resjunk = " << (getResjunk() ? "true" : "false") << ", origin = ";
+    printPgRowFieldOrigin(printer, getOrigin());
+    printer << ">";
+}
+
+Attribute PgRowSchemaAttr::parse(AsmParser& parser, Type odsType) {
+    auto loc = parser.getCurrentLocation();
+    if (parser.parseLess() || parser.parseLSquare()) {
+        return {};
+    }
+
+    SmallVector<PgRowFieldAttr> fields;
+    if (failed(parser.parseOptionalRSquare())) {
+        do {
+            Attribute attr;
+            if (parser.parseAttribute(attr)) {
+                return {};
+            }
+            auto field = mlir::dyn_cast<PgRowFieldAttr>(attr);
+            if (!field) {
+                parser.emitError(parser.getCurrentLocation(), "expected pg_row_field attribute");
+                return {};
+            }
+            fields.push_back(field);
+        } while (succeeded(parser.parseOptionalComma()));
+
+        if (parser.parseRSquare()) {
+            return {};
+        }
+    }
+
+    if (parser.parseGreater()) {
+        return {};
+    }
+    if (failed(verifyPgRowSchemaFields([&]() { return parser.emitError(loc); }, fields))) {
+        return {};
+    }
+    llvm::ArrayRef<PgRowFieldAttr> fieldRef(fields);
+    return PgRowSchemaAttr::getChecked([&]() { return parser.emitError(loc); }, parser.getContext(), fieldRef);
+}
+
+void PgRowSchemaAttr::print(AsmPrinter& printer) const {
+    printer << "<[";
+    llvm::interleaveComma(getFields(), printer, [&](PgRowFieldAttr field) { printer.printAttribute(field); });
+    printer << "]>";
+}
+
+LogicalResult PgRowFieldAttr::verify(llvm::function_ref<InFlightDiagnostic()> emitError, uint32_t index, PgOid relid,
+                                     uint32_t varno, int16_t attno, StringAttr name, Type type, PgOid oid, int32_t typmod,
+                                     PgOid collation, PgNullability nullability, bool resjunk, PgRowFieldOrigin origin) {
+    if (!name) {
+        return emitError() << "row field requires a name";
+    }
+    if (!type || !mlir::db::isPgValueType(type)) {
+        return emitError() << "row field type must be a PostgreSQL semantic type";
+    }
+    if (oid != mlir::db::getPgTypeOid(type)) {
+        return emitError() << "row field oid must match its PostgreSQL semantic type";
+    }
+    if (typmod != mlir::db::getPgTypmod(type)) {
+        return emitError() << "row field typmod must match its PostgreSQL semantic type";
+    }
+    if (collation != mlir::db::getPgCollation(type)) {
+        return emitError() << "row field collation must match its PostgreSQL semantic type";
+    }
+    if (nullability != mlir::db::getPgNullability(type)) {
+        return emitError() << "row field nullability must match its PostgreSQL semantic type";
+    }
+    (void)index;
+    (void)relid;
+    (void)varno;
+    (void)attno;
+    (void)resjunk;
+    (void)origin;
+    return success();
+}
+
+LogicalResult
+PgRowSchemaAttr::verify(llvm::function_ref<InFlightDiagnostic()> emitError, llvm::ArrayRef<PgRowFieldAttr> fields) {
+    return verifyPgRowSchemaFields(emitError, fields);
+}
+
 }} // namespace mlir::db
 #define GET_TYPEDEF_CLASSES
 #include "lingodb/mlir/Dialect/DB/IR/DBOpsTypes.cpp.inc"
 namespace mlir::db {
+
+PgRowFieldLookupResult::PgRowFieldLookupResult(PgRowFieldLookupStatus status, PgRowFieldAttr field)
+: status(status)
+, field(field) {}
+
+PgRowFieldLookupResult PgRowFieldLookupResult::notFound() {
+    return PgRowFieldLookupResult(PgRowFieldLookupStatus::NotFound, {});
+}
+
+PgRowFieldLookupResult PgRowFieldLookupResult::found(PgRowFieldAttr field) {
+    return PgRowFieldLookupResult(PgRowFieldLookupStatus::Found, field);
+}
+
+PgRowFieldLookupResult PgRowFieldLookupResult::ambiguous() {
+    return PgRowFieldLookupResult(PgRowFieldLookupStatus::Ambiguous, {});
+}
+
+bool PgRowFieldLookupResult::isFound() const {
+    return status == PgRowFieldLookupStatus::Found;
+}
+
+bool PgRowFieldLookupResult::isAmbiguous() const {
+    return status == PgRowFieldLookupStatus::Ambiguous;
+}
+
+uint32_t PgRowFieldLookupResult::getFieldIndex() const {
+    return field ? field.getIndex() : 0;
+}
+
+PgRowFieldAttr PgRowFieldLookupResult::getField() const {
+    return field;
+}
+
+bool isPgRowType(mlir::Type type) {
+    return mlir::isa<PgRowType>(type);
+}
+
+bool isPgRowStreamType(mlir::Type type) {
+    return mlir::isa<PgRowStreamType>(type);
+}
+
+PgRowSchemaAttr getPgRowSchema(mlir::Type type) {
+    if (auto rowType = mlir::dyn_cast_or_null<PgRowType>(type)) {
+        return rowType.getSchema();
+    }
+    if (auto rowStreamType = mlir::dyn_cast_or_null<PgRowStreamType>(type)) {
+        return rowStreamType.getSchema();
+    }
+    return {};
+}
+
+uint32_t getPgRowFieldCount(mlir::Type type) {
+    if (auto schema = getPgRowSchema(type)) {
+        return static_cast<uint32_t>(schema.getFields().size());
+    }
+    return 0;
+}
+
+PgRowFieldAttr getPgRowFieldByIndex(mlir::Type type, uint32_t index) {
+    auto schema = getPgRowSchema(type);
+    if (!schema || index >= schema.getFields().size()) {
+        return {};
+    }
+    return schema.getFields()[index];
+}
+
+PgRowFieldLookupResult lookupPgRowFieldBySource(mlir::Type type, uint32_t varno, int16_t attno) {
+    if (varno == 0 || attno == 0) {
+        return PgRowFieldLookupResult::notFound();
+    }
+    auto schema = getPgRowSchema(type);
+    if (!schema) {
+        return PgRowFieldLookupResult::notFound();
+    }
+
+    PgRowFieldAttr found;
+    for (auto field : schema.getFields()) {
+        if (field.getVarno() != varno || field.getAttno() != attno) {
+            continue;
+        }
+        if (found) {
+            return PgRowFieldLookupResult::ambiguous();
+        }
+        found = field;
+    }
+    if (!found) {
+        return PgRowFieldLookupResult::notFound();
+    }
+    return PgRowFieldLookupResult::found(found);
+}
+
+mlir::Type getPgRowFieldType(PgRowFieldAttr field) {
+    return field ? field.getType() : mlir::Type();
+}
+
+PgOid getPgRowFieldOid(PgRowFieldAttr field) {
+    return field ? field.getOid() : InvalidOid;
+}
+
+int32_t getPgRowFieldTypmod(PgRowFieldAttr field) {
+    return field ? field.getTypmod() : kPgTypmodUnconstrained;
+}
+
+PgOid getPgRowFieldCollation(PgRowFieldAttr field) {
+    return field ? field.getCollation() : InvalidOid;
+}
+
+PgNullability getPgRowFieldNullability(PgRowFieldAttr field) {
+    return field ? field.getNullability() : PgNullability::Never;
+}
 
 bool isPgValueType(mlir::Type type) {
     return llvm::TypeSwitch<mlir::Type, bool>(type)
