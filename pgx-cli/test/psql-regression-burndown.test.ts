@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
+import { DEFAULT_OUTPUT_CONFIG, DEFAULT_SYNC_CONFIG } from "../src/config.js";
 import {
+  buildPsqlRegressionExecutionCommand,
   buildPsqlRegressionPgRegressCommand,
   classifyPsqlRegressionDelta,
   missingPsqlRegressionSourceMessage,
@@ -13,45 +15,90 @@ import {
   readPsqlRegressionBaseline,
   renderPsqlRegressionBaseline,
   renderPsqlRegressionSummary,
+  runPsqlRegressionBurndownCliCommand,
   runPsqlRegressionBurndownCommand,
   validatePsqlRegressionSource
 } from "../src/psql-regression-burndown.js";
 
 class FakeRunner implements StreamingCommandRunner {
   calls: Array<{ command: string; args: string[]; streaming: boolean }> = [];
-  result: RunResult = { exitCode: 0, stdout: "ok 1 - boolean 10 ms\n", stderr: "" };
+  result: RunResult = { exitCode: 0, stdout: "test boolean ... ok 10 ms\n", stderr: "" };
 
   async run(command: string, args: string[]): Promise<RunResult> {
     this.calls.push({ command, args, streaming: false });
+    if (command === "mutagen" && args[1] === "list") {
+      return { exitCode: 0, stdout: healthyJson(), stderr: "" };
+    }
     return this.result;
   }
 
   async runStreaming(command: string, args: string[], options: StreamingRunOptions): Promise<StreamingRunResult> {
     this.calls.push({ command, args, streaming: true });
-    options.stdout?.write(this.result.stdout);
-    options.stderr?.write(this.result.stderr);
+    const rendered = [command, ...args].join(" ");
+    const stdout = command === "mutagen" && args[1] === "list"
+      ? healthyJson()
+      : rendered.includes(".pgx-cli/sync-probes/")
+      ? `probe-${rendered.match(new RegExp("sync-probes/([^/']+)\\.txt"))?.[1] ?? "missing"}\n`
+      : command === "ssh"
+      ? "remote psql ok\n"
+      : this.result.stdout;
+    const stderr = command === "ssh" ? "" : this.result.stderr;
+    options.stdout?.write(stdout);
+    options.stderr?.write(stderr);
     return {
       childExitCode: this.result.exitCode,
-      stdoutSample: { head: this.result.stdout, tail: "", truncated: false },
-      stderrSample: { head: this.result.stderr, tail: "", truncated: false },
+      stdoutSample: { head: stdout, tail: "", truncated: false },
+      stderrSample: { head: stderr, tail: "", truncated: false },
       timedOut: false
     };
   }
+}
+
+function healthyJson(): string {
+  return JSON.stringify([{ name: "pgx-lower", paused: false, status: "watching", alpha: { connected: true }, beta: { connected: true } }]);
+}
+
+function makeConfig(root: string) {
+  return {
+    mutagenSession: "pgx-lower",
+    sshHost: "comfy",
+    remoteProjectPath: "/home/zel/repos/pgx-lower",
+    dockerContainer: "pgx-lower-dev",
+    sync: DEFAULT_SYNC_CONFIG,
+    output: DEFAULT_OUTPUT_CONFIG,
+    localProjectPath: root
+  };
 }
 
 describe("psql regression burndown helpers", () => {
   test("parses pg_regress passing and failing status lines", () => {
     const parsed = parsePgRegressStatusLines(
       [
-        "ok 1 - boolean 10 ms",
-        "1: not ok 3 - date 20 ms",
-        "not ok 47 + opr_sanity 30 ms",
+        "test boolean                      ... ok          684 ms",
+        "test date                         ... FAILED     1136 ms",
+        "ok 1 - nested route helper line",
+        "not ok 2 - nested route helper line",
         "ignored diagnostic line"
       ].join("\n")
     );
 
     expect([...parsed.passing]).toEqual(["boolean"]);
-    expect([...parsed.failing]).toEqual(["date", "opr_sanity"]);
+    expect([...parsed.failing]).toEqual(["date"]);
+  });
+
+  test("falls back to TAP-style pg_regress status lines when needed", () => {
+    const parsed = parsePgRegressStatusLines(
+      [
+        "# using postmaster on Unix socket, default port",
+        "not ok 1     - test_setup                                 40 ms",
+        "ok 2         + boolean                                    47 ms",
+        "ok 3         + char                                       22 ms",
+        "not ok 47    + opr_sanity                                155 ms"
+      ].join("\n")
+    );
+
+    expect([...parsed.passing]).toEqual(["boolean", "char"]);
+    expect([...parsed.failing]).toEqual(["test_setup", "opr_sanity"]);
   });
 
   test("classifies new failures, still failing, and newly passing baseline entries", () => {
@@ -182,6 +229,17 @@ describe("psql regression burndown command", () => {
     ]);
   });
 
+  test("wraps pg_regress under the postgres user when running as root", () => {
+    expect(buildPsqlRegressionExecutionCommand("pg_regress", ["--inputdir=tests"], () => 0)).toEqual({
+      command: "su",
+      args: ["postgres", "-c", "pg_regress --inputdir=tests"]
+    });
+    expect(buildPsqlRegressionExecutionCommand("pg_regress", ["--inputdir=tests"], () => 1000)).toEqual({
+      command: "pg_regress",
+      args: ["--inputdir=tests"]
+    });
+  });
+
   test("defaults pg_regress to the installed pgxs path used by the dev container", () => {
     const options = parsePsqlRegressionBurndownArgs([]);
 
@@ -193,7 +251,7 @@ describe("psql regression burndown command", () => {
     const runner = new FakeRunner();
     runner.result = {
       exitCode: 1,
-      stdout: "ok 1 - boolean 10 ms\nnot ok 2 - date 20 ms\n",
+      stdout: "test boolean ... ok 10 ms\ntest date ... FAILED 20 ms\n",
       stderr: ""
     };
     const io = { stdout: "", stderr: "" };
@@ -227,7 +285,7 @@ describe("psql regression burndown command", () => {
     const runner = new FakeRunner();
     runner.result = {
       exitCode: 1,
-      stdout: "ok 1 - boolean 10 ms\nnot ok 2 - date 20 ms\n",
+      stdout: "test boolean ... ok 10 ms\ntest date ... FAILED 20 ms\n",
       stderr: ""
     };
     const io = { stdout: "", stderr: "" };
@@ -245,7 +303,7 @@ describe("psql regression burndown command", () => {
     const runner = new FakeRunner();
     runner.result = {
       exitCode: 0,
-      stdout: "ok 1 - boolean 10 ms\nok 2 - date 20 ms\n",
+      stdout: "test boolean ... ok 10 ms\ntest date ... ok 20 ms\n",
       stderr: ""
     };
     const io = { stdout: "", stderr: "" };
@@ -322,10 +380,56 @@ describe("psql regression burndown command", () => {
     expect(exitCode).toBe(0);
     expect(runner.calls[0]).toMatchObject({ streaming: true });
     expect(io.stdout).not.toContain("ok 1 - boolean");
-    expect(readFileSync(join(fixture.outputDir, "pg_regress.log"), "utf8")).toContain("ok 1 - boolean");
+    expect(readFileSync(join(fixture.outputDir, "pg_regress.log"), "utf8")).toContain("test boolean ... ok 10 ms");
     expect(readFileSync(join(fixture.outputDir, "route-check.log"), "utf8")).toContain("OK: route assertions passed");
     expect(readFileSync(fixture.summary, "utf8")).toContain("# PostgreSQL Regression Burndown");
     expect(readFileSync(fixture.routeSummary, "utf8")).toContain("# Route Summary");
+  });
+});
+
+describe("psql regression burndown managed public command", () => {
+  test("rejects unknown options instead of dispatching remotely", async () => {
+    const fixture = makeCommandFixture(["boolean"]);
+    const runner = new FakeRunner();
+    const io = { stdout: "", stderr: "" };
+
+    const exitCode = await runPsqlRegressionBurndownCliCommand(
+      ["--source", fixture.source, "--bogus", "x"],
+      runner,
+      io,
+      makeConfig(fixture.root)
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.stderr).toContain("Unknown option --bogus");
+    expect(runner.calls).toEqual([]);
+  });
+
+  test("local invocation dispatches remotely instead of invoking local PostgreSQL tools", async () => {
+    const fixture = makeCommandFixture(["boolean"]);
+    const runner = new FakeRunner();
+    const io = { stdout: "", stderr: "" };
+
+    const exitCode = await runPsqlRegressionBurndownCliCommand(
+      ["--source", fixture.source, "--record"],
+      runner,
+      io,
+      makeConfig(fixture.root)
+    );
+
+    expect(exitCode).toBe(0);
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands).toContain("ssh comfy");
+    expect(commands).toContain("PGX_PSQL_REGRESSION_INTERNAL=1");
+    expect(commands).toContain("npm --prefix pgx-cli install && npm --prefix pgx-cli run build");
+    expect(commands).toContain("test psql-regression-burndown --from-managed-runner");
+    expect(commands).toContain("cmake --install .");
+    expect(commands).toContain("--source /workspace/tests/psql-regression");
+    expect(commands).toContain("--baseline /workspace/tests/psql-regression/baselines/current.txt");
+    expect(commands).toContain("--output-dir /workspace/tests/psql-regression/results");
+    expect(commands).toContain("chmod -R o+rX /workspace");
+    expect(commands).not.toMatch(/(?:^|\s)(pg_regress|psql|createdb|dropdb)(?:\s|$)/);
+    expect(io.stdout).toContain("transcript:");
   });
 });
 
@@ -352,6 +456,7 @@ function makeCommandFixture(testNames: readonly string[]) {
   }
 
   return {
+    root,
     source,
     outputDir,
     baseline,

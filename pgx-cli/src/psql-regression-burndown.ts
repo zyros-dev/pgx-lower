@@ -1,7 +1,9 @@
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { finished } from "node:stream/promises";
 import type { StreamingCommandRunner } from "./commands.js";
+import { runManagedRemoteShell } from "./managed-operations.js";
+import type { ManagedOperationConfig } from "./managed-operations.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
 
 export type PsqlRegressionStatus = {
@@ -37,15 +39,44 @@ type Io = {
   stderr: string;
 };
 
+type InternalEnvironmentOptions = {
+  allowUnsafeLocalForTests?: boolean;
+};
+
 const defaultPgRegressPath = "/usr/local/pgsql/lib/pgxs/src/test/regress/pg_regress";
-const statusLineRe = /^(?:\d+:\s+)?(not\s+ok|ok)\s+\d+\s*[-+]\s*([^\s]+)(?:\s|$)/;
+const managedRunnerFlag = "--from-managed-runner";
+const statusLineRe = /^\s*test\s+([^\s]+)\s+\.\.\.\s+(ok|FAILED)\b/;
+const tapStatusLineRe = /^(?:\d+:\s+)?(not\s+ok|ok)\s+\d+\s*[-+]\s*([^\s]+)(?:\s|$)/;
 
 export function parsePgRegressStatusLines(text: string): PsqlRegressionStatus {
   const passing = new Set<string>();
   const failing = new Set<string>();
 
   for (const line of text.split("\n")) {
-    const match = statusLineRe.exec(line.trim());
+    const match = statusLineRe.exec(line);
+    if (!match) {
+      continue;
+    }
+
+    const name = match[1];
+    const status = match[2];
+    if (!status || !name) {
+      continue;
+    }
+
+    if (status === "ok") {
+      passing.add(name);
+    } else {
+      failing.add(name);
+    }
+  }
+
+  if (passing.size > 0 || failing.size > 0) {
+    return { passing, failing };
+  }
+
+  for (const line of text.split("\n")) {
+    const match = tapStatusLineRe.exec(line.trim());
     if (!match) {
       continue;
     }
@@ -166,6 +197,18 @@ export function parsePsqlRegressionBurndownArgs(args: readonly string[]): PsqlRe
   }
 
   const values = new Map<string, string>();
+  const valueOptions = new Set([
+    "--source",
+    "--baseline",
+    "--output-dir",
+    "--summary",
+    "--route-summary",
+    "--pg-regress",
+    "--bindir",
+    "--dlpath",
+    "--schedule",
+    "--load-extension"
+  ]);
   let record = false;
   let i = 0;
   while (i < args.length) {
@@ -177,6 +220,9 @@ export function parsePsqlRegressionBurndownArgs(args: readonly string[]): PsqlRe
     }
     if (!arg?.startsWith("--")) {
       throw new Error(psqlRegressionBurndownUsage());
+    }
+    if (!valueOptions.has(arg)) {
+      throw new Error(`Unknown option ${arg}`);
     }
     const value = args[i + 1];
     if (!value || value.startsWith("--")) {
@@ -213,6 +259,71 @@ export function buildPsqlRegressionPgRegressCommand(options: PsqlRegressionBurnd
     `--schedule=${schedule}`,
     `--load-extension=${options.loadExtension}`
   ];
+}
+
+export async function runPsqlRegressionBurndownCliCommand(
+  args: readonly string[],
+  runner: StreamingCommandRunner,
+  io: Io,
+  config: ManagedOperationConfig,
+  environment: InternalEnvironmentOptions = {}
+): Promise<number> {
+  const { normalizedArgs, fromManagedRunner } = stripManagedRunnerFlag(args);
+  if (normalizedArgs.includes("--help") || normalizedArgs.includes("-h")) {
+    io.stdout += `${psqlRegressionBurndownUsage()}\n`;
+    return 0;
+  }
+
+  let options: PsqlRegressionBurndownOptions;
+  try {
+    options = parsePsqlRegressionBurndownArgs(normalizedArgs);
+  } catch (error) {
+    io.stderr += `${error instanceof Error ? error.message : String(error)}\n`;
+    return 1;
+  }
+
+  if (fromManagedRunner) {
+    if (!environment.allowUnsafeLocalForTests && process.env.PGX_PSQL_REGRESSION_INTERNAL !== "1") {
+      io.stderr += "psql-regression-burndown requires PGX_PSQL_REGRESSION_INTERNAL=1 when --from-managed-runner is used\n";
+      return 1;
+    }
+    return runPsqlRegressionBurndownCommand(normalizedArgs, runner, io);
+  }
+
+  if (shouldRunPsqlRegressionInPlace(options.source)) {
+    return runPsqlRegressionBurndownCommand(normalizedArgs, runner, io);
+  }
+
+  try {
+    validatePsqlRegressionSource(options.source, existsSync);
+  } catch (error) {
+    io.stderr += `${error instanceof Error ? error.message : String(error)}\n`;
+    return 1;
+  }
+
+  const shellCommand = buildManagedPsqlRegressionShellCommand(options, config);
+  const managedIo = {
+    stdout: io.stdout,
+    stderr: io.stderr,
+    liveStdout: () => undefined,
+    liveStderr: () => undefined
+  };
+  const result = await runManagedRemoteShell({
+    runner,
+    output: managedIo,
+    config,
+    commandName: "test-psql-regression-burndown",
+    shellCommand,
+    requireMutagenProof: true,
+    artifactPaths: [
+      workspacePathForManagedRun(options.outputDir, config.localProjectPath),
+      workspacePathForManagedRun(options.summary, config.localProjectPath),
+      workspacePathForManagedRun(options.routeSummary, config.localProjectPath)
+    ]
+  });
+  io.stdout = managedIo.stdout;
+  io.stderr = managedIo.stderr;
+  return result.workflowExitCode;
 }
 
 export async function runPsqlRegressionBurndownCommand(
@@ -325,7 +436,8 @@ async function runStreamingToLog(
   logPath: string
 ): Promise<number> {
   const log = createWriteStream(logPath, { flags: "w" });
-  const result = await runner.runStreaming(command, args, { stdout: log, stderr: log });
+  const execution = buildPsqlRegressionExecutionCommand(command, args);
+  const result = await runner.runStreaming(execution.command, execution.args, { stdout: log, stderr: log });
   log.end();
   await finished(log);
   return result.childExitCode;
@@ -383,4 +495,141 @@ function psqlRegressionBurndownUsage(): string {
     "  [--load-extension <extension-name>]",
     "  [--record]"
   ].join("\n");
+}
+
+export function buildPsqlRegressionExecutionCommand(
+  command: string,
+  args: readonly string[],
+  getuid: (() => number | undefined) | undefined = defaultGetuid()
+): { command: string; args: string[] } {
+  const uid = getuid?.();
+  if (uid === 0) {
+    return {
+      command: "su",
+      args: ["postgres", "-c", [command, ...args].map(quoteShell).join(" ")]
+    };
+  }
+  return { command, args: [...args] };
+}
+
+function defaultGetuid(): (() => number | undefined) | undefined {
+  const getuid = process.getuid;
+  if (typeof getuid !== "function") {
+    return undefined;
+  }
+  return () => getuid.call(process);
+}
+
+function stripManagedRunnerFlag(args: readonly string[]): { normalizedArgs: string[]; fromManagedRunner: boolean } {
+  const normalizedArgs: string[] = [];
+  let fromManagedRunner = false;
+  for (const arg of args) {
+    if (arg === managedRunnerFlag) {
+      fromManagedRunner = true;
+      continue;
+    }
+    normalizedArgs.push(arg);
+  }
+  return { normalizedArgs, fromManagedRunner };
+}
+
+function shouldRunPsqlRegressionInPlace(source: string): boolean {
+  return existsSync("/.dockerenv") && isPathWithin("/workspace", source);
+}
+
+function buildManagedPsqlRegressionShellCommand(
+  options: PsqlRegressionBurndownOptions,
+  config: ManagedOperationConfig
+): string {
+  const internalArgs = [
+    "/workspace/pgx-cli/dist/index.js",
+    "test",
+    "psql-regression-burndown",
+    managedRunnerFlag,
+    "--source",
+    workspacePathForManagedRun(options.source, config.localProjectPath),
+    "--baseline",
+    workspacePathForManagedRun(options.baseline, config.localProjectPath),
+    "--output-dir",
+    workspacePathForManagedRun(options.outputDir, config.localProjectPath),
+    "--summary",
+    workspacePathForManagedRun(options.summary, config.localProjectPath),
+    "--route-summary",
+    workspacePathForManagedRun(options.routeSummary, config.localProjectPath),
+    "--pg-regress",
+    options.pgRegress,
+    "--bindir",
+    options.bindir,
+    "--dlpath",
+    options.dlpath,
+    "--schedule",
+    managedSchedulePath(options.schedule, config.localProjectPath),
+    "--load-extension",
+    options.loadExtension,
+    ...(options.record ? ["--record"] : [])
+  ];
+  const dockerCommand = `docker exec ${quoteShell(config.dockerContainer ?? "pgx-lower-dev")} bash -lc ${quoteShell(
+    [
+      buildAndInstallExtensionCommand("debug", "psql-regression-burndown"),
+      "chmod -R o+rX /workspace",
+      `PGX_PSQL_REGRESSION_INTERNAL=1 ${internalArgs.map(quoteShell).join(" ")}`
+    ].join(" && ")
+  )}`;
+  return [
+    "npm --prefix pgx-cli install",
+    "npm --prefix pgx-cli run build",
+    dockerCommand
+  ].join(" && ");
+}
+
+function managedSchedulePath(schedule: string, localRoot: string): string {
+  return isAbsolute(schedule) ? workspacePathForManagedRun(schedule, localRoot) : schedule;
+}
+
+function workspacePathForManagedRun(path: string, localRoot: string): string {
+  if (!isAbsolute(path)) {
+    return `/workspace/${path.replaceAll(sep, "/")}`;
+  }
+  const rel = relative(resolve(localRoot), resolve(path));
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`${path} must be inside ${localRoot} for managed execution`);
+  }
+  return `/workspace/${rel.replaceAll(sep, "/")}`;
+}
+
+function buildAndInstallExtensionCommand(profile: string, runName: string): string {
+  const buildType = profile === "release" ? "Release" : "Debug";
+  const buildDir = `/workspace/build-artifacts/compare-postgres/${safeName(runName)}/${profile}`;
+  return [
+    cleanWorkspaceCmakeArtifactsCommand(),
+    `mkdir -p ${buildDir}`,
+    `cd ${buildDir}`,
+    `([ -f CMakeCache.txt ] || cmake -G Ninja -DCMAKE_BUILD_TYPE=${buildType} -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache /workspace)`,
+    "cmake --build .",
+    "cmake --install ."
+  ].join(" && ");
+}
+
+function cleanWorkspaceCmakeArtifactsCommand(): string {
+  return [
+    "rm -rf /workspace/CMakeFiles /workspace/include/runtime-defs",
+    "rm -f /workspace/CMakeCache.txt /workspace/build.ninja /workspace/.ninja_deps /workspace/.ninja_log /workspace/tablegen_compile_commands.yml /workspace/CTestTestfile.cmake /workspace/cmake_install.cmake",
+    "find /workspace/src/lingodb/mlir \\( -name CMakeFiles -o -name CTestTestfile.cmake -o -name cmake_install.cmake -o -name '*.inc' -o -name '*.inc.d' -o -name '*.o' -o -name '*.a' \\) -exec rm -rf {} +"
+  ].join(" && ");
+}
+
+function safeName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "run";
+}
+
+function quoteShell(value: string): string {
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) {
+    return value;
+  }
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function isPathWithin(parent: string, child: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
 }

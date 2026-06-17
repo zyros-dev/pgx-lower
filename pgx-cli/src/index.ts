@@ -13,7 +13,7 @@ import { runIrCommand } from "./ir.js";
 import { connectMcp } from "./mcp.js";
 import { renderBufferedOutput } from "./output.js";
 import { runRouteCheckCommand } from "./pg-regress-routes.js";
-import { runPsqlRegressionBurndownCommand } from "./psql-regression-burndown.js";
+import { runPsqlRegressionBurndownCliCommand } from "./psql-regression-burndown.js";
 import { runRgCommand } from "./search.js";
 import { runUnitSqlCommand } from "./unit-sql.js";
 import { runGatewayCommand } from "./run.js";
@@ -259,7 +259,16 @@ try {
   }
 
   if (argv[0] === "test" && argv[1] === "psql-regression-burndown") {
-    process.exitCode = await runPsqlRegressionBurndownCommand(argv.slice(2), runner, io);
+    process.exitCode = await runPsqlRegressionBurndownCliCommand(argv.slice(2), runner, io, {
+      mutagenSession: config.mutagenSession,
+      sshHost: config.sshHost,
+      remoteProjectPath: config.remoteProjectPath,
+      localProjectPath: config.localProjectPath,
+      dockerContainer: config.dockerContainer,
+      sync: config.sync,
+      output: config.output,
+      runningOnRemote: config.runningOnRemote
+    });
     flushIo();
     process.exit();
   }
