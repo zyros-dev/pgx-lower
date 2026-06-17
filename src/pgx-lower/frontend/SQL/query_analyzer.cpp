@@ -641,15 +641,11 @@ static auto operatorExprUsesStringScalarBoundary(const OpExpr* op) -> bool {
     const auto operatorName = std::string(rawOperatorName);
     pfree(rawOperatorName);
 
-    if (op->opresulttype == BOOLOID && lhsType == BPCHAROID && rhsType == BPCHAROID && operatorName == "=") {
-        return false;
-    }
-    if (op->opresulttype == BOOLOID && lhsType == TEXTOID && rhsType == TEXTOID
-        && (operatorName == "~~" || operatorName == "!~~"))
-    {
-        return false;
-    }
-    return true;
+    const bool promotedBpcharEquality = op->opresulttype == BOOLOID && lhsType == BPCHAROID && rhsType == BPCHAROID
+                                        && operatorName == "=";
+    const bool promotedTextPatternMatch = op->opresulttype == BOOLOID && lhsType == TEXTOID && rhsType == TEXTOID
+                                          && (operatorName == "~~" || operatorName == "!~~");
+    return !(promotedBpcharEquality || promotedTextPatternMatch);
 }
 
 static auto promotedTextLikeAllowsTransparentRelabel(const OpExpr* op) -> bool {
