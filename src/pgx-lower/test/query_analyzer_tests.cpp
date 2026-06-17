@@ -92,6 +92,31 @@ struct SortPlanFixture {
     }
 };
 
+struct AggPlanFixture {
+    Const value{};
+    TargetEntry target{};
+    Agg agg{};
+    AttrNumber grpColIdx[1]{1};
+    Oid grpOperators[1]{Int4EqualOperator};
+    Oid grpCollations[1]{InvalidOid};
+
+    AggPlanFixture() {
+        value = makeIntConst();
+
+        target.xpr.type = T_TargetEntry;
+        target.expr = reinterpret_cast<Expr*>(&value);
+        target.resno = 1;
+        target.resjunk = false;
+
+        agg.plan.type = T_Agg;
+        agg.plan.targetlist = list_make1(&target);
+        agg.numCols = 1;
+        agg.grpColIdx = grpColIdx;
+        agg.grpOperators = grpOperators;
+        agg.grpCollations = grpCollations;
+    }
+};
+
 } // namespace
 
 PGX_TEST_FN(query_analyzer_default_result_is_invalid) {
@@ -476,6 +501,56 @@ PGX_TEST_FN(query_analyzer_rejects_explicit_descending_nulls_last_sort) {
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_missing_agg_group_column_metadata) {
+    AggPlanFixture fixture;
+    fixture.agg.grpColIdx = nullptr;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_missing_agg_group_operator_metadata) {
+    AggPlanFixture fixture;
+    fixture.agg.grpOperators = nullptr;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_missing_agg_group_collation_metadata) {
+    AggPlanFixture fixture;
+    fixture.agg.grpCollations = nullptr;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_non_equality_agg_group_operator) {
+    AggPlanFixture fixture;
+    fixture.grpOperators[0] = Int4LessOperator;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unsupported_agg_group_collation) {
+    AggPlanFixture fixture;
+    fixture.grpCollations[0] = 999999;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_collation);
     PG_RETURN_VOID();
 }
 

@@ -310,6 +310,7 @@ static auto operatorCatalogMatches(const Oid operatorOid, const Oid resultType, 
 }
 
 static constexpr const char* equalityOperatorNames[] = {"=", "<>"};
+static constexpr const char* groupingEqualityOperatorNames[] = {"="};
 static constexpr const char* orderingOperatorNames[] = {"<", "<=", ">", ">="};
 static constexpr const char* strictOrderingOperatorNames[] = {"<", ">"};
 static constexpr const char* arithmeticOperatorNames[] = {"+", "-", "*", "/"};
@@ -572,7 +573,7 @@ static auto postgresFunctionName(const Oid functionOid) -> std::string {
     return functionName;
 }
 
-static auto sortTargetType(const List* targetList, const AttrNumber sortColumn) -> Oid {
+static auto targetListEntryType(const List* targetList, const AttrNumber column) -> Oid {
     if (!targetList) {
         return InvalidOid;
     }
@@ -580,12 +581,34 @@ static auto sortTargetType(const List* targetList, const AttrNumber sortColumn) 
     ListCell* lc = nullptr;
     foreach (lc, targetList) {
         const auto* tle = static_cast<const TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk || tle->resno != sortColumn || !tle->expr) {
+        if (!tle || tle->resjunk || tle->resno != column || !tle->expr) {
             continue;
         }
         return exprType(const_cast<Node*>(reinterpret_cast<const Node*>(tle->expr)));
     }
     return InvalidOid;
+}
+
+static auto groupingOperatorMatchesTargetType(const Oid operatorOid, const Oid keyType) -> bool {
+    if (operatorOid == InvalidOid || keyType == InvalidOid) {
+        return false;
+    }
+
+    const auto tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(operatorOid));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+
+    const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
+                         && oper->oprresult == BOOLOID && oper->oprleft == keyType && oper->oprright == keyType
+                         && operatorNameMatchesAny(NameStr(oper->oprname), groupingEqualityOperatorNames,
+                                                   std::size(groupingEqualityOperatorNames))
+                         && operatorTypeSignatureMatchesAny(oper->oprresult, oper->oprleft, oper->oprright,
+                                                            supportedEqualityOperatorSignatures,
+                                                            std::size(supportedEqualityOperatorSignatures));
+    ReleaseSysCache(tuple);
+    return matches;
 }
 
 static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -> AnalyzerResult {
@@ -607,7 +630,7 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
                                         itemLocation);
         }
 
-        const auto keyType = sortTargetType(sort->plan.targetlist, sort->sortColIdx[index]);
+        const auto keyType = targetListEntryType(sort->plan.targetlist, sort->sortColIdx[index]);
         if (keyType == InvalidOid) {
             result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "sort key target metadata is missing",
                                         itemLocation);
@@ -630,6 +653,41 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
         if (sort->nullsFirst[index] != descending) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
                                         "unsupported explicit sort null ordering", itemLocation);
+        }
+    }
+    return supportedOrUnsupported(result);
+}
+
+static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> AnalyzerResult {
+    auto result = AnalyzerResult::supported();
+    if (!agg) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "aggregate node is null", location);
+    }
+    if (agg->numCols < 0
+        || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations)))
+    {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
+                                           "aggregate grouping metadata is incomplete", location);
+    }
+
+    for (auto index = 0; index < agg->numCols; ++index) {
+        const auto itemLocation = location + ".groupCol[" + std::to_string(index) + "]";
+        if (agg->grpCollations && !postgresCollationIsSupported(agg->grpCollations[index])) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                        "unsupported aggregate grouping collation", itemLocation);
+        }
+
+        const auto keyType = targetListEntryType(agg->plan.targetlist, agg->grpColIdx[index]);
+        if (keyType == InvalidOid) {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
+                                        "aggregate grouping key target metadata is missing", itemLocation);
+            continue;
+        }
+        if (!groupingOperatorMatchesTargetType(agg->grpOperators[index], keyType)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
+                                        "unsupported aggregate grouping operator OID "
+                                            + std::to_string(agg->grpOperators[index]),
+                                        itemLocation);
         }
     }
     return supportedOrUnsupported(result);
@@ -668,6 +726,8 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_Sort: mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location)); break;
     case T_Limit:
     case T_Agg:
+        mergeAnalyzerResult(result, analyzeAggMetadata(reinterpret_cast<const Agg*>(plan), location));
+        break;
     case T_Material:
     case T_Hash: break;
     case T_ProjectSet:
