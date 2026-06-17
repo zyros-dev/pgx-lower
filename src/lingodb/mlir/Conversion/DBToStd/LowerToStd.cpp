@@ -1332,7 +1332,9 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
                               originalValue, parsedValue);
                   }
               } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
-                  // PostgreSQL timestamps are in microseconds, convert to nanoseconds
+                  // Legacy LingoDB timestamps use nanosecond carriers. PostgreSQL
+                  // !db.pg_timestamp constants bypass this branch and stay in
+                  // PostgreSQL microseconds.
                   parsedValue *= 1000LL; // Convert microseconds to nanoseconds
                   PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Timestamp constant: microseconds=%lld → nanoseconds=%lld",
                           originalValue, parsedValue);

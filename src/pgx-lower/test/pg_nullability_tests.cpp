@@ -434,6 +434,21 @@ module {
     requireContains(printed, "db.null : !db.pg_int4<nullable>");
     requireContains(printed, "db.null : !db.pg_text<collation = 100, nullable>");
 
+    auto timestampConstant = parseModule(f.ctx, R"mlir(
+module {
+  func.func @timestamp_constant() -> !db.pg_timestamp<typmod = -1> {
+    %ts = db.constant(86400123456 : i64) : !db.pg_timestamp<typmod = -1>
+    return %ts : !db.pg_timestamp<typmod = -1>
+  }
+}
+)mlir");
+    REQUIRE(timestampConstant);
+    REQUIRE(runDBToStd(f.ctx, *timestampConstant));
+    const std::string timestampConstantLowered = moduleToString(*timestampConstant);
+    requireNotContains(timestampConstantLowered, "db.constant");
+    requireContains(timestampConstantLowered, "arith.constant 86400123456 : i64");
+    requireNotContains(timestampConstantLowered, "86400123456000");
+
     auto nullablePgNumericToFloatCast = parseModule(f.ctx, R"mlir(
 module {
   func.func @nullable_pg_numeric_to_float(%v: !db.pg_numeric<typmod = -1, nullable>) -> !db.pg_float8<nullable> {

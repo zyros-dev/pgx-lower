@@ -24,7 +24,8 @@ INSERT INTO temporal_unsupported_boundary VALUES
      timestamp with time zone '2000-01-02 03:04:05+10');
 
 INSERT INTO temporal_timestamp_boundary VALUES
-    (1, timestamp '2000-01-02 03:04:05');
+    (1, timestamp '2000-01-02 03:04:05'),
+    (2, timestamp '1999-12-31 23:59:59');
 
 SET pgx_lower.execution_mode = 'auto';
 
@@ -38,7 +39,13 @@ SELECT tz FROM temporal_unsupported_boundary;
 SELECT tstz FROM temporal_unsupported_boundary;
 
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_004 */
-SELECT ts FROM temporal_timestamp_boundary;
+SELECT id, ts FROM temporal_timestamp_boundary ORDER BY id;
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_005 */
+SELECT id, ts FROM temporal_timestamp_boundary ORDER BY ts;
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_006 */
+SELECT id FROM temporal_timestamp_boundary WHERE ts > timestamp '2000-01-01 00:00:00' ORDER BY id;
 
 DROP TABLE temporal_unsupported_boundary;
 DROP TABLE temporal_timestamp_boundary;

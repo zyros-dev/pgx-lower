@@ -164,6 +164,9 @@ std::variant<int64_t, double, std::string> toI64(std::variant<int64_t, double, s
    return val;
 }
 std::variant<int64_t, double, std::string> parseTimestamp(std::variant<int64_t, double, std::string> val, support::TimeUnit unit) {
+    if (std::holds_alternative<int64_t>(val)) {
+        return std::get<int64_t>(val);
+    }
    if (!std::holds_alternative<std::string>(val)) {
       throw std::runtime_error("can not parse timestamp");
    }

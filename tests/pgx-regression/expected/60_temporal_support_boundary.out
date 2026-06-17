@@ -19,7 +19,8 @@ INSERT INTO temporal_unsupported_boundary VALUES
     (1, time '12:34:56', time with time zone '12:34:56+10',
      timestamp with time zone '2000-01-02 03:04:05+10');
 INSERT INTO temporal_timestamp_boundary VALUES
-    (1, timestamp '2000-01-02 03:04:05');
+    (1, timestamp '2000-01-02 03:04:05'),
+    (2, timestamp '1999-12-31 23:59:59');
 SET pgx_lower.execution_mode = 'auto';
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_60_temporal_support_boundary_001 */
 SELECT t FROM temporal_unsupported_boundary;
@@ -37,8 +38,18 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported Postg
 tstz
 2000-01-01 17:04:05+00
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_004 */
-SELECT ts FROM temporal_timestamp_boundary;
-ts
-2000-01-02 03:04:05
+SELECT id, ts FROM temporal_timestamp_boundary ORDER BY id;
+id,ts
+1,2000-01-02 03:04:05
+2,1999-12-31 23:59:59
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_005 */
+SELECT id, ts FROM temporal_timestamp_boundary ORDER BY ts;
+id,ts
+2,1999-12-31 23:59:59
+1,2000-01-02 03:04:05
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_006 */
+SELECT id FROM temporal_timestamp_boundary WHERE ts > timestamp '2000-01-01 00:00:00' ORDER BY id;
+id
+1
 DROP TABLE temporal_unsupported_boundary;
 DROP TABLE temporal_timestamp_boundary;

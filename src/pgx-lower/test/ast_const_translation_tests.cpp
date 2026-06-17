@@ -45,6 +45,15 @@ auto translate_const(Const* const_node, mlir::OpBuilder& builder, mlir::MLIRCont
         }                                                                                                              \
     } while (0)
 
+#define REQUIRE_EQ_I64(actual, expected)                                                                               \
+    do {                                                                                                               \
+        auto _a = static_cast<int64_t>(actual);                                                                        \
+        auto _e = static_cast<int64_t>(expected);                                                                      \
+        if (_a != _e) {                                                                                                \
+            elog(ERROR, "%s:%d expected %ld got %ld", __FILE__, __LINE__, _e, _a);                                     \
+        }                                                                                                              \
+    } while (0)
+
 namespace {
 
 struct Fixture {
@@ -177,6 +186,16 @@ PGX_TEST_FN(ast_const_null_date) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(ast_const_null_timestamp) {
+    Fixture f;
+    auto c = Fixture::make_const(TIMESTAMPOID, -1, Datum{0}, true);
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    REQUIRE(v);
+    REQUIRE(mlir::isa<mlir::db::NullOp>(v.getDefiningOp()));
+    requirePgIdentity(v.getType(), TIMESTAMPOID, -1, InvalidOid, mlir::db::PgNullability::Maybe);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(ast_const_null_text) {
     Fixture f;
     auto c = Fixture::make_const(TEXTOID, -1, Datum{0}, true, DEFAULT_COLLATION_OID);
@@ -197,6 +216,25 @@ PGX_TEST_FN(ast_const_date) {
     REQUIRE(mlir::isa<mlir::db::ConstantOp>(op));
     REQUIRE(mlir::isa<mlir::db::PgDateType>(v.getType()));
     requirePgIdentity(v.getType(), DATEOID, -1, InvalidOid, mlir::db::PgNullability::Never);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(ast_const_timestamp_preserves_pg_microseconds) {
+    Fixture f;
+    const Timestamp timestamp = USECS_PER_DAY + 123456;
+    auto c = Fixture::make_const(TIMESTAMPOID, -1, TimestampGetDatum(timestamp));
+    c.constlen = sizeof(Timestamp);
+
+    mlir::Value v = postgresql_ast::translate_const(&c, f.builder, f.ctx);
+    REQUIRE(v);
+    auto constant = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(v.getDefiningOp());
+    REQUIRE(constant);
+    REQUIRE(mlir::isa<mlir::db::PgTimestampType>(v.getType()));
+    requirePgIdentity(v.getType(), TIMESTAMPOID, -1, InvalidOid, mlir::db::PgNullability::Never);
+
+    auto attr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(constant.getConstantValue());
+    REQUIRE(attr);
+    REQUIRE_EQ_I64(attr.getInt(), timestamp);
     PG_RETURN_VOID();
 }
 

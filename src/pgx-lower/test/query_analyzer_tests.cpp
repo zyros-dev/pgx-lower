@@ -726,6 +726,36 @@ PGX_TEST_FN(query_analyzer_rejects_extract_from_timestamp) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_accepts_timestamp_without_time_zone_comparison) {
+    auto lhs = makeTypedConst(TIMESTAMPOID);
+    auto rhs = makeTypedConst(TIMESTAMPOID);
+    auto op = makeBinaryOperatorExpr(">", BOOLOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+
+    REQUIRE(OidIsValid(op.opno));
+    REQUIRE(OidIsValid(op.opfuncid));
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unsupported_temporal_comparisons) {
+    for (const auto typeOid : {TIMEOID, TIMETZOID, TIMESTAMPTZOID}) {
+        auto lhs = makeTypedConst(typeOid);
+        auto rhs = makeTypedConst(typeOid);
+        auto op = makeBinaryOperatorExpr(">", BOOLOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+
+        REQUIRE(OidIsValid(op.opno));
+        REQUIRE(OidIsValid(op.opfuncid));
+        const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+        REQUIRE(!result.isSupported());
+        const bool expectedReason = result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type
+                                    || result.primaryReason().kind
+                                           == pgx_lower::UnsupportedReasonKind::unsupported_operator;
+        REQUIRE(expectedReason);
+    }
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_day_interval_date_arithmetic) {
     auto date = makeTypedConst(DATEOID);
     auto dayInterval = makeIntervalConst(0, 90, 0);

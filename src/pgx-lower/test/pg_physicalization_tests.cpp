@@ -124,8 +124,9 @@ PGX_TEST_FN(pg_physicalization_records_dsa_oid_typmod_collation_attrs) {
 
     auto varchar = mlir::db::PgVarcharType::get(&f.ctx, 14, 777);
     auto numeric = mlir::db::PgNumericType::get(&f.ctx, 786438);
+    auto timestamp = mlir::db::PgTimestampType::get(&f.ctx, -1);
     auto text = mlir::db::PgTextType::get(&f.ctx, 777);
-    auto keyTuple = mlir::TupleType::get(&f.ctx, {varchar, numeric});
+    auto keyTuple = mlir::TupleType::get(&f.ctx, {varchar, numeric, timestamp});
     auto valTuple = mlir::TupleType::get(&f.ctx, {text});
     auto sortKeys = f.builder.getArrayAttr(
         {f.builder.getArrayAttr({f.builder.getI32IntegerAttr(0), f.builder.getI32IntegerAttr(0)})});
@@ -152,12 +153,12 @@ PGX_TEST_FN(pg_physicalization_records_dsa_oid_typmod_collation_attrs) {
     REQUIRE(sortCreate);
     REQUIRE(joinCreate);
 
-    requireIntArrayAttr(sortCreate, "pgx_original_type_oids", {VARCHAROID, NUMERICOID});
-    requireIntArrayAttr(sortCreate, "pgx_original_type_typmods", {14, 786438});
-    requireIntArrayAttr(sortCreate, "pgx_original_type_collations", {777, InvalidOid});
-    requireIntArrayAttr(joinCreate, "pgx_original_key_type_oids", {VARCHAROID, NUMERICOID});
-    requireIntArrayAttr(joinCreate, "pgx_original_key_type_typmods", {14, 786438});
-    requireIntArrayAttr(joinCreate, "pgx_original_key_type_collations", {777, InvalidOid});
+    requireIntArrayAttr(sortCreate, "pgx_original_type_oids", {VARCHAROID, NUMERICOID, TIMESTAMPOID});
+    requireIntArrayAttr(sortCreate, "pgx_original_type_typmods", {14, 786438, -1});
+    requireIntArrayAttr(sortCreate, "pgx_original_type_collations", {777, InvalidOid, InvalidOid});
+    requireIntArrayAttr(joinCreate, "pgx_original_key_type_oids", {VARCHAROID, NUMERICOID, TIMESTAMPOID});
+    requireIntArrayAttr(joinCreate, "pgx_original_key_type_typmods", {14, 786438, -1});
+    requireIntArrayAttr(joinCreate, "pgx_original_key_type_collations", {777, InvalidOid, InvalidOid});
     requireIntArrayAttr(joinCreate, "pgx_original_val_type_oids", {TEXTOID});
     requireIntArrayAttr(joinCreate, "pgx_original_val_type_typmods", {-1});
     requireIntArrayAttr(joinCreate, "pgx_original_val_type_collations", {777});
