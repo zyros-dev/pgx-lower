@@ -111,7 +111,9 @@ export async function runDevCommand(
   }
 
   if (command === "preflight") {
-    return runDevPreflightCommand(rest, runner, output, config);
+    const exitCode = await runDevPreflightCommand(rest, runner, output, config);
+    await clearMatchingGateMemory(["preflight", ...rest], exitCode, runner, output, config);
+    return exitCode;
   }
 
   if (command === "lint") {
@@ -218,6 +220,12 @@ export async function runDevCommand(
         output.stderr += `${decision.message}\n`;
       }
       return runWorkflow(output, config, "dev-gate-review", [
+        {
+          name: "strict preflight",
+          command: ["pgx-cli", "dev", "preflight", "--strict"],
+          focusedCommand: ["pgx-cli", "dev", "preflight", "--strict"],
+          run: (stepOutput) => runDevPreflightCommand(["--strict"], runner, stepOutput, config)
+        },
         {
           name: "check diff",
           command: ["pgx-cli", "dev", "check", "diff"],

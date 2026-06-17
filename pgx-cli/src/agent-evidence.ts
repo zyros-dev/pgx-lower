@@ -16,7 +16,10 @@ export type EvidenceClaim = {
   notes?: string;
 };
 
-export type EvidenceFile = { claims: EvidenceClaim[] };
+export type EvidenceFile = {
+  requiredClaims?: string[];
+  claims: EvidenceClaim[];
+};
 
 export type EvidenceCheckResult = {
   ok: boolean;
@@ -37,15 +40,22 @@ const evidenceKinds = new Set<string>([
 
 const defaultEvidencePath = ".pgx-cli/evidence/current.json";
 
-export function checkEvidenceFile(file: EvidenceFile): EvidenceCheckResult {
+export function checkEvidenceFile(
+  file: EvidenceFile,
+  options: { requireRequiredClaims?: boolean; requiredClaims?: string[] } = {}
+): EvidenceCheckResult {
   const messages: string[] = [];
   const seen = new Set<string>();
 
   if (!file || !Array.isArray(file.claims)) {
     return { ok: false, messages: ["invalid evidence file: claims must be an array"] };
   }
+  const requiredClaims = normalizeRequiredClaims(file, options);
+  if (options.requireRequiredClaims && requiredClaims.length === 0) {
+    messages.push("evidence requiredClaims missing");
+  }
   if (file.claims.length === 0) {
-    return { ok: false, messages: ["missing evidence claims"] };
+    messages.push("missing evidence claims");
   }
 
   for (const claim of file.claims) {
@@ -79,6 +89,12 @@ export function checkEvidenceFile(file: EvidenceFile): EvidenceCheckResult {
 
     if (!hasText(claim.greenEvidence)) {
       messages.push(`missing evidence: ${id || "(missing id)"}`);
+    }
+  }
+
+  for (const requiredId of requiredClaims) {
+    if (!seen.has(requiredId)) {
+      messages.push(`missing required evidence: ${requiredId}`);
     }
   }
 
@@ -289,6 +305,23 @@ function writeEvidence(path: string, evidence: EvidenceFile): void {
 
 function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizeRequiredClaims(
+  file: EvidenceFile,
+  options: { requiredClaims?: string[] }
+): string[] {
+  const required = options.requiredClaims ?? file.requiredClaims ?? [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const value of required) {
+    if (typeof value !== "string") continue;
+    const id = value.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
 }
 
 function evidenceUsage(): string {

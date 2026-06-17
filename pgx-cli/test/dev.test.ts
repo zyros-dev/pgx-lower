@@ -383,6 +383,28 @@ describe("dev commands", () => {
     expect(output.stdout).not.toContain("stdout preview:");
 	  });
 
+  test("dev gate review runs strict preflight before expensive review steps", async () => {
+    const runner = new FakeRunner();
+    const output = { stdout: "", stderr: "" };
+    const config = makeDevConfig();
+    const exitCode = await runDevCommand(["gate", "review"], runner, output, config);
+
+    expect(exitCode).toBe(0);
+    expect(output.stdout).toContain("pgx-cli dev preflight --strict");
+    const commands = runner.calls.map((call) => [call.command, ...call.args].join(" ")).join("\n");
+    expect(commands.indexOf("mutagen sync list pgx-lower")).toBeGreaterThan(-1);
+    expect(commands.indexOf("mutagen sync list pgx-lower")).toBeLessThan(commands.indexOf("build-docker-lint"));
+    const reviewRunId = output.stdout.match(/^run id: (.+dev-gate-review.+)$/m)?.[1];
+    const summary = JSON.parse(readFileSync(join(config.localProjectPath, ".pgx-cli", "runs", reviewRunId ?? "", "summary.json"), "utf8"));
+    expect(summary.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "strict preflight",
+        command: ["pgx-cli", "dev", "preflight", "--strict"],
+        exitCode: 0
+      })
+    ]));
+  });
+
   test("dev gate review persists a full workflow summary for pr readiness", async () => {
     const runner = new FakeRunner();
     const output = { stdout: "", stderr: "" };
@@ -401,6 +423,11 @@ describe("dev commands", () => {
       gitHead: "abc123"
     });
     expect(summary.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "strict preflight",
+        command: ["pgx-cli", "dev", "preflight", "--strict"],
+        exitCode: 0
+      }),
       expect.objectContaining({
         name: "compare-postgres",
         command: ["pgx-cli", "test", "compare-postgres", "--workload", "tpch-correctness"],

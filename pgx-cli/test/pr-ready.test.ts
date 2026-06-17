@@ -81,6 +81,7 @@ function writeEvidence(root: string): string {
   const path = join(root, ".pgx-cli", "evidence", "current.json");
   mkdirSync(join(root, ".pgx-cli", "evidence"), { recursive: true });
   writeFileSync(path, `${JSON.stringify({
+    requiredClaims: ["review-gate"],
     claims: [
       {
         id: "review-gate",
@@ -96,7 +97,14 @@ function writeEvidence(root: string): string {
 function writeReviewSummary(
   root: string,
   runId = "review-1",
-  options: { workflowExitCode?: number; head?: string | null; finishedAt?: string; commandName?: string; command?: string[] } = {}
+  options: {
+    workflowExitCode?: number;
+    head?: string | null;
+    finishedAt?: string;
+    commandName?: string;
+    command?: string[];
+    includePreflightStep?: boolean;
+  } = {}
 ): string {
   const runDir = join(root, ".pgx-cli", "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -107,6 +115,15 @@ function writeReviewSummary(
     workflowExitCode: options.workflowExitCode ?? 0,
     finishedAt: options.finishedAt ?? "2099-01-01T00:00:00.000Z"
   };
+  if (options.includePreflightStep !== false) {
+    summary.steps = [
+      {
+        name: "strict preflight",
+        command: ["pgx-cli", "dev", "preflight", "--strict"],
+        exitCode: 0
+      }
+    ];
+  }
   if (options.head !== null) {
     summary.gitHead = options.head ?? "abc123";
   }
@@ -150,6 +167,97 @@ describe("pr ready", () => {
       expect(exitCode).toBe(1);
       expect(output.stdout).toContain("fail evidence");
       expect(output.stderr).toContain("evidence file missing");
+    });
+  });
+
+  test("fails when evidence matrix does not declare the required evidence contract", async () => {
+    await withRoot(async (root) => {
+      const evidencePath = writeEvidence(root);
+      writeFileSync(evidencePath, `${JSON.stringify({
+        claims: [
+          {
+            id: "some-green-claim",
+            claim: "arbitrary green claim",
+            kind: "behavioral-test",
+            greenEvidence: "looks good"
+          }
+        ]
+      }, null, 2)}\n`);
+      writeFinalReviewSummary(root);
+      const output = { stdout: "", stderr: "" };
+      const exitCode = await runPrReadyCommand(
+        ["ready", "--evidence", ".pgx-cli/evidence/current.json", "--review-run", "review-1", "--allow-no-pr"],
+        new FakeRunner(),
+        output,
+        config(root)
+      );
+
+      expect(exitCode).toBe(1);
+      expect(output.stdout).toContain("fail evidence");
+      expect(output.stderr).toContain("evidence requiredClaims missing");
+    });
+  });
+
+  test("fails when the evidence matrix is missing a required row", async () => {
+    await withRoot(async (root) => {
+      const evidencePath = writeEvidence(root);
+      writeFileSync(evidencePath, `${JSON.stringify({
+        requiredClaims: ["review-gate", "strict-preflight"],
+        claims: [
+          {
+            id: "review-gate",
+            claim: "final review gate passed",
+            kind: "gate",
+            greenEvidence: "pgx-cli dev gate review passed"
+          }
+        ]
+      }, null, 2)}\n`);
+      writeFinalReviewSummary(root);
+      const output = { stdout: "", stderr: "" };
+      const exitCode = await runPrReadyCommand(
+        ["ready", "--evidence", ".pgx-cli/evidence/current.json", "--review-run", "review-1", "--allow-no-pr"],
+        new FakeRunner(),
+        output,
+        config(root)
+      );
+
+      expect(exitCode).toBe(1);
+      expect(output.stdout).toContain("fail evidence");
+      expect(output.stderr).toContain("missing required evidence: strict-preflight");
+    });
+  });
+
+  test("accepts an explicitly deferred required evidence row", async () => {
+    await withRoot(async (root) => {
+      const evidencePath = writeEvidence(root);
+      writeFileSync(evidencePath, `${JSON.stringify({
+        requiredClaims: ["review-gate", "hook-install"],
+        claims: [
+          {
+            id: "review-gate",
+            claim: "final review gate passed",
+            kind: "gate",
+            greenEvidence: "pgx-cli dev gate review passed"
+          },
+          {
+            id: "hook-install",
+            claim: "Codex shell hook installed",
+            kind: "deferral",
+            deferredReason: "Codex hook rollout is not available in this repo yet"
+          }
+        ]
+      }, null, 2)}\n`);
+      writeFinalReviewSummary(root);
+      const output = { stdout: "", stderr: "" };
+      const exitCode = await runPrReadyCommand(
+        ["ready", "--evidence", ".pgx-cli/evidence/current.json", "--review-run", "review-1", "--allow-no-pr"],
+        new FakeRunner(),
+        output,
+        config(root)
+      );
+
+      expect(exitCode).toBe(0);
+      expect(output.stdout).toContain("ok evidence");
     });
   });
 
@@ -259,6 +367,24 @@ describe("pr ready", () => {
       expect(output.stdout).toContain("fail review gate");
       expect(output.stderr).toContain("review gate HEAD missing");
       expect(output.stdout).toContain("pgx-cli dev gate review");
+    });
+  });
+
+  test("fails when the review gate summary did not include strict preflight", async () => {
+    await withRoot(async (root) => {
+      writeEvidence(root);
+      writeFinalReviewSummary(root, "review-no-preflight", { includePreflightStep: false });
+      const output = { stdout: "", stderr: "" };
+      const exitCode = await runPrReadyCommand(
+        ["ready", "--evidence", ".pgx-cli/evidence/current.json", "--review-run", "review-no-preflight", "--allow-no-pr"],
+        new FakeRunner(),
+        output,
+        config(root)
+      );
+
+      expect(exitCode).toBe(1);
+      expect(output.stdout).toContain("fail review gate");
+      expect(output.stderr).toContain("review gate strict preflight missing");
     });
   });
 

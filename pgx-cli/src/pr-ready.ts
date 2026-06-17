@@ -205,7 +205,7 @@ function evidenceCheck(config: PrReadyConfig, evidence: string): ReadyCheck {
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as EvidenceFile;
-    const result = checkEvidenceFile(parsed);
+    const result = checkEvidenceFile(parsed, { requireRequiredClaims: true });
     return {
       name: "evidence",
       ok: result.ok,
@@ -268,6 +268,14 @@ function reviewGateCheck(config: PrReadyConfig, reviewRun: string | undefined, c
       name: "review gate",
       ok: false,
       detail: `review gate HEAD mismatch: summary ${shortSha(recordedHead)}, current ${shortSha(currentHead)}`,
+      next: "pgx-cli dev gate review"
+    };
+  }
+  if (!hasSuccessfulStrictPreflight(summary.summary)) {
+    return {
+      name: "review gate",
+      ok: false,
+      detail: `review gate strict preflight missing: summary ${summary.runId} has no successful pgx-cli dev preflight --strict step`,
       next: "pgx-cli dev gate review"
     };
   }
@@ -436,6 +444,18 @@ function summaryGitHead(summary: Record<string, unknown>): string | undefined {
     if (typeof gitRecord.headSha === "string") return gitRecord.headSha;
   }
   return undefined;
+}
+
+function hasSuccessfulStrictPreflight(summary: Record<string, unknown>): boolean {
+  const steps = Array.isArray(summary.steps) ? summary.steps : [];
+  return steps.some((step) => {
+    if (!step || typeof step !== "object" || Array.isArray(step)) return false;
+    const record = step as Record<string, unknown>;
+    const command = Array.isArray(record.command)
+      ? record.command.map((part) => String(part)).join(" ")
+      : "";
+    return command === "pgx-cli dev preflight --strict" && record.exitCode === 0;
+  });
 }
 
 function renderChecklist(checks: ReadyCheck[]): string {

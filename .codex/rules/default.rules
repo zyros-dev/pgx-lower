@@ -2,6 +2,8 @@
 # match: ssh comfy true
 # match: docker ps
 # match: psql -c 'SELECT 1'
+# Exact common shell-wrapper bypasses are blocked below; use
+# `pgx-cli codex-policy check -- <cmd...>` for broader shell-body inspection.
 
 # ## Agent Efficiency Rules
 #
@@ -75,6 +77,48 @@ prefix_rule(
     pattern = ["just"],
     decision = "forbidden",
     justification = "Use pgx-cli ... so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["bash", "-lc", "ssh comfy true"],
+    decision = "forbidden",
+    justification = "Use pgx-cli run thor -- ... so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["zsh", "-c", "docker exec pgx-lower-dev true"],
+    decision = "forbidden",
+    justification = "Use pgx-cli run docker -- ... so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["sh", "-c", "psql -c 'SELECT 1'"],
+    decision = "forbidden",
+    justification = "Use pgx-cli run psql ... so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["bash", "-lc", "cat /tmp/pgx_errors.log"],
+    decision = "forbidden",
+    justification = "Use pgx-cli logs errors so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["bash", "-lc", "cat /tmp/pgx_ir/latest.mlir"],
+    decision = "forbidden",
+    justification = "Use pgx-cli ir inspect so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["bash", "-lc", "find /tmp/pgx_ir -type f -print"],
+    decision = "forbidden",
+    justification = "Use pgx-cli ir inspect so Mutagen, transcripts, and output limits are enforced.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "comment", "1", "--body", "`pgx-cli dev gate review`"],
+    decision = "forbidden",
+    justification = "Use gh pr comment --body-file so Mutagen, transcripts, and output limits are enforced.",
 )
 
 prefix_rule(

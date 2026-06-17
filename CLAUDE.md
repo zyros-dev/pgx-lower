@@ -100,11 +100,15 @@ build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
   or `--full` when you need a different view.
 - Codex CLI must trust the project `.codex/` layer for
   `.codex/rules/default.rules` to block raw workflow command prefixes. The
-  `pgx-cli codex-policy check` classifier also inspects common
-  `bash -lc`/`zsh -c`/`sh -c` wrappers for raw workflow commands, large
-  log/IR reads, and unsafe `gh pr comment --body` backticks. Automatic external
-  Codex hook wiring beyond the project rules and classifier is still outside
-  this repo-local workflow.
+  rules include exact common wrapper prefixes for raw workflow commands and
+  large log/IR reads. The `pgx-cli codex-policy check` classifier also inspects
+  broader `bash -lc`/`zsh -c`/`sh -c` wrappers and unsafe
+  `gh pr comment --body` backticks. Automatic external Codex hook wiring beyond
+  the project rules and classifier is still outside this repo-local workflow.
+- `pgx-cli dev gate review` runs `pgx-cli dev preflight --strict` as its first
+  recorded step. `pgx-cli pr ready` requires the final review-gate summary to
+  include that successful preflight step and requires evidence files to declare
+  `requiredClaims`; arbitrary one-row green evidence is not PR-ready evidence.
 - Use `pgx-cli logs errors --lines 50` instead of raw
   `ssh comfy "docker exec ... tail ... /tmp/pgx_errors.log"` when inspecting
   PostgreSQL/backend error logs.

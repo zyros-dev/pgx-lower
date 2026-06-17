@@ -21,6 +21,37 @@ const blockedCommands = [
 const localInspectionCommands = new Set(["rg", "sed", "find", "ls", "pwd", "nl", "wc"]);
 const shellWrapperCommands = new Set(["bash", "sh", "zsh"]);
 
+const commonShellBypassRules = [
+  {
+    pattern: ["bash", "-lc", "ssh comfy true"],
+    replacement: "pgx-cli run thor -- ..."
+  },
+  {
+    pattern: ["zsh", "-c", "docker exec pgx-lower-dev true"],
+    replacement: "pgx-cli run docker -- ..."
+  },
+  {
+    pattern: ["sh", "-c", "psql -c 'SELECT 1'"],
+    replacement: "pgx-cli run psql ..."
+  },
+  {
+    pattern: ["bash", "-lc", "cat /tmp/pgx_errors.log"],
+    replacement: "pgx-cli logs errors"
+  },
+  {
+    pattern: ["bash", "-lc", "cat /tmp/pgx_ir/latest.mlir"],
+    replacement: "pgx-cli ir inspect"
+  },
+  {
+    pattern: ["bash", "-lc", "find /tmp/pgx_ir -type f -print"],
+    replacement: "pgx-cli ir inspect"
+  },
+  {
+    pattern: ["gh", "pr", "comment", "1", "--body", "`pgx-cli dev gate review`"],
+    replacement: "gh pr comment --body-file"
+  }
+] as const;
+
 const retiredWorkflowScripts = [
   "benchmark/tpch/aggregate.py",
   "benchmark/tpch/fxt_to_flamegraph.py",
@@ -99,11 +130,16 @@ export function renderDefaultRules(options: { root?: string; workflowScripts?: s
     "# match: ssh comfy true",
     "# match: docker ps",
     "# match: psql -c 'SELECT 1'",
+    "# Exact common shell-wrapper bypasses are blocked below; use",
+    "# `pgx-cli codex-policy check -- <cmd...>` for broader shell-body inspection.",
     "",
     ...agentEfficiencyRules.map((line) => line ? `# ${line}` : "#")
   ].join("\n")];
   for (const [command, replacement] of blockedCommands) {
     chunks.push(prefixRule([command], replacement));
+  }
+  for (const rule of commonShellBypassRules) {
+    chunks.push(prefixRule([...rule.pattern], rule.replacement));
   }
   for (const script of scripts) {
     chunks.push(prefixRule([script], "pgx-cli <typed workflow command>"));
