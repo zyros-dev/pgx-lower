@@ -190,6 +190,60 @@ describe("route notice assertions", () => {
     ]);
   });
 
+  test("does not end a multiline statement at a matching first line from the next query", () => {
+    const manifest = parseSqlManifest({
+      path: "queries.sql",
+      sql: [
+        "/* <<pgx-lower-config>>: auto_should_route_to=lower id=q1 */",
+        "-- Query 1",
+        "select",
+        "        1",
+        "limit 1;",
+        "/* <<pgx-lower-config>>: auto_should_route_to=fallback id=q2 */",
+        "select",
+        "        generate_series(1, 2);"
+      ].join("\n"),
+      defaultRoute: "lower",
+      requireRouteDirectives: true
+    });
+
+    const report = assertRoutes({
+      runName: "route-test",
+      profile: "debug",
+      executionMode: "extension-auto",
+      manifests: [manifest],
+      outputsByPath: new Map([
+        [
+          "queries.sql",
+          [
+            "/* <<pgx-lower-config>>: auto_should_route_to=lower id=q1 */",
+            "-- Query 1",
+            "select",
+            "        1",
+            "limit 1;",
+            routeNotice,
+            " ?column?",
+            "----------",
+            "        1",
+            "/* <<pgx-lower-config>>: auto_should_route_to=fallback id=q2 */",
+            "select",
+            "        generate_series(1, 2);",
+            routeNotice
+          ].join("\n")
+        ]
+      ])
+    });
+
+    expect(report.failures).toEqual([
+      {
+        statementId: "q1",
+        path: "queries.sql",
+        statementIndex: 0,
+        reason: "expected lower but observed fallback unsupported_function: unsupported function generate_series()"
+      }
+    ]);
+  });
+
   test("fails fallback expectations when no fallback notice appears", () => {
     const manifest = parseSqlManifest({
       path: "queries.sql",

@@ -311,7 +311,7 @@ order by
         revenue desc
 limit 20;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=tpch_q11 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q11 */
 -- TPC-H Query 11
 select
         ps_partkey,
@@ -611,7 +611,7 @@ where
 order by
         s_name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=tpch_q21 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q21 */
 -- TPC-H Query 21
 select
         s_name,

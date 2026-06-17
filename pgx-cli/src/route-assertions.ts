@@ -150,13 +150,12 @@ function extractRouteEvents(manifest: SqlManifest, output: string): RouteEvent[]
   let cursor = 0;
 
   for (const statement of manifest.statements) {
-    const firstLine = firstSqlLine(statement.sql);
-    const start = findLine(lines, firstLine, cursor);
+    const start = findStatementStart(lines, statement.sql, cursor);
     if (start === -1) {
       continue;
     }
     const nextStatement = manifest.statements[statement.index + 1];
-    const nextStart = nextStatement ? findLine(lines, firstSqlLine(nextStatement.sql), start + 1) : lines.length;
+    const nextStart = nextStatement ? findStatementStart(lines, nextStatement.sql, start + 1) : lines.length;
     const end = nextStart === -1 ? lines.length : nextStart;
     for (let i = start + 1; i < end; i++) {
       const match = routeNoticeRe.exec(lines[i] ?? "");
@@ -177,8 +176,40 @@ function extractRouteEvents(manifest: SqlManifest, output: string): RouteEvent[]
   return events;
 }
 
+function findStatementStart(lines: readonly string[], sql: string, start: number): number {
+  const statementLines = significantSqlLines(sql);
+  const sequenceStart = findLineSequence(lines, statementLines, start);
+  if (sequenceStart !== -1) {
+    return sequenceStart;
+  }
+  return findLine(lines, firstSqlLine(sql), start);
+}
+
+function significantSqlLines(sql: string): string[] {
+  return sql.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+}
+
 function firstSqlLine(sql: string): string {
   return sql.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0) ?? sql.trim();
+}
+
+function findLineSequence(lines: readonly string[], expected: readonly string[], start: number): number {
+  if (expected.length === 0) {
+    return -1;
+  }
+  for (let i = start; i <= lines.length - expected.length; i++) {
+    let matched = true;
+    for (let j = 0; j < expected.length; j++) {
+      if ((lines[i + j] ?? "").trim() !== expected[j]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 function findLine(lines: readonly string[], expected: string, start: number): number {

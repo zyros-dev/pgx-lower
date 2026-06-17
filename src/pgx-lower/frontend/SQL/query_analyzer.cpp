@@ -687,6 +687,116 @@ static auto collectExpressionListAggregateRefs(const List* expressions) -> std::
     return aggNos;
 }
 
+static auto collectPassthroughVarAttnos(const Node* expr, std::set<AttrNumber>& attnos) -> void {
+    if (!expr) {
+        return;
+    }
+
+    switch (nodeTag(expr)) {
+    case T_Var: {
+        const auto* var = reinterpret_cast<const Var*>(expr);
+        if (var->varlevelsup == 0 && var->varattno > 0) {
+            attnos.insert(var->varattno);
+        }
+        break;
+    }
+    case T_Aggref:
+        // Aggregate arguments are not passthrough target columns.
+        break;
+    case T_TargetEntry: {
+        const auto* target = reinterpret_cast<const TargetEntry*>(expr);
+        if (!target->resjunk) {
+            collectPassthroughVarAttnos(reinterpret_cast<const Node*>(target->expr), attnos);
+        }
+        break;
+    }
+    case T_OpExpr: {
+        const auto* op = reinterpret_cast<const OpExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, op->args) {
+            collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), attnos);
+        }
+        break;
+    }
+    case T_BoolExpr: {
+        const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, boolExpr->args) {
+            collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), attnos);
+        }
+        break;
+    }
+    case T_FuncExpr: {
+        const auto* func = reinterpret_cast<const FuncExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, func->args) {
+            collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), attnos);
+        }
+        break;
+    }
+    case T_CoalesceExpr: {
+        const auto* coalesce = reinterpret_cast<const CoalesceExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, coalesce->args) {
+            collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), attnos);
+        }
+        break;
+    }
+    case T_ScalarArrayOpExpr: {
+        const auto* scalarArray = reinterpret_cast<const ScalarArrayOpExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, scalarArray->args) {
+            collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), attnos);
+        }
+        break;
+    }
+    case T_ArrayExpr: {
+        const auto* arrayExpr = reinterpret_cast<const ArrayExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, arrayExpr->elements) {
+            collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), attnos);
+        }
+        break;
+    }
+    case T_RelabelType: {
+        const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
+        collectPassthroughVarAttnos(reinterpret_cast<const Node*>(relabel->arg), attnos);
+        break;
+    }
+    case T_CoerceViaIO: {
+        const auto* coerce = reinterpret_cast<const CoerceViaIO*>(expr);
+        collectPassthroughVarAttnos(reinterpret_cast<const Node*>(coerce->arg), attnos);
+        break;
+    }
+    case T_NullTest: {
+        const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
+        collectPassthroughVarAttnos(reinterpret_cast<const Node*>(nullTest->arg), attnos);
+        break;
+    }
+    default: break;
+    }
+}
+
+static auto sortedJoinAggregateHasUngroupedPassthroughTargets(const Agg* agg) -> bool {
+    auto groupingColumns = std::set<AttrNumber>{};
+    for (auto index = 0; index < agg->numCols; ++index) {
+        groupingColumns.insert(agg->grpColIdx[index]);
+    }
+
+    auto passthroughColumns = std::set<AttrNumber>{};
+    ListCell* lc = nullptr;
+    foreach (lc, agg->plan.targetlist) {
+        collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), passthroughColumns);
+    }
+
+    for (const auto column : passthroughColumns) {
+        if (!groupingColumns.contains(column)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static auto planSubtreeContainsJoin(const Plan* plan) -> bool {
     if (!plan) {
         return false;
@@ -795,13 +905,16 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
         result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node, "unsupported split aggregate plan",
                                     location);
     }
-    if (agg->aggstrategy == AGG_SORTED && planSubtreeContainsJoin(agg->plan.lefttree)) {
-        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
-                                    "unsupported sorted aggregate over joined input", location);
-    }
     if (agg->numCols < 0 || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations))) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
                                            "aggregate grouping metadata is incomplete", location);
+    }
+    if (agg->aggstrategy == AGG_SORTED && planSubtreeContainsJoin(agg->plan.lefttree)
+        && sortedJoinAggregateHasUngroupedPassthroughTargets(agg))
+    {
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                    "unsupported sorted aggregate with ungrouped passthrough target over joined input",
+                                    location);
     }
     if (agg->plan.qual && list_length(agg->plan.qual) > 0) {
         const auto targetAggs = collectTargetListAggregateRefs(agg->plan.targetlist);

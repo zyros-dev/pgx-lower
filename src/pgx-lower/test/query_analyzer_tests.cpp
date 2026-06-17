@@ -65,6 +65,18 @@ auto makeTypedConst(Oid typeOid) -> Const {
     return value;
 }
 
+auto makeIntVar(AttrNumber attno) -> Var {
+    auto value = Var{};
+    value.xpr.type = T_Var;
+    value.varno = OUTER_VAR;
+    value.varattno = attno;
+    value.vartype = INT4OID;
+    value.vartypmod = -1;
+    value.varcollid = InvalidOid;
+    value.varlevelsup = 0;
+    return value;
+}
+
 struct SortPlanFixture {
     Const value{};
     TargetEntry target{};
@@ -724,24 +736,60 @@ PGX_TEST_FN(query_analyzer_accepts_agg_group_operator_for_child_target_type) {
 }
 
 PGX_TEST_FN(query_analyzer_rejects_sorted_agg_over_join_input) {
-    auto groupValue = makeTypedConst(INT4OID);
+    auto groupValue = makeIntVar(1);
+    auto aggregateInput = makeIntVar(2);
+    auto dependentValue = makeIntVar(3);
+
     auto groupTarget = TargetEntry{};
     groupTarget.xpr.type = T_TargetEntry;
     groupTarget.expr = reinterpret_cast<Expr*>(&groupValue);
     groupTarget.resno = 1;
     groupTarget.resjunk = false;
 
+    auto aggregateInputTarget = TargetEntry{};
+    aggregateInputTarget.xpr.type = T_TargetEntry;
+    aggregateInputTarget.expr = reinterpret_cast<Expr*>(&aggregateInput);
+    aggregateInputTarget.resno = 2;
+    aggregateInputTarget.resjunk = false;
+
+    auto dependentTarget = TargetEntry{};
+    dependentTarget.xpr.type = T_TargetEntry;
+    dependentTarget.expr = reinterpret_cast<Expr*>(&dependentValue);
+    dependentTarget.resno = 3;
+    dependentTarget.resjunk = false;
+
+    auto aggregateArgTarget = TargetEntry{};
+    aggregateArgTarget.xpr.type = T_TargetEntry;
+    aggregateArgTarget.expr = reinterpret_cast<Expr*>(&aggregateInput);
+    aggregateArgTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_SUM_INT4;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&aggregateArgTarget);
+    aggregate.aggargtypes = list_make1_oid(INT4OID);
+    aggregate.aggno = 1;
+
+    auto aggregateTarget = TargetEntry{};
+    aggregateTarget.xpr.type = T_TargetEntry;
+    aggregateTarget.expr = reinterpret_cast<Expr*>(&aggregate);
+    aggregateTarget.resno = 2;
+    aggregateTarget.resjunk = false;
+
     auto leftScan = SeqScan{};
     leftScan.scan.plan.type = T_SeqScan;
-    leftScan.scan.plan.targetlist = list_make1(&groupTarget);
+    leftScan.scan.plan.targetlist = list_make3(&groupTarget, &aggregateInputTarget, &dependentTarget);
 
     auto rightScan = SeqScan{};
     rightScan.scan.plan.type = T_SeqScan;
-    rightScan.scan.plan.targetlist = list_make1(&groupTarget);
+    rightScan.scan.plan.targetlist = list_make3(&groupTarget, &aggregateInputTarget, &dependentTarget);
 
     auto join = NestLoop{};
     join.join.plan.type = T_NestLoop;
-    join.join.plan.targetlist = list_make1(&groupTarget);
+    join.join.plan.targetlist = list_make3(&groupTarget, &aggregateInputTarget, &dependentTarget);
     join.join.plan.lefttree = reinterpret_cast<Plan*>(&leftScan);
     join.join.plan.righttree = reinterpret_cast<Plan*>(&rightScan);
 
@@ -751,7 +799,7 @@ PGX_TEST_FN(query_analyzer_rejects_sorted_agg_over_join_input) {
     Oid sortCollations[1]{InvalidOid};
     bool nullsFirst[1]{false};
     sort.plan.type = T_Sort;
-    sort.plan.targetlist = list_make1(&groupTarget);
+    sort.plan.targetlist = list_make3(&groupTarget, &aggregateInputTarget, &dependentTarget);
     sort.plan.lefttree = reinterpret_cast<Plan*>(&join);
     sort.numCols = 1;
     sort.sortColIdx = sortColIdx;
@@ -764,7 +812,7 @@ PGX_TEST_FN(query_analyzer_rejects_sorted_agg_over_join_input) {
     Oid grpOperators[1]{Int4EqualOperator};
     Oid grpCollations[1]{InvalidOid};
     agg.plan.type = T_Agg;
-    agg.plan.targetlist = list_make1(&groupTarget);
+    agg.plan.targetlist = list_make3(&groupTarget, &aggregateTarget, &dependentTarget);
     agg.plan.lefttree = reinterpret_cast<Plan*>(&sort);
     agg.aggstrategy = AGG_SORTED;
     agg.numCols = 1;
@@ -775,6 +823,89 @@ PGX_TEST_FN(query_analyzer_rejects_sorted_agg_over_join_input) {
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&agg));
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_sorted_agg_over_join_when_targets_are_grouped_or_aggregated) {
+    auto groupValue = makeIntVar(1);
+    auto aggregateInput = makeIntVar(2);
+
+    auto groupTarget = TargetEntry{};
+    groupTarget.xpr.type = T_TargetEntry;
+    groupTarget.expr = reinterpret_cast<Expr*>(&groupValue);
+    groupTarget.resno = 1;
+    groupTarget.resjunk = false;
+
+    auto aggregateInputTarget = TargetEntry{};
+    aggregateInputTarget.xpr.type = T_TargetEntry;
+    aggregateInputTarget.expr = reinterpret_cast<Expr*>(&aggregateInput);
+    aggregateInputTarget.resno = 2;
+    aggregateInputTarget.resjunk = false;
+
+    auto aggregateArgTarget = TargetEntry{};
+    aggregateArgTarget.xpr.type = T_TargetEntry;
+    aggregateArgTarget.expr = reinterpret_cast<Expr*>(&aggregateInput);
+    aggregateArgTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_SUM_INT4;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&aggregateArgTarget);
+    aggregate.aggargtypes = list_make1_oid(INT4OID);
+    aggregate.aggno = 1;
+
+    auto aggregateTarget = TargetEntry{};
+    aggregateTarget.xpr.type = T_TargetEntry;
+    aggregateTarget.expr = reinterpret_cast<Expr*>(&aggregate);
+    aggregateTarget.resno = 2;
+    aggregateTarget.resjunk = false;
+
+    auto leftScan = SeqScan{};
+    leftScan.scan.plan.type = T_SeqScan;
+    leftScan.scan.plan.targetlist = list_make2(&groupTarget, &aggregateInputTarget);
+
+    auto rightScan = SeqScan{};
+    rightScan.scan.plan.type = T_SeqScan;
+    rightScan.scan.plan.targetlist = list_make2(&groupTarget, &aggregateInputTarget);
+
+    auto join = NestLoop{};
+    join.join.plan.type = T_NestLoop;
+    join.join.plan.targetlist = list_make2(&groupTarget, &aggregateInputTarget);
+    join.join.plan.lefttree = reinterpret_cast<Plan*>(&leftScan);
+    join.join.plan.righttree = reinterpret_cast<Plan*>(&rightScan);
+
+    auto sort = Sort{};
+    AttrNumber sortColIdx[1]{1};
+    Oid sortOperators[1]{Int4LessOperator};
+    Oid sortCollations[1]{InvalidOid};
+    bool nullsFirst[1]{false};
+    sort.plan.type = T_Sort;
+    sort.plan.targetlist = list_make2(&groupTarget, &aggregateInputTarget);
+    sort.plan.lefttree = reinterpret_cast<Plan*>(&join);
+    sort.numCols = 1;
+    sort.sortColIdx = sortColIdx;
+    sort.sortOperators = sortOperators;
+    sort.collations = sortCollations;
+    sort.nullsFirst = nullsFirst;
+
+    auto agg = Agg{};
+    AttrNumber grpColIdx[1]{1};
+    Oid grpOperators[1]{Int4EqualOperator};
+    Oid grpCollations[1]{InvalidOid};
+    agg.plan.type = T_Agg;
+    agg.plan.targetlist = list_make2(&groupTarget, &aggregateTarget);
+    agg.plan.lefttree = reinterpret_cast<Plan*>(&sort);
+    agg.aggstrategy = AGG_SORTED;
+    agg.numCols = 1;
+    agg.grpColIdx = grpColIdx;
+    agg.grpOperators = grpOperators;
+    agg.grpCollations = grpCollations;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&agg));
+    REQUIRE(result.isSupported());
     PG_RETURN_VOID();
 }
 
