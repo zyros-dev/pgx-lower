@@ -667,6 +667,10 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
         result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node, "unsupported chained aggregate plan",
                                     location);
     }
+    if (agg->aggsplit != AGGSPLIT_SIMPLE) {
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node, "unsupported split aggregate plan",
+                                    location);
+    }
     if (agg->numCols < 0 || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations))) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
                                            "aggregate grouping metadata is incomplete", location);
@@ -990,6 +994,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
         }
         if (agg->aggdistinct && list_length(agg->aggdistinct) > 0) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate distinct",
+                                        location);
+        }
+        if (agg->aggsplit != AGGSPLIT_SIMPLE) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported split aggregate",
                                         location);
         }
         if (!isCollationSupported(agg->inputcollid) || !isCollationSupported(agg->aggcollid)) {

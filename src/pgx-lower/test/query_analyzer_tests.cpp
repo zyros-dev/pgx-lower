@@ -706,6 +706,16 @@ PGX_TEST_FN(query_analyzer_rejects_agg_chain) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_split_aggregate_plan) {
+    AggPlanFixture fixture;
+    fixture.agg.aggsplit = AGGSPLIT_INITIAL_SERIAL;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_aggregate_filter) {
     auto filter = makeBoolConst();
 
@@ -772,6 +782,29 @@ PGX_TEST_FN(query_analyzer_rejects_distinct_aggregate) {
     aggregate.args = list_make1(&argTarget);
     aggregate.aggargtypes = list_make1_oid(INT4OID);
     aggregate.aggdistinct = list_make1(&distinctClause);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_split_aggregate_ref) {
+    auto argValue = makeTypedConst(INT4OID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_SUM_INT4;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(INT4OID);
+    aggregate.aggsplit = AGGSPLIT_FINAL_DESERIAL;
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
     REQUIRE(!result.isSupported());
