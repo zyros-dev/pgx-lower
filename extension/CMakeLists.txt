@@ -123,6 +123,7 @@ if(NOT BUILDING_UNIT_TESTS)
             49_aggref_filter_fallback
             50_min_text_fallback
             51_aggorder_fallback
+            52_aggdistinct_fallback
 )
 
 

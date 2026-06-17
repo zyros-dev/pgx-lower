@@ -76,7 +76,7 @@ ORDER BY category;
 SELECT SUM(category)
 FROM test_distinct;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_31_distinct_statement_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_31_distinct_statement_011 */
 SELECT SUM(DISTINCT category)
 FROM test_distinct;
 

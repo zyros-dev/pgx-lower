@@ -148,9 +148,10 @@ FROM test_distinct;
   20
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_31_distinct_statement_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_31_distinct_statement_011 */
 SELECT SUM(DISTINCT category)
 FROM test_distinct;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported aggregate distinct at Plan.targetlist[0].expr
  sum 
 -----
   10

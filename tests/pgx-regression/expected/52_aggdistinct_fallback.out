@@ -1,0 +1,16 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS aggdistinct_fallback;
+NOTICE:  table "aggdistinct_fallback" does not exist, skipping
+CREATE TABLE aggdistinct_fallback(a int4, v float8);
+INSERT INTO aggdistinct_fallback VALUES (1, 1.0), (1, 1.0), (2, 2.0), (2, 2.0);
+SET pgx_lower.execution_mode = 'auto';
+\pset format unaligned
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_52_aggdistinct_fallback_001 */
+SELECT count(DISTINCT a) AS cda, sum(DISTINCT a) AS sda, sum(DISTINCT v) AS sdv
+FROM aggdistinct_fallback;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported aggregate distinct at Plan.targetlist[0].expr
+cda|sda|sdv
+2|3|3
+(1 row)
+\pset format aligned
+DROP TABLE aggdistinct_fallback;
