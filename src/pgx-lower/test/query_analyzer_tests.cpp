@@ -62,6 +62,33 @@ auto makeTypedConst(Oid typeOid) -> Const {
     return value;
 }
 
+struct SortPlanFixture {
+    Const value{};
+    TargetEntry target{};
+    Sort sort{};
+    AttrNumber sortColIdx[1]{1};
+    Oid sortOperators[1]{Int4LessOperator};
+    Oid collations[1]{InvalidOid};
+    bool nullsFirst[1]{false};
+
+    SortPlanFixture() {
+        value = makeIntConst();
+
+        target.xpr.type = T_TargetEntry;
+        target.expr = reinterpret_cast<Expr*>(&value);
+        target.resno = 1;
+        target.resjunk = false;
+
+        sort.plan.type = T_Sort;
+        sort.plan.targetlist = list_make1(&target);
+        sort.numCols = 1;
+        sort.sortColIdx = sortColIdx;
+        sort.sortOperators = sortOperators;
+        sort.collations = collations;
+        sort.nullsFirst = nullsFirst;
+    }
+};
+
 } // namespace
 
 PGX_TEST_FN(query_analyzer_default_result_is_invalid) {
@@ -355,6 +382,47 @@ PGX_TEST_FN(query_analyzer_rejects_unsupported_varchar_operator_signature) {
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_invalid_sort_operator) {
+    SortPlanFixture fixture;
+    fixture.sortOperators[0] = InvalidOid;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unsupported_sort_collation) {
+    SortPlanFixture fixture;
+    fixture.collations[0] = 999999;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_collation);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_sort_without_optional_operator_metadata) {
+    SortPlanFixture fixture;
+    fixture.sort.sortOperators = nullptr;
+    fixture.sort.collations = nullptr;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_sort_without_optional_column_metadata) {
+    SortPlanFixture fixture;
+    fixture.sort.sortColIdx = nullptr;
+    fixture.sort.sortOperators = nullptr;
+    fixture.sort.collations = nullptr;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(result.isSupported());
     PG_RETURN_VOID();
 }
 

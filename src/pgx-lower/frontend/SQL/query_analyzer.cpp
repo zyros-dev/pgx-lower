@@ -148,6 +148,11 @@ static auto postgresTypeIsStringType(const Oid postgresType) -> bool {
     }
 }
 
+static auto postgresCollationIsSupported(const Oid collationOid) -> bool {
+    return collationOid == InvalidOid || collationOid == DEFAULT_COLLATION_OID || collationOid == C_COLLATION_OID
+           || collationOid == POSIX_COLLATION_OID;
+}
+
 struct PgFunctionSignature {
     const char* name;
     char kind;
@@ -403,6 +408,25 @@ static auto operatorSignatureIsLowerable(const OpExpr* op) -> bool {
                                         exprType(const_cast<Node*>(rhs)));
 }
 
+static auto sortOperatorMatchesTargetType(const Oid operatorOid, const Oid keyType) -> bool {
+    if (operatorOid == InvalidOid || keyType == InvalidOid) {
+        return false;
+    }
+
+    const auto tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(operatorOid));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+
+    const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
+                         && oper->oprresult == BOOLOID && oper->oprleft == keyType && oper->oprright == keyType
+                         && operatorSignatureIsLowerable(operatorOid, oper->oprresult, oper->oprleft,
+                                                         oper->oprright);
+    ReleaseSysCache(tuple);
+    return matches;
+}
+
 static auto scalarArrayOperatorSignatureIsLowerable(const Oid operatorOid, const Oid lhsType, const Oid rhsType) -> bool {
     const char* name = get_opname(operatorOid);
     if (!name) {
@@ -525,6 +549,64 @@ static auto postgresFunctionName(const Oid functionOid) -> std::string {
     return functionName;
 }
 
+static auto sortTargetType(const List* targetList, const AttrNumber sortColumn) -> Oid {
+    if (!targetList) {
+        return InvalidOid;
+    }
+
+    ListCell* lc = nullptr;
+    foreach (lc, targetList) {
+        const auto* tle = static_cast<const TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk || tle->resno != sortColumn || !tle->expr) {
+            continue;
+        }
+        return exprType(const_cast<Node*>(reinterpret_cast<const Node*>(tle->expr)));
+    }
+    return InvalidOid;
+}
+
+static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -> AnalyzerResult {
+    auto result = AnalyzerResult::supported();
+    if (!sort) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "sort node is null", location);
+    }
+    if (sort->numCols < 0) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "sort metadata is incomplete",
+                                           location);
+    }
+
+    for (auto index = 0; index < sort->numCols; ++index) {
+        const auto itemLocation = location + ".sortCol[" + std::to_string(index) + "]";
+        if (sort->collations && !postgresCollationIsSupported(sort->collations[index])) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported sort collation",
+                                        itemLocation);
+        }
+
+        if (!sort->sortOperators) {
+            continue;
+        }
+        if (!sort->sortColIdx) {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
+                                        "sort key target metadata is missing", itemLocation);
+            continue;
+        }
+
+        const auto keyType = sortTargetType(sort->plan.targetlist, sort->sortColIdx[index]);
+        if (keyType == InvalidOid) {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
+                                        "sort key target metadata is missing", itemLocation);
+            continue;
+        }
+        if (!sortOperatorMatchesTargetType(sort->sortOperators[index], keyType)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
+                                        "unsupported sort operator OID "
+                                            + std::to_string(sort->sortOperators[index]),
+                                        itemLocation);
+        }
+    }
+    return supportedOrUnsupported(result);
+}
+
 auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> AnalyzerResult {
     if (!stmt) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::invalid, "planned statement is null", "PlannedStmt");
@@ -556,6 +638,8 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_MergeJoin:
     case T_HashJoin:
     case T_Sort:
+        mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location));
+        break;
     case T_Limit:
     case T_Agg:
     case T_Material:
@@ -867,8 +951,7 @@ auto QueryAnalyzer::isOperatorSupported(const OpExpr* op) -> bool {
 }
 
 auto QueryAnalyzer::isCollationSupported(const Oid collationOid) -> bool {
-    return collationOid == InvalidOid || collationOid == DEFAULT_COLLATION_OID || collationOid == C_COLLATION_OID
-           || collationOid == POSIX_COLLATION_OID;
+    return postgresCollationIsSupported(collationOid);
 }
 
 auto QueryAnalyzer::analyzeNodeForTesting(const Plan* plan) -> AnalyzerResult {
