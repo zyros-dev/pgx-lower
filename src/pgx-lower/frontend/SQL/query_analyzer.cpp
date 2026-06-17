@@ -634,6 +634,22 @@ static auto collectAggregateRefs(const Node* expr, std::set<Index>& aggNos) -> v
         }
         break;
     }
+    case T_ScalarArrayOpExpr: {
+        const auto* scalarArray = reinterpret_cast<const ScalarArrayOpExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, scalarArray->args) {
+            collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+        }
+        break;
+    }
+    case T_ArrayExpr: {
+        const auto* arrayExpr = reinterpret_cast<const ArrayExpr*>(expr);
+        ListCell* lc = nullptr;
+        foreach (lc, arrayExpr->elements) {
+            collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
+        }
+        break;
+    }
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<const RelabelType*>(expr);
         collectAggregateRefs(reinterpret_cast<const Node*>(relabel->arg), aggNos);

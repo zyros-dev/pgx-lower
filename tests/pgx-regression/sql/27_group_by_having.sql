@@ -68,4 +68,24 @@ HAVING MIN(sale_amount) > 2000
    AND MAX(sale_amount) < 6000
 ORDER BY employee_name;
 
+DROP TABLE IF EXISTS pgx_having_scalar_source;
+
+CREATE TABLE pgx_having_scalar_source
+(
+    x INT4
+);
+
+INSERT INTO pgx_having_scalar_source(x)
+VALUES (1),
+       (2);
+
+\pset format unaligned
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_006 */
+SELECT 1 AS marker
+FROM pgx_having_scalar_source
+HAVING sum(x) = ANY ('{3,4}'::int4[]);
+\pset format aligned
+
+DROP TABLE pgx_having_scalar_source;
+
 DROP TABLE employee_sales;

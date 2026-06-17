@@ -94,4 +94,24 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Eve           |          1 |  2500.00 |  2500.00
 (2 rows)
 
+DROP TABLE IF EXISTS pgx_having_scalar_source;
+NOTICE:  table "pgx_having_scalar_source" does not exist, skipping
+CREATE TABLE pgx_having_scalar_source
+(
+    x INT4
+);
+INSERT INTO pgx_having_scalar_source(x)
+VALUES (1),
+       (2);
+\pset format unaligned
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_006 */
+SELECT 1 AS marker
+FROM pgx_having_scalar_source
+HAVING sum(x) = ANY ('{3,4}'::int4[]);
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported HAVING-only aggregate at Plan.qual
+marker
+1
+(1 row)
+\pset format aligned
+DROP TABLE pgx_having_scalar_source;
 DROP TABLE employee_sales;

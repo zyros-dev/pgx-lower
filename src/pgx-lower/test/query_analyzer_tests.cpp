@@ -749,6 +749,48 @@ PGX_TEST_FN(query_analyzer_rejects_having_only_aggregate) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_having_only_aggregate_in_scalar_array_op) {
+    AggPlanFixture fixture;
+
+    auto argValue = makeTypedConst(INT4OID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto havingAggregate = Aggref{};
+    havingAggregate.xpr.type = T_Aggref;
+    havingAggregate.aggfnoid = F_SUM_INT4;
+    havingAggregate.aggtype = INT4OID;
+    havingAggregate.aggcollid = InvalidOid;
+    havingAggregate.inputcollid = InvalidOid;
+    havingAggregate.args = list_make1(&argTarget);
+    havingAggregate.aggargtypes = list_make1_oid(INT4OID);
+    havingAggregate.aggno = 7;
+
+    auto elem1 = makeIntConst();
+    auto elem2 = makeIntConst();
+    auto arrayExpr = ArrayExpr{};
+    arrayExpr.xpr.type = T_ArrayExpr;
+    arrayExpr.array_typeid = INT4ARRAYOID;
+    arrayExpr.element_typeid = INT4OID;
+    arrayExpr.elements = list_make2(&elem1, &elem2);
+
+    auto scalarArray = ScalarArrayOpExpr{};
+    scalarArray.xpr.type = T_ScalarArrayOpExpr;
+    scalarArray.opno = Int4EqualOperator;
+    scalarArray.opfuncid = InvalidOid;
+    scalarArray.useOr = true;
+    scalarArray.inputcollid = InvalidOid;
+    scalarArray.args = list_make2(&havingAggregate, &arrayExpr);
+    fixture.agg.plan.qual = list_make1(&scalarArray);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_agg_grouping_sets) {
     AggPlanFixture fixture;
     fixture.agg.groupingSets = list_make1_int(1);
