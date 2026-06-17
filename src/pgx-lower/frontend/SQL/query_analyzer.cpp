@@ -663,6 +663,14 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
     if (!agg) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "aggregate node is null", location);
     }
+    if (agg->groupingSets) {
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                    "unsupported aggregate grouping sets", location);
+    }
+    if (agg->chain && list_length(agg->chain) > 0) {
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                    "unsupported chained aggregate plan", location);
+    }
     if (agg->numCols < 0
         || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations)))
     {

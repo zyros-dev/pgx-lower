@@ -554,6 +554,26 @@ PGX_TEST_FN(query_analyzer_rejects_unsupported_agg_group_collation) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_agg_grouping_sets) {
+    AggPlanFixture fixture;
+    fixture.agg.groupingSets = list_make1_int(1);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_agg_chain) {
+    AggPlanFixture fixture;
+    fixture.agg.chain = list_make1_int(1);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_seq_scan_without_sort_metadata) {
     auto value = makeIntConst();
     auto target = TargetEntry{};
