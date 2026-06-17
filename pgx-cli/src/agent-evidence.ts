@@ -17,6 +17,7 @@ export type EvidenceClaim = {
 };
 
 export type EvidenceFile = {
+  contract?: string;
   requiredClaims?: string[];
   claims: EvidenceClaim[];
 };
@@ -40,6 +41,32 @@ const evidenceKinds = new Set<string>([
 
 const defaultEvidencePath = ".pgx-cli/evidence/current.json";
 
+type EvidenceContract = {
+  name: string;
+  claims: Array<Pick<EvidenceClaim, "id" | "claim" | "kind">>;
+};
+
+export const agentHardeningEvidenceContract: EvidenceContract = {
+  name: "agent-hardening",
+  claims: [
+    { id: "policy-rules", claim: "Codex rules block raw high-risk commands and broad shell-wrapper bypasses", kind: "behavioral-test" },
+    { id: "policy-wrapper-class", claim: "codex-policy classifier rejects non-latest raw log/IR wrapper variants", kind: "behavioral-test" },
+    { id: "evidence-contract", claim: "Evidence and readiness checks enforce the agent hardening contract", kind: "behavioral-test" },
+    { id: "strict-preflight", claim: "dev gate review records strict preflight before expensive steps", kind: "behavioral-test" },
+    { id: "pgx-cli-tests", claim: "pgx-cli test suite passed", kind: "structural-test" },
+    { id: "pgx-cli-build", claim: "pgx-cli build passed", kind: "structural-test" },
+    { id: "lint-diff", claim: "pgx-cli dev lint diff passed", kind: "gate" },
+    { id: "gate-batch", claim: "pgx-cli dev gate batch passed", kind: "gate" },
+    { id: "gate-review", claim: "pgx-cli dev gate review passed", kind: "gate" },
+    { id: "dev-qa-loop", claim: "dev/QA review loop completed or was explicitly deferred", kind: "manual-observation" },
+    { id: "workflow-skills", claim: "repo-local workflow skills exist or are explicitly deferred", kind: "manual-observation" }
+  ]
+};
+
+const evidenceContracts = new Map([
+  [agentHardeningEvidenceContract.name, agentHardeningEvidenceContract]
+]);
+
 export function checkEvidenceFile(
   file: EvidenceFile,
   options: { requireRequiredClaims?: boolean; requiredClaims?: string[] } = {}
@@ -51,7 +78,8 @@ export function checkEvidenceFile(
     return { ok: false, messages: ["invalid evidence file: claims must be an array"] };
   }
   const requiredClaims = normalizeRequiredClaims(file, options);
-  if (options.requireRequiredClaims && requiredClaims.length === 0) {
+  const declaredRequiredClaims = normalizeRequiredClaims(file, {});
+  if (options.requireRequiredClaims && declaredRequiredClaims.length === 0) {
     messages.push("evidence requiredClaims missing");
   }
   if (file.claims.length === 0) {
@@ -93,6 +121,9 @@ export function checkEvidenceFile(
   }
 
   for (const requiredId of requiredClaims) {
+    if (options.requireRequiredClaims && !declaredRequiredClaims.includes(requiredId)) {
+      messages.push(`missing required claim declaration: ${requiredId}`);
+    }
     if (!seen.has(requiredId)) {
       messages.push(`missing required evidence: ${requiredId}`);
     }
@@ -135,16 +166,34 @@ export function runAgentEvidenceCommand(
 }
 
 function runInit(args: string[], output: OperationOutput, config: AgentEvidenceConfig): number {
-  const parsed = parseOptions(args, new Set(["--file", "--claim"]));
+  const parsed = parseOptions(args, new Set(["--file", "--claim", "--contract"]));
+  if (!parsed) {
+    output.stderr += "Usage: agent evidence init [--contract agent-hardening | --claim id:text ...] [--file <path>]\n";
+    return 1;
+  }
+  const contractName = parsed.values.contract?.[0];
+  if (contractName) {
+    const contract = findEvidenceContract(contractName);
+    if (!contract) {
+      output.stderr += `Unknown evidence contract: ${contractName}\n`;
+      return 1;
+    }
+    const evidence = evidenceFromContract(contract);
+    const path = evidencePath(config, parsed.file);
+    writeEvidence(path, evidence);
+    output.stdout += `Wrote ${displayPath(config, path)}\n`;
+    return 0;
+  }
+
   const claimSpecs = parsed?.values.claim ?? [];
   if (!parsed || claimSpecs.length === 0) {
-    output.stderr += "Usage: agent evidence init --claim id:text [--claim id:text ...] [--file <path>]\n";
+    output.stderr += "Usage: agent evidence init [--contract agent-hardening | --claim id:text ...] [--file <path>]\n";
     return 1;
   }
 
   const claims = claimSpecs.map(parseClaimSpec);
   if (claims.some((claim) => !claim)) {
-    output.stderr += "Usage: agent evidence init --claim id:text [--claim id:text ...] [--file <path>]\n";
+    output.stderr += "Usage: agent evidence init [--contract agent-hardening | --claim id:text ...] [--file <path>]\n";
     return 1;
   }
 
@@ -221,13 +270,19 @@ function runDefer(args: string[], output: OperationOutput, config: AgentEvidence
 function runCheck(args: string[], output: OperationOutput, config: AgentEvidenceConfig): number {
   const parsed = parseCheckOptions(args);
   if (!parsed) {
-    output.stderr += "Usage: agent evidence check [--require-required-claims] [--file <path>]\n";
+    output.stderr += "Usage: agent evidence check [--contract agent-hardening|--require-required-claims] [--file <path>]\n";
+    return 1;
+  }
+  const contract = parsed.contract ? findEvidenceContract(parsed.contract) : undefined;
+  if (parsed.contract && !contract) {
+    output.stderr += `Unknown evidence contract: ${parsed.contract}\n`;
     return 1;
   }
 
   const path = evidencePath(config, parsed.file);
   const result = checkEvidenceFile(readEvidence(path), {
-    requireRequiredClaims: parsed.requireRequiredClaims
+    requireRequiredClaims: parsed.requireRequiredClaims || contract !== undefined,
+    requiredClaims: contract?.claims.map((claim) => claim.id)
   });
   if (result.ok) {
     output.stdout += "agent evidence check: ok\n";
@@ -277,9 +332,10 @@ function parseOptions(args: string[], allowed: Set<string>): { file?: string; va
   return { file, values };
 }
 
-function parseCheckOptions(args: string[]): { file?: string; requireRequiredClaims: boolean } | undefined {
+function parseCheckOptions(args: string[]): { file?: string; requireRequiredClaims: boolean; contract?: string } | undefined {
   let file: string | undefined;
   let requireRequiredClaims = false;
+  let contract: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--require-required-claims") {
@@ -293,9 +349,16 @@ function parseCheckOptions(args: string[]): { file?: string; requireRequiredClai
       index += 1;
       continue;
     }
+    if (arg === "--contract") {
+      const value = args[index + 1];
+      if (!value) return undefined;
+      contract = value;
+      index += 1;
+      continue;
+    }
     return undefined;
   }
-  return { file, requireRequiredClaims };
+  return { file, requireRequiredClaims, contract };
 }
 
 function evidencePath(config: AgentEvidenceConfig, overridePath: string | undefined): string {
@@ -327,6 +390,18 @@ function writeEvidence(path: string, evidence: EvidenceFile): void {
   writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`);
 }
 
+function findEvidenceContract(name: string): EvidenceContract | undefined {
+  return evidenceContracts.get(name);
+}
+
+function evidenceFromContract(contract: EvidenceContract): EvidenceFile {
+  return {
+    contract: contract.name,
+    requiredClaims: contract.claims.map((claim) => claim.id),
+    claims: contract.claims.map((claim) => ({ ...claim }))
+  };
+}
+
 function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -351,10 +426,10 @@ function normalizeRequiredClaims(
 function evidenceUsage(): string {
   return [
     "Usage: agent evidence <init|add|defer|check>",
-    "  agent evidence init --claim id:text [--claim id:text ...] [--file <path>]",
+    "  agent evidence init [--contract agent-hardening | --claim id:text ...] [--file <path>]",
     "  agent evidence add --id <id> --green <evidence> [--artifact <path>] [--command <command>] [--file <path>]",
     "  agent evidence defer --id <id> --reason <reason> [--file <path>]",
-    "  agent evidence check [--require-required-claims] [--file <path>]",
+    "  agent evidence check [--contract agent-hardening|--require-required-claims] [--file <path>]",
     ""
   ].join("\n");
 }

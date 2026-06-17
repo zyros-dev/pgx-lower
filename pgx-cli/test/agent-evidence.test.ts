@@ -5,6 +5,20 @@ import { describe, expect, test } from "vitest";
 import { checkEvidenceFile, runAgentEvidenceCommand } from "../src/agent-evidence.js";
 
 describe("agent evidence", () => {
+  const hardeningClaimIds = [
+    "policy-rules",
+    "policy-wrapper-class",
+    "evidence-contract",
+    "strict-preflight",
+    "pgx-cli-tests",
+    "pgx-cli-build",
+    "lint-diff",
+    "gate-batch",
+    "gate-review",
+    "dev-qa-loop",
+    "workflow-skills"
+  ];
+
   test("check fails when a claim has no green evidence and is not deferred", () => {
     const result = checkEvidenceFile({
       claims: [{ id: "bounded-output", claim: "bounded output", kind: "behavioral-test" }]
@@ -106,6 +120,118 @@ describe("agent evidence", () => {
 
       const evidence = JSON.parse(readFileSync(file, "utf8")) as { requiredClaims?: string[] };
       expect(evidence.requiredClaims).toEqual(["review-gate", "strict-preflight"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("init contract writes the agent hardening required evidence set", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const file = join(root, "evidence.json");
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand([
+        "evidence",
+        "init",
+        "--file",
+        file,
+        "--contract",
+        "agent-hardening"
+      ], output, { localProjectPath: root })).toBe(0);
+
+      const evidence = JSON.parse(readFileSync(file, "utf8")) as {
+        contract?: string;
+        requiredClaims?: string[];
+        claims?: Array<{ id: string; claim: string; kind: string }>;
+      };
+      expect(evidence.contract).toBe("agent-hardening");
+      expect(evidence.requiredClaims).toEqual(hardeningClaimIds);
+      expect(evidence.claims?.map((claim) => claim.id)).toEqual(hardeningClaimIds);
+      expect(evidence.claims).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "pgx-cli-build", kind: "structural-test" }),
+        expect.objectContaining({ id: "gate-review", kind: "gate" }),
+        expect.objectContaining({ id: "dev-qa-loop", kind: "manual-observation" })
+      ]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("check contract rejects arbitrary self-declared required claims", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const file = join(root, "evidence.json");
+      writeFileSync(file, `${JSON.stringify({
+        requiredClaims: ["only-one"],
+        claims: [
+          {
+            id: "only-one",
+            claim: "arbitrary green claim",
+            kind: "behavioral-test",
+            greenEvidence: "looks good"
+          }
+        ]
+      })}\n`);
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand([
+        "evidence",
+        "check",
+        "--contract",
+        "agent-hardening",
+        "--file",
+        file
+      ], output, { localProjectPath: root })).toBe(1);
+      expect(output.stderr).toContain("missing required evidence: pgx-cli-tests");
+      expect(output.stderr).toContain("missing required evidence: gate-review");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("check contract passes when every agent hardening row has evidence", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const file = join(root, "evidence.json");
+      writeFileSync(file, `${JSON.stringify({
+        contract: "agent-hardening",
+        requiredClaims: hardeningClaimIds,
+        claims: hardeningClaimIds.map((id) => ({
+          id,
+          claim: id,
+          kind: "behavioral-test",
+          greenEvidence: `${id} passed`
+        }))
+      })}\n`);
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand([
+        "evidence",
+        "check",
+        "--contract",
+        "agent-hardening",
+        "--file",
+        file
+      ], output, { localProjectPath: root })).toBe(0);
+      expect(output.stdout).toContain("agent evidence check: ok");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects unknown evidence contracts", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand([
+        "evidence",
+        "init",
+        "--contract",
+        "missing-contract"
+      ], output, { localProjectPath: root })).toBe(1);
+      expect(output.stderr).toContain("Unknown evidence contract: missing-contract");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -238,7 +364,7 @@ describe("agent evidence", () => {
       const output = { stdout: "", stderr: "" };
 
       expect(runAgentEvidenceCommand(["evidence", "init", "--file", file], output, { localProjectPath: root })).toBe(1);
-      expect(output.stderr).toContain("Usage: agent evidence init --claim id:text");
+      expect(output.stderr).toContain("Usage: agent evidence init [--contract agent-hardening | --claim id:text ...]");
 
       output.stderr = "";
       expect(runAgentEvidenceCommand([

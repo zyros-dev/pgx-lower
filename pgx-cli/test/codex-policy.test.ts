@@ -92,15 +92,32 @@ describe("codex policy", () => {
       const rules = renderDefaultRules({ root, workflowScripts: scripts });
       expect(rules).toContain('pattern = ["ssh"]');
       expect(rules).toContain('match: ssh comfy true');
-      expect(rules).toContain('pattern = ["bash", "-lc", "cat /tmp/pgx_ir/latest.mlir"]');
-      expect(rules).toContain('pattern = ["bash", "-lc", "cat /tmp/pgx_errors.log"]');
-      expect(rules).toContain('pattern = ["bash", "-lc", "ssh comfy true"]');
+      expect(rules).toContain('pattern = ["bash", "-lc"]');
+      expect(rules).toContain('pattern = ["bash", "-c"]');
+      expect(rules).toContain('pattern = ["sh", "-c"]');
+      expect(rules).toContain('pattern = ["zsh", "-lc"]');
+      expect(rules).toContain('pattern = ["zsh", "-c"]');
+      expect(rules).toContain('pattern = ["cat"]');
       expect(rules).toContain('pattern = ["benchmark/tpch/aggregate.py"]');
       expect(rules).toContain('pattern = ["./scripts/a.sh"]');
       expect(rules).not.toMatch(/\n\n$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test.each([
+    "phase3.mlir",
+    "latest.mlir"
+  ])("rendered rules block the raw IR dump class for %s", (filename) => {
+    const rules = renderDefaultRules();
+
+    expect(rules).toContain('pattern = ["bash", "-lc"]');
+    expect(rules).not.toContain(`pattern = ["bash", "-lc", "cat /tmp/pgx_ir/${filename}"]`);
+    expect(classifyAgentCommand(["bash", "-lc", `cat /tmp/pgx_ir/${filename}`])).toMatchObject({
+      decision: "forbidden",
+      replacement: "pgx-cli ir inspect"
+    });
   });
 
   test("check command returns non-zero for forbidden commands", () => {

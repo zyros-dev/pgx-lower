@@ -72,7 +72,8 @@ pgx-cli queue flush
 pgx-cli thor shell --dangerous -- git status --short
 pgx-cli codex-policy check -- ssh comfy true
 pgx-cli codex-policy rules
-pgx-cli agent evidence check --require-required-claims --file .pgx-cli/evidence/current.json
+pgx-cli agent evidence init --contract agent-hardening --file .pgx-cli/evidence/current.json
+pgx-cli agent evidence check --contract agent-hardening --file .pgx-cli/evidence/current.json
 pgx-cli pr ready --evidence .pgx-cli/evidence/current.json
 pgx-cli request feature make the compile gate easier to inspect
 pgx-cli request complaint thor command output is too noisy
@@ -123,16 +124,18 @@ is missing, paused, disconnected, conflicted, stale, or the sync proof fails.
 Use `pgx-cli sync status` and `pgx-cli sync doctor` to diagnose those failures.
 Project-local Codex rules live in `.codex/rules/default.rules`; Codex CLI must
 trust the project `.codex/` layer for raw workflow command prefix blocks to
-load. The rules include exact common wrapper prefixes for raw workflow commands
-and large log/IR reads. `pgx-cli codex-policy check` also inspects broader
-`bash -lc`/`zsh -c`/`sh -c` wrappers and unsafe `gh pr comment --body`
-backticks. Automatic external Codex hook wiring beyond the project rules and
-classifier is still outside this repo-local workflow.
+load. The rules block broad opaque shell wrapper prefixes such as `bash -lc`
+and raw `cat`/`tail`; use direct non-opaque local inspection commands or typed
+`pgx-cli` commands instead. `pgx-cli codex-policy check` also inspects shell
+bodies for detailed replacement guidance. Automatic external Codex hook wiring
+beyond the project rules and classifier is still outside this repo-local
+workflow.
 
 `pgx-cli dev gate review` runs `pgx-cli dev preflight --strict` as its first
 recorded step. `pgx-cli pr ready` requires the final review-gate summary to
-include that successful preflight step and requires evidence files to declare
-`requiredClaims`; arbitrary one-row green evidence is not PR-ready evidence.
+include that successful preflight step and enforces the named `agent-hardening`
+evidence contract; arbitrary self-declared one-row evidence is not PR-ready
+evidence.
 
 `pgx-cli request feature ...` and `pgx-cli request complaint ...` write timestamped Markdown notes to `~/.config/pgx-cli/requests/`. They are local inbox commands for agents to lodge friction quickly and continue with the current task.
 

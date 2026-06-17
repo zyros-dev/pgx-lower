@@ -5,6 +5,20 @@ import { describe, expect, test } from "vitest";
 import type { RunResult, StreamingCommandRunner, StreamingRunOptions, StreamingRunResult } from "../src/commands.js";
 import { runPrReadyCommand } from "../src/pr-ready.js";
 
+const hardeningClaimIds = [
+  "policy-rules",
+  "policy-wrapper-class",
+  "evidence-contract",
+  "strict-preflight",
+  "pgx-cli-tests",
+  "pgx-cli-build",
+  "lint-diff",
+  "gate-batch",
+  "gate-review",
+  "dev-qa-loop",
+  "workflow-skills"
+];
+
 type FakeRunnerState = {
   localStatus?: string;
   branch?: string;
@@ -81,15 +95,14 @@ function writeEvidence(root: string): string {
   const path = join(root, ".pgx-cli", "evidence", "current.json");
   mkdirSync(join(root, ".pgx-cli", "evidence"), { recursive: true });
   writeFileSync(path, `${JSON.stringify({
-    requiredClaims: ["review-gate"],
-    claims: [
-      {
-        id: "review-gate",
-        claim: "final review gate passed",
-        kind: "gate",
-        greenEvidence: "pgx-cli dev gate review passed"
-      }
-    ]
+    contract: "agent-hardening",
+    requiredClaims: hardeningClaimIds,
+    claims: hardeningClaimIds.map((id) => ({
+      id,
+      claim: id,
+      kind: id === "gate-review" ? "gate" : "behavioral-test",
+      greenEvidence: `${id} passed`
+    }))
   }, null, 2)}\n`);
   return path;
 }
@@ -194,22 +207,53 @@ describe("pr ready", () => {
 
       expect(exitCode).toBe(1);
       expect(output.stdout).toContain("fail evidence");
-      expect(output.stdout).toContain("pgx-cli agent evidence check --require-required-claims --file .pgx-cli/evidence/current.json");
+      expect(output.stdout).toContain("pgx-cli agent evidence check --contract agent-hardening --file .pgx-cli/evidence/current.json");
       expect(output.stderr).toContain("evidence requiredClaims missing");
     });
   });
 
-  test("fails when the evidence matrix is missing a required row", async () => {
+  test("fails when the evidence matrix is missing a required hardening contract row", async () => {
     await withRoot(async (root) => {
       const evidencePath = writeEvidence(root);
       writeFileSync(evidencePath, `${JSON.stringify({
-        requiredClaims: ["review-gate", "strict-preflight"],
+        contract: "agent-hardening",
+        requiredClaims: hardeningClaimIds.filter((id) => id !== "pgx-cli-tests"),
+        claims: hardeningClaimIds
+          .filter((id) => id !== "pgx-cli-tests")
+          .map((id) => ({
+            id,
+            claim: id,
+            kind: "behavioral-test",
+            greenEvidence: `${id} passed`
+          }))
+      }, null, 2)}\n`);
+      writeFinalReviewSummary(root);
+      const output = { stdout: "", stderr: "" };
+      const exitCode = await runPrReadyCommand(
+        ["ready", "--evidence", ".pgx-cli/evidence/current.json", "--review-run", "review-1", "--allow-no-pr"],
+        new FakeRunner(),
+        output,
+        config(root)
+      );
+
+      expect(exitCode).toBe(1);
+      expect(output.stdout).toContain("fail evidence");
+      expect(output.stdout).toContain("pgx-cli agent evidence check --contract agent-hardening --file .pgx-cli/evidence/current.json");
+      expect(output.stderr).toContain("missing required evidence: pgx-cli-tests");
+    });
+  });
+
+  test("fails when arbitrary self-declared evidence chooses its own readiness universe", async () => {
+    await withRoot(async (root) => {
+      const evidencePath = writeEvidence(root);
+      writeFileSync(evidencePath, `${JSON.stringify({
+        requiredClaims: ["only-one"],
         claims: [
           {
-            id: "review-gate",
-            claim: "final review gate passed",
-            kind: "gate",
-            greenEvidence: "pgx-cli dev gate review passed"
+            id: "only-one",
+            claim: "arbitrary green claim",
+            kind: "behavioral-test",
+            greenEvidence: "looks good"
           }
         ]
       }, null, 2)}\n`);
@@ -224,30 +268,29 @@ describe("pr ready", () => {
 
       expect(exitCode).toBe(1);
       expect(output.stdout).toContain("fail evidence");
-      expect(output.stdout).toContain("pgx-cli agent evidence check --require-required-claims --file .pgx-cli/evidence/current.json");
-      expect(output.stderr).toContain("missing required evidence: strict-preflight");
+      expect(output.stderr).toContain("missing required evidence: pgx-cli-tests");
     });
   });
 
-  test("accepts an explicitly deferred required evidence row", async () => {
+  test("accepts an explicitly deferred required hardening row", async () => {
     await withRoot(async (root) => {
       const evidencePath = writeEvidence(root);
       writeFileSync(evidencePath, `${JSON.stringify({
-        requiredClaims: ["review-gate", "hook-install"],
-        claims: [
-          {
-            id: "review-gate",
-            claim: "final review gate passed",
-            kind: "gate",
-            greenEvidence: "pgx-cli dev gate review passed"
-          },
-          {
-            id: "hook-install",
-            claim: "Codex shell hook installed",
+        contract: "agent-hardening",
+        requiredClaims: hardeningClaimIds,
+        claims: hardeningClaimIds.map((id) => id === "workflow-skills"
+          ? {
+            id,
+            claim: id,
             kind: "deferral",
-            deferredReason: "Codex hook rollout is not available in this repo yet"
+            deferredReason: "workflow skills unavailable in this local smoke"
           }
-        ]
+          : {
+            id,
+            claim: id,
+            kind: "behavioral-test",
+            greenEvidence: `${id} passed`
+          })
       }, null, 2)}\n`);
       writeFinalReviewSummary(root);
       const output = { stdout: "", stderr: "" };

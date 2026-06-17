@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { checkEvidenceFile } from "./agent-evidence.js";
+import { agentHardeningEvidenceContract, checkEvidenceFile } from "./agent-evidence.js";
 import type { EvidenceFile } from "./agent-evidence.js";
 import type { CommandRunner, RunResult } from "./commands.js";
 import type { OperationOutput } from "./operations.js";
@@ -205,7 +205,10 @@ function evidenceCheck(config: PrReadyConfig, evidence: string): ReadyCheck {
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as EvidenceFile;
-    const result = checkEvidenceFile(parsed, { requireRequiredClaims: true });
+    const result = checkEvidenceFile(parsed, {
+      requireRequiredClaims: true,
+      requiredClaims: agentHardeningEvidenceContract.claims.map((claim) => claim.id)
+    });
     return {
       name: "evidence",
       ok: result.ok,
@@ -223,7 +226,7 @@ function evidenceCheck(config: PrReadyConfig, evidence: string): ReadyCheck {
 }
 
 function readinessEvidenceCheckCommand(evidence: string): string {
-  return `pgx-cli agent evidence check --require-required-claims --file ${evidence}`;
+  return `pgx-cli agent evidence check --contract ${agentHardeningEvidenceContract.name} --file ${evidence}`;
 }
 
 function reviewGateCheck(config: PrReadyConfig, reviewRun: string | undefined, currentHead: string): ReadyCheck {
