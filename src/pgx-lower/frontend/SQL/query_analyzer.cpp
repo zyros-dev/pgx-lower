@@ -664,16 +664,14 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "aggregate node is null", location);
     }
     if (agg->groupingSets) {
-        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
-                                    "unsupported aggregate grouping sets", location);
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node, "unsupported aggregate grouping sets",
+                                    location);
     }
     if (agg->chain && list_length(agg->chain) > 0) {
-        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
-                                    "unsupported chained aggregate plan", location);
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node, "unsupported chained aggregate plan",
+                                    location);
     }
-    if (agg->numCols < 0
-        || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations)))
-    {
+    if (agg->numCols < 0 || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations))) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,
                                            "aggregate grouping metadata is incomplete", location);
     }
@@ -692,10 +690,9 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
             continue;
         }
         if (!groupingOperatorMatchesTargetType(agg->grpOperators[index], keyType)) {
-            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
-                                        "unsupported aggregate grouping operator OID "
-                                            + std::to_string(agg->grpOperators[index]),
-                                        itemLocation);
+            result.addUnsupportedReason(
+                UnsupportedReasonKind::unsupported_operator,
+                "unsupported aggregate grouping operator OID " + std::to_string(agg->grpOperators[index]), itemLocation);
         }
     }
     return supportedOrUnsupported(result);
@@ -733,9 +730,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_HashJoin: break;
     case T_Sort: mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location)); break;
     case T_Limit:
-    case T_Agg:
-        mergeAnalyzerResult(result, analyzeAggMetadata(reinterpret_cast<const Agg*>(plan), location));
-        break;
+    case T_Agg: mergeAnalyzerResult(result, analyzeAggMetadata(reinterpret_cast<const Agg*>(plan), location)); break;
     case T_Material:
     case T_Hash: break;
     case T_ProjectSet:
