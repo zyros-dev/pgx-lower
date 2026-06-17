@@ -177,6 +177,29 @@ Skills are the primary knowledge layer. Each is loaded on demand.
 
 The spec workflow uses the **superpowers** skills: `brainstorming` (design), `writing-plans` (plan), `executing-plans` / `subagent-driven-development` (implement), `test-driven-development` (the red/green discipline).
 
+Repo-local pgx-lower skills live under `.codex/skills`: `agentic-planning`,
+`pgx-lower-implementer-workflow`, and `pgx-lower-qa-workflow`.
+
+For normal spec implementation handoff:
+
+`/goal use pgx-lower-implementer-workflow on <spec-or-sequencing-plan>`
+
+For adversarial QA/review:
+
+`/goal use pgx-lower-qa-workflow on <branch> against <spec-or-sequencing-plan>`
+
+For coordinated spec or implementation sweeps:
+
+`/goal coordinate dev and QA subagents over <spec-or-spec-list>; do not deep-dive locally except for integration, conflict resolution, commits, and final ready/blocked reporting`
+
+Coordinator contract: dispatch one dev/planner subagent per independent spec
+family or implementation slice; dispatch an independent QA subagent against the
+dev result; loop QA findings back to dev until no material findings remain; then
+integrate, check intended files, commit from the correct repo, record residual
+risks, and report ready or blocked. The coordinator does not personally
+deep-dive every spec unless subagents disagree, a product decision is needed, or
+integration conflicts require it.
+
 Project architecture references:
 
 - **`/architecture-overview`** — top-level map; entry point if you're disoriented.
