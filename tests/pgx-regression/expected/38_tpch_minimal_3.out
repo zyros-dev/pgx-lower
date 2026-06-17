@@ -198,7 +198,7 @@ order by
     supp_nation,
     cust_nation,
     l_year;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function extract() at Plan.lefttree.lefttree.targetlist[2].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported sorted aggregate over joined input at Plan
         supp_nation        |        cust_nation        | l_year |  revenue   
 ---------------------------+---------------------------+--------+------------
  FRANCE                    | GERMANY                   |   1996 | 41844.6756

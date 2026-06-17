@@ -687,6 +687,28 @@ static auto collectExpressionListAggregateRefs(const List* expressions) -> std::
     return aggNos;
 }
 
+static auto planSubtreeContainsJoin(const Plan* plan) -> bool {
+    if (!plan) {
+        return false;
+    }
+
+    switch (nodeTag(plan)) {
+    case T_NestLoop:
+    case T_MergeJoin:
+    case T_HashJoin: return true;
+    case T_SubqueryScan: {
+        const auto* subqueryScan = reinterpret_cast<const SubqueryScan*>(plan);
+        if (planSubtreeContainsJoin(subqueryScan->subplan)) {
+            return true;
+        }
+        break;
+    }
+    default: break;
+    }
+
+    return planSubtreeContainsJoin(plan->lefttree) || planSubtreeContainsJoin(plan->righttree);
+}
+
 static auto groupingOperatorMatchesTargetType(const Oid operatorOid, const Oid keyType) -> bool {
     if (operatorOid == InvalidOid || keyType == InvalidOid) {
         return false;
@@ -772,6 +794,10 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
     if (agg->aggsplit != AGGSPLIT_SIMPLE) {
         result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node, "unsupported split aggregate plan",
                                     location);
+    }
+    if (agg->aggstrategy == AGG_SORTED && planSubtreeContainsJoin(agg->plan.lefttree)) {
+        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                    "unsupported sorted aggregate over joined input", location);
     }
     if (agg->numCols < 0 || (agg->numCols > 0 && (!agg->grpColIdx || !agg->grpOperators || !agg->grpCollations))) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata,

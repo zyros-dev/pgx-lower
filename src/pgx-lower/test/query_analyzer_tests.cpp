@@ -723,6 +723,61 @@ PGX_TEST_FN(query_analyzer_accepts_agg_group_operator_for_child_target_type) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_sorted_agg_over_join_input) {
+    auto groupValue = makeTypedConst(INT4OID);
+    auto groupTarget = TargetEntry{};
+    groupTarget.xpr.type = T_TargetEntry;
+    groupTarget.expr = reinterpret_cast<Expr*>(&groupValue);
+    groupTarget.resno = 1;
+    groupTarget.resjunk = false;
+
+    auto leftScan = SeqScan{};
+    leftScan.scan.plan.type = T_SeqScan;
+    leftScan.scan.plan.targetlist = list_make1(&groupTarget);
+
+    auto rightScan = SeqScan{};
+    rightScan.scan.plan.type = T_SeqScan;
+    rightScan.scan.plan.targetlist = list_make1(&groupTarget);
+
+    auto join = NestLoop{};
+    join.join.plan.type = T_NestLoop;
+    join.join.plan.targetlist = list_make1(&groupTarget);
+    join.join.plan.lefttree = reinterpret_cast<Plan*>(&leftScan);
+    join.join.plan.righttree = reinterpret_cast<Plan*>(&rightScan);
+
+    auto sort = Sort{};
+    AttrNumber sortColIdx[1]{1};
+    Oid sortOperators[1]{Int4LessOperator};
+    Oid sortCollations[1]{InvalidOid};
+    bool nullsFirst[1]{false};
+    sort.plan.type = T_Sort;
+    sort.plan.targetlist = list_make1(&groupTarget);
+    sort.plan.lefttree = reinterpret_cast<Plan*>(&join);
+    sort.numCols = 1;
+    sort.sortColIdx = sortColIdx;
+    sort.sortOperators = sortOperators;
+    sort.collations = sortCollations;
+    sort.nullsFirst = nullsFirst;
+
+    auto agg = Agg{};
+    AttrNumber grpColIdx[1]{1};
+    Oid grpOperators[1]{Int4EqualOperator};
+    Oid grpCollations[1]{InvalidOid};
+    agg.plan.type = T_Agg;
+    agg.plan.targetlist = list_make1(&groupTarget);
+    agg.plan.lefttree = reinterpret_cast<Plan*>(&sort);
+    agg.aggstrategy = AGG_SORTED;
+    agg.numCols = 1;
+    agg.grpColIdx = grpColIdx;
+    agg.grpOperators = grpOperators;
+    agg.grpCollations = grpCollations;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&agg));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_having_only_aggregate) {
     AggPlanFixture fixture;
 
