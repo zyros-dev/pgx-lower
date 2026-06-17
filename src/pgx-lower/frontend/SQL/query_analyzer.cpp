@@ -25,6 +25,7 @@ extern Oid g_jit_table_oid;
 #include "pgx-lower/execution/postgres/executor_c.h"
 #endif
 
+#include <algorithm>
 #include <iterator>
 #include <set>
 
@@ -789,12 +790,8 @@ static auto sortedJoinAggregateHasUngroupedPassthroughTargets(const Agg* agg) ->
         collectPassthroughVarAttnos(static_cast<const Node*>(lfirst(lc)), passthroughColumns);
     }
 
-    for (const auto column : passthroughColumns) {
-        if (!groupingColumns.contains(column)) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(passthroughColumns,
+                               [&groupingColumns](const auto column) { return !groupingColumns.contains(column); });
 }
 
 static auto planSubtreeContainsJoin(const Plan* plan) -> bool {
