@@ -421,8 +421,11 @@ static auto sortOperatorMatchesTargetType(const Oid operatorOid, const Oid keyTy
     const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
     const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
                          && oper->oprresult == BOOLOID && oper->oprleft == keyType && oper->oprright == keyType
-                         && operatorSignatureIsLowerable(operatorOid, oper->oprresult, oper->oprleft,
-                                                         oper->oprright);
+                         && operatorNameMatchesAny(NameStr(oper->oprname), orderingOperatorNames,
+                                                   std::size(orderingOperatorNames))
+                         && operatorTypeSignatureMatchesAny(oper->oprresult, oper->oprleft, oper->oprright,
+                                                            supportedOrderingOperatorSignatures,
+                                                            std::size(supportedOrderingOperatorSignatures));
     ReleaseSysCache(tuple);
     return matches;
 }
@@ -570,7 +573,9 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
     if (!sort) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "sort node is null", location);
     }
-    if (sort->numCols < 0) {
+    if (sort->numCols < 0
+        || (sort->numCols > 0 && (!sort->sortColIdx || !sort->sortOperators || !sort->collations)))
+    {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "sort metadata is incomplete",
                                            location);
     }
@@ -580,15 +585,6 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
         if (sort->collations && !postgresCollationIsSupported(sort->collations[index])) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported sort collation",
                                         itemLocation);
-        }
-
-        if (!sort->sortOperators) {
-            continue;
-        }
-        if (!sort->sortColIdx) {
-            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
-                                        "sort key target metadata is missing", itemLocation);
-            continue;
         }
 
         const auto keyType = sortTargetType(sort->plan.targetlist, sort->sortColIdx[index]);
