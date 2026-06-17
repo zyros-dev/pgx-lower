@@ -996,6 +996,14 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate distinct",
                                         location);
         }
+        if (agg->aggdirectargs && list_length(agg->aggdirectargs) > 0) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node,
+                                        "unsupported aggregate direct arguments", location);
+        }
+        if (agg->aggvariadic) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported variadic aggregate",
+                                        location);
+        }
         if (agg->aggsplit != AGGSPLIT_SIMPLE) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported split aggregate",
                                         location);

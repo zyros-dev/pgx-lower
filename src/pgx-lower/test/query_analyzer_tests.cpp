@@ -812,6 +812,54 @@ PGX_TEST_FN(query_analyzer_rejects_split_aggregate_ref) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_aggregate_direct_args) {
+    auto argValue = makeTypedConst(INT4OID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto directValue = makeTypedConst(INT4OID);
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_SUM_INT4;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(INT4OID);
+    aggregate.aggdirectargs = list_make1(&directValue);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_variadic_aggregate) {
+    auto argValue = makeTypedConst(INT4OID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_SUM_INT4;
+    aggregate.aggtype = INT8OID;
+    aggregate.aggcollid = InvalidOid;
+    aggregate.inputcollid = InvalidOid;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(INT4OID);
+    aggregate.aggvariadic = true;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_expr_node);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_seq_scan_without_sort_metadata) {
     auto value = makeIntConst();
     auto target = TargetEntry{};
