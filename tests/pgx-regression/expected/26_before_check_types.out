@@ -125,7 +125,7 @@ SELECT char_col,
        TRIM(char_col) AS trimmed,
        LENGTH(char_col) AS char_length
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar = bpchar at Plan.targetlist[1].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function btrim() at Plan.targetlist[2].expr
   char_col  | exact_match | trimmed  | char_length 
 ------------+-------------+----------+-------------
  fixed      | t           | fixed    |           5

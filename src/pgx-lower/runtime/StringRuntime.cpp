@@ -162,6 +162,12 @@ bool runtime::StringRuntime::pgCallBool2(runtime::VarLen32 left, uint32_t leftTy
     return DatumGetBool(OidFunctionCall2Coll(functionOid, collationOid, leftDatum, rightDatum));
 }
 
+uint64_t runtime::StringRuntime::pgCallHash1(runtime::VarLen32 value, uint32_t typeOid, uint32_t functionOid,
+                                             uint32_t collationOid) {
+    const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
+    return static_cast<uint64_t>(DatumGetUInt32(OidFunctionCall1Coll(functionOid, collationOid, datum)));
+}
+
 // Helper function to trim leading and trailing spaces
 static void trim_string(const char* data, int32_t len, const char** trimmed_data, int32_t* trimmed_len) {
     int32_t start{};

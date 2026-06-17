@@ -258,6 +258,17 @@ static uint32_t pgStringCompareFunctionOid(mlir::Type type, mlir::db::DBCmpPredi
     return InvalidOid;
 }
 
+static uint32_t pgStringHashFunctionOid(mlir::Type type) {
+    type = getBaseType(type);
+    if (mlir::isa<mlir::db::PgBpcharType>(type)) {
+        return F_HASHBPCHAR;
+    }
+    if (mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType>(type)) {
+        return F_HASHTEXT;
+    }
+    return InvalidOid;
+}
+
 template <class Op>
 class SimpleTypeConversionPattern : public ConversionPattern {
    mlir::LogicalResult safelyMoveRegion(ConversionPatternRewriter& rewriter, mlir::TypeConverter& typeConverter, mlir::Region& source, mlir::Region& target) const {
@@ -1678,6 +1689,18 @@ class HashLowering : public ConversionPattern {
       } else if (auto floatType = v.getType().dyn_cast_or_null<mlir::FloatType>()) {
          assert(false && "can not hash float values");
       } else if (auto varLenType = v.getType().dyn_cast_or_null<mlir::util::VarLen32Type>()) {
+          (void)varLenType;
+          mlir::Type baseOriginalType = getBaseType(originalType);
+          const uint32_t pgHashFunctionOid = pgStringHashFunctionOid(baseOriginalType);
+          if (mlir::db::isPgValueType(baseOriginalType) && pgHashFunctionOid != InvalidOid) {
+              Value typeOid = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(baseOriginalType), 32);
+              Value functionOid = builder.create<arith::ConstantIntOp>(loc, pgHashFunctionOid, 32);
+              Value collationOid = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgCollation(baseOriginalType),
+                                                                        32);
+              Value hash = rt::StringRuntime::pgCallHash1(builder, loc)({v, typeOid, functionOid, collationOid})[0];
+              Value asIndex = builder.create<arith::IndexCastOp>(loc, builder.getIndexType(), hash);
+              return combineHashes(builder, loc, asIndex, totalHash);
+          }
          auto hash = builder.create<mlir::util::HashVarLen>(loc, builder.getIndexType(), v);
          return combineHashes(builder, loc, hash, totalHash);
       } else if (auto tupleType = v.getType().dyn_cast_or_null<mlir::TupleType>()) {

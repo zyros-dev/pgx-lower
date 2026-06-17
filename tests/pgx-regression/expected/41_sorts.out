@@ -116,9 +116,8 @@ INSERT INTO bpchar_test VALUES
     (2, 'AAA'),
     (3, 'MMM'),
     (4, 'BBB');
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_006 */
 SELECT code FROM bpchar_test ORDER BY code;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 1058 at Plan.sortCol[0]
  code  
 -------
  AAA  
@@ -296,7 +295,7 @@ SELECT EXTRACT(year FROM event_date) as year, COUNT(*) as cnt
 FROM date_test
 GROUP BY EXTRACT(year FROM event_date)
 ORDER BY year;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function extract() at Plan.lefttree.lefttree.targetlist[0].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function extract() at Plan.lefttree.lefttree.targetlist[0].expr
  year | cnt 
 ------+-----
  2024 |   4
@@ -347,7 +346,7 @@ FROM (
     GROUP BY EXTRACT(year FROM event_date)
 ) sub
 ORDER BY year;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function extract() at Plan.lefttree.lefttree.targetlist[0].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function extract() at Plan.lefttree.lefttree.targetlist[0].expr
  year | total_countries 
 ------+-----------------
  2024 |               4

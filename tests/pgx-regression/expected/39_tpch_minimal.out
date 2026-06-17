@@ -207,7 +207,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported 
          1 | Supplier#000000001        | Address 1 | 27-918-335-1736 |    20321.5008
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_39_tpch_minimal_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_39_tpch_minimal_003 */
 select
     sum(l_extendedprice) / 7.0 as avg_yearly
 from
@@ -225,7 +225,6 @@ where
     where
         l_partkey = p_partkey
 );
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar = bpchar at Plan.lefttree.righttree.lefttree.qual[0]
  avg_yearly 
 ------------
            
@@ -311,7 +310,7 @@ where
   and n_name = 'CANADA'
 order by
     s_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 1058 at Plan.sortCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 23 at Plan.lefttree.lefttree.lefttree.lefttree.righttree.qual[0].args[1]
  s_name | s_address 
 --------+-----------
 (0 rows)

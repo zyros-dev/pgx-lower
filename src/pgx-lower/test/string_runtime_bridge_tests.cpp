@@ -53,6 +53,37 @@ PGX_TEST_FN(string_runtime_bridge_bpchar_eq_matches_postgres) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(string_runtime_bridge_bpchar_hash_matches_postgres) {
+    auto valueBytes = makeBytes("ab   ");
+    auto value = makeVarLen32(valueBytes);
+
+    const uint64_t expected = static_cast<uint64_t>(
+        DatumGetUInt32(OidFunctionCall1Coll(F_HASHBPCHAR, DEFAULT_COLLATION_OID, makePgStringDatum("ab   "))));
+    const uint64_t actual =
+        ::runtime::StringRuntime::pgCallHash1(value, BPCHAROID, F_HASHBPCHAR, DEFAULT_COLLATION_OID);
+
+    REQUIRE(actual == expected);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(string_runtime_bridge_bpchar_hash_agrees_with_equality_across_padding) {
+    auto leftBytes = makeBytes("ab ");
+    auto rightBytes = makeBytes("ab   ");
+    auto left = makeVarLen32(leftBytes);
+    auto right = makeVarLen32(rightBytes);
+
+    const bool equal =
+        ::runtime::StringRuntime::pgCallBool2(left, BPCHAROID, right, BPCHAROID, F_BPCHAREQ, DEFAULT_COLLATION_OID);
+    const uint64_t leftHash =
+        ::runtime::StringRuntime::pgCallHash1(left, BPCHAROID, F_HASHBPCHAR, DEFAULT_COLLATION_OID);
+    const uint64_t rightHash =
+        ::runtime::StringRuntime::pgCallHash1(right, BPCHAROID, F_HASHBPCHAR, DEFAULT_COLLATION_OID);
+
+    REQUIRE(equal);
+    REQUIRE(leftHash == rightHash);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(string_runtime_bridge_text_like_matches_postgres) {
     auto valueBytes = makeBytes("alpha");
     auto patternBytes = makeBytes("a%");

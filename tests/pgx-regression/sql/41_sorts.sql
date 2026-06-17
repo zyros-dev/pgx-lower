@@ -85,7 +85,7 @@ INSERT INTO bpchar_test VALUES
     (3, 'MMM'),
     (4, 'BBB');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_006 */
 SELECT code FROM bpchar_test ORDER BY code;
 
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_007 */
