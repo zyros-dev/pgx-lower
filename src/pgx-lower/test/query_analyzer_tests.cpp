@@ -575,8 +575,7 @@ PGX_TEST_FN(query_analyzer_string_operator_boundary) {
     bpcharEq.args = list_make2(&bpcharLhs, &bpcharRhs);
 
     const auto bpcharEqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpcharEq));
-    REQUIRE(!bpcharEqResult.isSupported());
-    REQUIRE(bpcharEqResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(bpcharEqResult.isSupported());
 
     auto varcharLhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
     auto varcharRhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
@@ -604,8 +603,20 @@ PGX_TEST_FN(query_analyzer_string_operator_boundary) {
     textLike.args = list_make2(&textLhs, &likePattern);
 
     const auto textLikeResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&textLike));
-    REQUIRE(!textLikeResult.isSupported());
-    REQUIRE(textLikeResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(textLikeResult.isSupported());
+
+    const Oid textNotLikeOid = OpernameGetOprid(list_make1(makeString(const_cast<char*>("!~~"))), TEXTOID, TEXTOID);
+    auto textNotLike = OpExpr{};
+    textNotLike.xpr.type = T_OpExpr;
+    textNotLike.opno = textNotLikeOid;
+    textNotLike.opfuncid = F_TEXTNLIKE;
+    textNotLike.opresulttype = BOOLOID;
+    textNotLike.inputcollid = DEFAULT_COLLATION_OID;
+    textNotLike.opcollid = InvalidOid;
+    textNotLike.args = list_make2(&textLhs, &likePattern);
+
+    const auto textNotLikeResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&textNotLike));
+    REQUIRE(textNotLikeResult.isSupported());
 
     auto bpcharLike = OpExpr{};
     bpcharLike.xpr.type = T_OpExpr;
@@ -693,6 +704,19 @@ PGX_TEST_FN(query_analyzer_rejects_invalid_sort_operator) {
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_bpchar_sort_operator) {
+    auto bpchar = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
+    SortPlanFixture fixture;
+    fixture.value = bpchar;
+    fixture.target.expr = reinterpret_cast<Expr*>(&fixture.value);
+    fixture.sortOperators[0] = OpernameGetOprid(list_make1(makeString(const_cast<char*>("<"))), BPCHAROID, BPCHAROID);
+    fixture.collations[0] = DEFAULT_COLLATION_OID;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(result.isSupported());
     PG_RETURN_VOID();
 }
 
@@ -787,6 +811,19 @@ PGX_TEST_FN(query_analyzer_rejects_missing_agg_group_column_metadata) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_accepts_bpchar_grouping_operator) {
+    auto bpchar = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
+    AggPlanFixture fixture;
+    fixture.value = bpchar;
+    fixture.target.expr = reinterpret_cast<Expr*>(&fixture.value);
+    fixture.grpOperators[0] = OpernameGetOprid(list_make1(makeString(const_cast<char*>("="))), BPCHAROID, BPCHAROID);
+    fixture.grpCollations[0] = DEFAULT_COLLATION_OID;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.agg));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_missing_agg_group_operator_metadata) {
     AggPlanFixture fixture;
     fixture.agg.grpOperators = nullptr;
@@ -860,8 +897,7 @@ PGX_TEST_FN(query_analyzer_rejects_string_agg_group_operator_for_child_target_ty
     agg.grpCollations = grpCollations;
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&agg));
-    REQUIRE(!result.isSupported());
-    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(result.isSupported());
     PG_RETURN_VOID();
 }
 

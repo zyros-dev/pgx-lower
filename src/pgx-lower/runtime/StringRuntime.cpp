@@ -22,7 +22,10 @@
 
 extern "C" {
 #include "postgres.h"
+#include "fmgr.h"
+#include "catalog/pg_type_d.h"
 #include "utils/memutils.h"
+#include "utils/builtins.h"
 }
 
 #include <cstdlib>
@@ -136,6 +139,27 @@ bool runtime::StringRuntime::endsWith(runtime::VarLen32 str1, runtime::VarLen32 
 bool runtime::StringRuntime::startsWith(runtime::VarLen32 str1, runtime::VarLen32 str2) {
    if (str1.getLen() < str2.getLen()) return false;
    return std::string_view(str1.data(), str1.getLen()).starts_with(std::string_view(str2.data(), str2.getLen()));
+}
+
+namespace {
+
+auto pgStringDatumFromVarLen32(runtime::VarLen32 value, uint32_t typeOid) -> Datum {
+    switch (typeOid) {
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return PointerGetDatum(cstring_to_text_with_len(value.data(), static_cast<int>(value.getLen())));
+    default: elog(ERROR, "unsupported PostgreSQL string bridge type OID %u", typeOid);
+    }
+    return static_cast<Datum>(0);
+}
+
+} // namespace
+
+bool runtime::StringRuntime::pgCallBool2(runtime::VarLen32 left, uint32_t leftTypeOid, runtime::VarLen32 right,
+                                         uint32_t rightTypeOid, uint32_t functionOid, uint32_t collationOid) {
+    const Datum leftDatum = pgStringDatumFromVarLen32(left, leftTypeOid);
+    const Datum rightDatum = pgStringDatumFromVarLen32(right, rightTypeOid);
+    return DatumGetBool(OidFunctionCall2Coll(functionOid, collationOid, leftDatum, rightDatum));
 }
 
 // Helper function to trim leading and trailing spaces

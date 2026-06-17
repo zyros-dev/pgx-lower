@@ -14,6 +14,7 @@ extern "C" {
 #include "pgx-lower/test/pgx_test_fn.h"
 
 #include <cstring>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,22 @@ auto makeVarLen32(std::vector<uint8_t>& bytes) -> ::runtime::VarLen32 {
 
 auto makeAsciiBytes(const std::string& value) -> std::vector<uint8_t> {
     return std::vector<uint8_t>(value.begin(), value.end());
+}
+
+auto makeLazyVarLen32(const std::string& value) -> ::runtime::VarLen32 {
+    static_assert(sizeof(::runtime::VarLen32) == 16, "VarLen32 layout changed");
+
+    std::array<uint8_t, sizeof(::runtime::VarLen32)> raw{};
+    const uint32_t len_with_flag = static_cast<uint32_t>(value.size()) | ::runtime::VarLen32::lazyMask;
+    std::memcpy(raw.data(), &len_with_flag, sizeof(len_with_flag));
+
+    auto* ptr = const_cast<char*>(value.data());
+    std::memcpy(raw.data() + 8, &ptr, sizeof(ptr));
+
+    uint8_t dummy = 0;
+    ::runtime::VarLen32 varlen(&dummy, 0);
+    std::memcpy(&varlen, raw.data(), raw.size());
+    return varlen;
 }
 
 void resetComputedResults() {
@@ -101,5 +118,22 @@ PGX_TEST_FN(string_varlena_long_roundtrip) {
 
     REQUIRE_EQ_U32(g_computed_results.computedMetadata[0].type_oid, BPCHAROID);
     requireStoredStringEquals(0, longString);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(string_varlena_lazy_scan_layout_roundtrip) {
+    resetComputedResults();
+    g_computed_results.setMetadata(0, {TEXTOID, -1, DEFAULT_COLLATION_OID});
+
+    const std::string value = "AF";
+    ::runtime::VarLen32 lazyValue = makeLazyVarLen32(value);
+
+    REQUIRE_EQ_U32(lazyValue.getLen(), static_cast<uint32_t>(value.size()));
+    REQUIRE(std::memcmp(lazyValue.getPtr(), value.data(), value.size()) == 0);
+
+    ::runtime::TableBuilder builder;
+    builder.addBinary(true, lazyValue);
+
+    requireStoredStringEquals(0, value);
     PG_RETURN_VOID();
 }

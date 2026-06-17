@@ -133,7 +133,7 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                         i, type_oid, col.is_nullable);
             const size_t col_size = get_physical_size(type_oid);
 
-            if (type_oid == VARCHAROID || type_oid == TEXTOID) {
+            if (type_oid == VARCHAROID || type_oid == TEXTOID || type_oid == BPCHAROID) {
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* varlen32_data = col.is_nullable ? (col_data + 1) : col_data;
 
@@ -178,7 +178,7 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
                         i, type_oid, col.is_nullable);
             const size_t col_size = get_physical_size(type_oid);
 
-            if (type_oid == VARCHAROID || type_oid == TEXTOID) {
+            if (type_oid == VARCHAROID || type_oid == TEXTOID || type_oid == BPCHAROID) {
                 uint8_t* col_data = kv_region + offset;
                 uint8_t* varlen32_data = col.is_nullable ? (col_data + 1) : col_data; // Skip nullable byte if present
 

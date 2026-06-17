@@ -9,6 +9,8 @@ struct StringRuntime {
    static bool NO_SIDE_EFFECTS compareGt(VarLen32 l, VarLen32 r);
    static bool NO_SIDE_EFFECTS compareLte(VarLen32 l, VarLen32 r);
    static bool NO_SIDE_EFFECTS compareGte(VarLen32 l, VarLen32 r);
+   static bool NO_SIDE_EFFECTS pgCallBool2(VarLen32 left, uint32_t leftTypeOid, VarLen32 right, uint32_t rightTypeOid,
+                                           uint32_t functionOid, uint32_t collationOid);
    static bool NO_SIDE_EFFECTS like(VarLen32 l, VarLen32 r);
    static bool NO_SIDE_EFFECTS startsWith(VarLen32 str, VarLen32 substr);
    static bool NO_SIDE_EFFECTS endsWith(VarLen32 str, VarLen32 substr);

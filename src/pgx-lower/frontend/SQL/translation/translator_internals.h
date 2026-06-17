@@ -364,8 +364,6 @@ class PostgreSQLASTTranslator::Impl {
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
-    static auto normalize_bpchar_operands(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs)
-        -> std::pair<mlir::Value, mlir::Value>;
     static auto translate_arithmetic_op(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs)
         -> mlir::Value;
     static auto upcast_binary_operation(const QueryCtxT& ctx, mlir::Value lhs, mlir::Value rhs)

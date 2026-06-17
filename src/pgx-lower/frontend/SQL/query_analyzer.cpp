@@ -348,7 +348,7 @@ static constexpr PgOperatorTypeSignature supportedEqualityOperatorSignatures[] =
     {BOOLOID, INT8OID, INT4OID},           {BOOLOID, FLOAT4OID, FLOAT4OID},     {BOOLOID, FLOAT8OID, FLOAT8OID},
     {BOOLOID, FLOAT4OID, FLOAT8OID},       {BOOLOID, FLOAT8OID, FLOAT4OID},     {BOOLOID, NUMERICOID, NUMERICOID},
     {BOOLOID, DATEOID, DATEOID},           {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID},
-    {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, INTERVALOID, INTERVALOID},
+    {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, INTERVALOID, INTERVALOID}, {BOOLOID, BPCHAROID, BPCHAROID},
 };
 
 static constexpr PgOperatorTypeSignature supportedOrderingOperatorSignatures[] = {
@@ -358,7 +358,7 @@ static constexpr PgOperatorTypeSignature supportedOrderingOperatorSignatures[] =
     {BOOLOID, FLOAT4OID, FLOAT4OID},     {BOOLOID, FLOAT8OID, FLOAT8OID},   {BOOLOID, FLOAT4OID, FLOAT8OID},
     {BOOLOID, FLOAT8OID, FLOAT4OID},     {BOOLOID, NUMERICOID, NUMERICOID}, {BOOLOID, DATEOID, DATEOID},
     {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID},  {BOOLOID, TIMESTAMPOID, TIMESTAMPOID},
-    {BOOLOID, INTERVALOID, INTERVALOID},
+    {BOOLOID, INTERVALOID, INTERVALOID}, {BOOLOID, BPCHAROID, BPCHAROID},
 };
 
 static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[] = {
@@ -387,7 +387,7 @@ static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[]
 };
 
 static constexpr PgOperatorTypeSignature supportedLikeOperatorSignatures[] = {
-    {InvalidOid, InvalidOid, InvalidOid},
+    {BOOLOID, TEXTOID, TEXTOID},
 };
 
 static auto
@@ -601,11 +601,17 @@ static auto functionExprUsesStringScalarBoundary(const FuncExpr* func) -> bool {
     {
         return true;
     }
+    const auto functionName = postgresFunctionName(func->funcid);
+    if (functionName == "upper" || functionName == "lower" || functionName == "substring" || functionName == "substr"
+        || functionName == "length" || functionName == "char_length")
+    {
+        return true;
+    }
     ListCell* lc = nullptr;
     foreach (lc, func->args) {
         const auto* arg = static_cast<const Node*>(lfirst(lc));
         const auto argType = arg ? exprType(const_cast<Node*>(arg)) : InvalidOid;
-        if (postgresTypeIsStringType(argType) || postgresTypeIsUnsupportedStringLikeValueType(argType)) {
+        if (postgresTypeIsUnsupportedStringLikeValueType(argType)) {
             return true;
         }
     }
@@ -618,10 +624,59 @@ static auto operatorExprUsesStringScalarBoundary(const OpExpr* op) -> bool {
     }
     const auto lhsType = exprArgumentType(op->args, 0);
     const auto rhsType = exprArgumentType(op->args, 1);
-    return postgresTypeIsStringType(lhsType) || postgresTypeIsStringType(rhsType)
-           || postgresTypeIsUnsupportedStringLikeValueType(lhsType)
-           || postgresTypeIsUnsupportedStringLikeValueType(rhsType) || postgresTypeIsStringType(op->opresulttype)
-           || postgresTypeIsUnsupportedStringLikeValueType(op->opresulttype);
+    const auto touchesString = postgresTypeIsStringType(lhsType) || postgresTypeIsStringType(rhsType)
+                               || postgresTypeIsUnsupportedStringLikeValueType(lhsType)
+                               || postgresTypeIsUnsupportedStringLikeValueType(rhsType)
+                               || postgresTypeIsStringType(op->opresulttype)
+                               || postgresTypeIsUnsupportedStringLikeValueType(op->opresulttype);
+    if (!touchesString) {
+        return false;
+    }
+
+    char* rawOperatorName = get_opname(op->opno);
+    if (!rawOperatorName) {
+        return true;
+    }
+
+    const auto operatorName = std::string(rawOperatorName);
+    pfree(rawOperatorName);
+
+    if (op->opresulttype == BOOLOID && lhsType == BPCHAROID && rhsType == BPCHAROID && operatorName == "=") {
+        return false;
+    }
+    if (op->opresulttype == BOOLOID && lhsType == TEXTOID && rhsType == TEXTOID
+        && (operatorName == "~~" || operatorName == "!~~"))
+    {
+        return false;
+    }
+    return true;
+}
+
+static auto promotedTextLikeAllowsTransparentRelabel(const OpExpr* op) -> bool {
+    if (!op || !op->args || list_length(op->args) != 2) {
+        return false;
+    }
+    const auto lhsType = exprArgumentType(op->args, 0);
+    const auto rhsType = exprArgumentType(op->args, 1);
+    if (op->opresulttype != BOOLOID || lhsType != TEXTOID || rhsType != TEXTOID) {
+        return false;
+    }
+
+    char* rawOperatorName = get_opname(op->opno);
+    if (!rawOperatorName) {
+        return false;
+    }
+
+    const auto operatorName = std::string(rawOperatorName);
+    pfree(rawOperatorName);
+    return operatorName == "~~" || operatorName == "!~~";
+}
+
+static auto relabelIsTransparentVarcharToText(const RelabelType* relabel) -> bool {
+    if (!relabel || !relabel->arg) {
+        return false;
+    }
+    return exprType(reinterpret_cast<Node*>(relabel->arg)) == VARCHAROID && relabel->resulttype == TEXTOID;
 }
 
 static auto targetListEntryType(const List* targetList, const AttrNumber column) -> Oid {
@@ -1205,7 +1260,33 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported operator collation",
                                         location);
         }
-        mergeAnalyzerResult(result, analyzeExprList(op->args, location + ".args"));
+        if (promotedTextLikeAllowsTransparentRelabel(op) && op->args) {
+            for (auto index = 0; index < list_length(op->args); ++index) {
+                const auto argLocation = location + ".args[" + std::to_string(index) + "]";
+                const auto* arg = static_cast<const Node*>(lfirst(list_nth_cell(op->args, index)));
+                if (arg && nodeTag(arg) == T_RelabelType
+                    && relabelIsTransparentVarcharToText(reinterpret_cast<const RelabelType*>(arg)))
+                {
+                    const auto* relabel = reinterpret_cast<const RelabelType*>(arg);
+                    if (!isCollationSupported(relabel->resultcollid)) {
+                        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                                    "unsupported relabel collation", argLocation);
+                    }
+                    if (relabel->arg) {
+                        mergeAnalyzerResult(
+                            result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), argLocation + ".arg"));
+                    } else {
+                        result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
+                                                    "RelabelType argument is null", argLocation + ".arg");
+                    }
+                    mergeAnalyzerResult(result, analyzeExprType(arg, argLocation + ".type"));
+                    continue;
+                }
+                mergeAnalyzerResult(result, analyzeExpr(arg, argLocation));
+            }
+        } else {
+            mergeAnalyzerResult(result, analyzeExprList(op->args, location + ".args"));
+        }
         mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
         return supportedOrUnsupported(result);
     }

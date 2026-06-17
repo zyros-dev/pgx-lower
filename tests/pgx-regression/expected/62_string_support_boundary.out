@@ -57,14 +57,12 @@ SELECT t, id AS witness FROM string_boundary_supported WHERE t = 'alpha'::text;
 NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.qual[0]
 t,witness
 alpha,1
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_008 */
 SELECT c, id AS witness FROM string_boundary_supported WHERE c = 'A'::char(5);
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar = bpchar at Plan.qual[0]
 c,witness
 A    ,1
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_009 */
 SELECT t, id AS witness FROM string_boundary_supported WHERE t LIKE 'a%'::text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
 t,witness
 alpha,1
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_010 */

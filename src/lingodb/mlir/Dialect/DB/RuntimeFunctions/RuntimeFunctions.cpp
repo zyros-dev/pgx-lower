@@ -9,8 +9,37 @@
 #include "runtime-defs/NumericRuntime.h"
 #include "runtime-defs/PrintRuntime.h"
 
+extern "C" {
+#include "utils/fmgroids.h"
+}
+
 mlir::db::RuntimeFunction* mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
-   return registeredFunctions[name].get();
+    return registeredFunctions[name].get();
+}
+static bool isPgTextBridgeType(::mlir::Type type) {
+    type = getBaseType(type);
+    return mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType>(type);
+}
+static ::mlir::Value pgLikeImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments,
+                                ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType,
+                                ::mlir::TypeConverter* typeConverter, ::mlir::Location loc) {
+    using namespace mlir;
+    if (loweredArguments.size() != 2 || originalArgumentTypes.size() != 2) {
+        return Value();
+    }
+
+    if (!isPgTextBridgeType(originalArgumentTypes[0]) || !isPgTextBridgeType(originalArgumentTypes[1])) {
+        return rt::StringRuntime::like(rewriter, loc)(loweredArguments)[0];
+    }
+
+    auto leftType = getBaseType(originalArgumentTypes[0]);
+    auto rightType = getBaseType(originalArgumentTypes[1]);
+    Value leftTypeOid = rewriter.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(leftType), 32);
+    Value rightTypeOid = rewriter.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(rightType), 32);
+    Value functionOid = rewriter.create<arith::ConstantIntOp>(loc, F_TEXTLIKE, 32);
+    Value collationOid = rewriter.create<arith::ConstantIntOp>(loc, mlir::db::getPgCollation(leftType), 32);
+    return rt::StringRuntime::pgCallBool2(rewriter, loc)(
+        {loweredArguments[0], leftTypeOid, loweredArguments[1], rightTypeOid, functionOid, collationOid})[0];
 }
 static ::mlir::Value dateAddImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
    using namespace mlir;
@@ -201,9 +230,18 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
        return t.isInteger(1) || mlir::isa<mlir::db::PgBoolType>(t);
    };
    auto resTypeIsString = [](::mlir::Type t, ::mlir::TypeRange) { return t.isa<mlir::db::StringType>(); };
-   builtinRegistry->add("Substring").implementedAs(rt::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
-   builtinRegistry->add("Like").implementedAs(rt::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);
-   builtinRegistry->add("ConstLike").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool).implementedAs(constLikeImpl).needsWrapping();
+   builtinRegistry->add("Substring")
+       .implementedAs(rt::StringRuntime::substr)
+       .matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike},
+                     RuntimeFunction::matchesArgument());
+   builtinRegistry->add("Like")
+       .implementedAs(pgLikeImpl)
+       .matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool)
+       .needsWrapping();
+   builtinRegistry->add("ConstLike")
+       .matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool)
+       .implementedAs(constLikeImpl)
+       .needsWrapping();
 
    builtinRegistry->add("Concat").implementedAs(rt::StringRuntime::concat).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, RuntimeFunction::matchesArgument());
    builtinRegistry->add("Upper").implementedAs(rt::StringRuntime::upper).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::matchesArgument());

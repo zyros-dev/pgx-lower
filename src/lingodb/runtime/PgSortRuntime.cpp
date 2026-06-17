@@ -6,6 +6,7 @@
 
 #include "lingodb/runtime/PgSortRuntime.h"
 #include "lingodb/runtime/RuntimeSpecifications.h"
+#include "lingodb/runtime/helpers.h"
 #include "pgx-lower/utility/logging.h"
 
 extern "C" {
@@ -342,9 +343,9 @@ void PgSortState::pack_datums_to_mlir(void* values_ptr, const bool* isnull, uint
             memcpy(new_str, str_data, len);
             new_str[len] = '\0';
 
-            const uint32_t len_with_flag = len | 0x80000000;
-            *reinterpret_cast<uint32_t*>(&mlir_tuple[layout.value_offset]) = len_with_flag;
-            *reinterpret_cast<char**>(&mlir_tuple[layout.value_offset + 8]) = new_str;
+            const VarLen32 encoded(reinterpret_cast<uint8_t*>(new_str), static_cast<uint32_t>(len));
+            static_assert(sizeof(VarLen32) == 16, "VarLen32 layout must stay 16 bytes");
+            memcpy(&mlir_tuple[layout.value_offset], &encoded, sizeof(encoded));
 
             PGX_LOG(RUNTIME, DEBUG, "  pack Column[%zu] string: len=%d, value='%.*s', ptr=%p", i, len, len, new_str,
                     new_str);

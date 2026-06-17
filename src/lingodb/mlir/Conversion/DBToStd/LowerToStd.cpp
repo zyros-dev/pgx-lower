@@ -32,6 +32,7 @@
 #include "runtime-defs/StringRuntime.h"
 
 #include <catalog/pg_type_d.h>
+#include <utils/fmgroids.h>
 #include <lingodb/mlir/Dialect/util/FunctionHelper.h>
 #include <lingodb/utility/mlir_to_postgres.h>
 #include <string>
@@ -240,6 +241,21 @@ static void setOriginalPgTypeAttrs(mlir::Operation* op, const char* prefix, mlir
     op->setAttr(std::string(prefix) + "_oids", attrs.oids);
     op->setAttr(std::string(prefix) + "_typmods", attrs.typmods);
     op->setAttr(std::string(prefix) + "_collations", attrs.collations);
+}
+
+static uint32_t pgStringCompareFunctionOid(mlir::Type type, mlir::db::DBCmpPredicate predicate) {
+    type = getBaseType(type);
+    if (mlir::isa<mlir::db::PgBpcharType>(type)) {
+        switch (predicate) {
+        case mlir::db::DBCmpPredicate::eq: return F_BPCHAREQ;
+        case mlir::db::DBCmpPredicate::neq: return F_BPCHARNE;
+        case mlir::db::DBCmpPredicate::lt: return F_BPCHARLT;
+        case mlir::db::DBCmpPredicate::gt: return F_BPCHARGT;
+        case mlir::db::DBCmpPredicate::lte: return F_BPCHARLE;
+        case mlir::db::DBCmpPredicate::gte: return F_BPCHARGE;
+        }
+    }
+    return InvalidOid;
 }
 
 template <class Op>
@@ -494,29 +510,36 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
        auto rightOperand = unwrapNullableOperand(rewriter, cmpOp->getLoc(), adaptor.getRight());
        Value left = leftOperand.payload;
        Value right = rightOperand.payload;
-       if (mlir::isa<mlir::db::PgBpcharType>(type)) {
-           left = rt::StringRuntime::rtrim(rewriter, cmpOp->getLoc())({left})[0];
-           right = rt::StringRuntime::rtrim(rewriter, cmpOp->getLoc())({right})[0];
-       }
-       switch (cmpOp.getPredicate()) {
-       case db::DBCmpPredicate::eq:
-           res = rt::StringRuntime::compareEq(rewriter, cmpOp->getLoc())({left, right})[0];
-           break;
-       case db::DBCmpPredicate::neq:
-           res = rt::StringRuntime::compareNEq(rewriter, cmpOp->getLoc())({left, right})[0];
-           break;
-       case db::DBCmpPredicate::lt:
-           res = rt::StringRuntime::compareLt(rewriter, cmpOp->getLoc())({left, right})[0];
-           break;
-       case db::DBCmpPredicate::gt:
-           res = rt::StringRuntime::compareGt(rewriter, cmpOp->getLoc())({left, right})[0];
-           break;
-       case db::DBCmpPredicate::lte:
-           res = rt::StringRuntime::compareLte(rewriter, cmpOp->getLoc())({left, right})[0];
-           break;
-       case db::DBCmpPredicate::gte:
-           res = rt::StringRuntime::compareGte(rewriter, cmpOp->getLoc())({left, right})[0];
-           break;
+       const uint32_t pgFunctionOid = pgStringCompareFunctionOid(type, cmpOp.getPredicate());
+       if (mlir::db::isPgValueType(type) && pgFunctionOid != InvalidOid) {
+           Value leftTypeOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgTypeOid(type), 32);
+           Value rightTypeOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgTypeOid(type), 32);
+           Value functionOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), pgFunctionOid, 32);
+           Value collationOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgCollation(type),
+                                                                      32);
+           res = rt::StringRuntime::pgCallBool2(
+               rewriter, cmpOp->getLoc())({left, leftTypeOid, right, rightTypeOid, functionOid, collationOid})[0];
+       } else {
+           switch (cmpOp.getPredicate()) {
+           case db::DBCmpPredicate::eq:
+               res = rt::StringRuntime::compareEq(rewriter, cmpOp->getLoc())({left, right})[0];
+               break;
+           case db::DBCmpPredicate::neq:
+               res = rt::StringRuntime::compareNEq(rewriter, cmpOp->getLoc())({left, right})[0];
+               break;
+           case db::DBCmpPredicate::lt:
+               res = rt::StringRuntime::compareLt(rewriter, cmpOp->getLoc())({left, right})[0];
+               break;
+           case db::DBCmpPredicate::gt:
+               res = rt::StringRuntime::compareGt(rewriter, cmpOp->getLoc())({left, right})[0];
+               break;
+           case db::DBCmpPredicate::lte:
+               res = rt::StringRuntime::compareLte(rewriter, cmpOp->getLoc())({left, right})[0];
+               break;
+           case db::DBCmpPredicate::gte:
+               res = rt::StringRuntime::compareGte(rewriter, cmpOp->getLoc())({left, right})[0];
+               break;
+           }
        }
        if (mlir::Value isNull = combineNullFlags(rewriter, cmpOp->getLoc(), leftOperand.isNull, rightOperand.isNull)) {
            mlir::Type convertedResultType = typeConverter->convertType(cmpOp.getType());

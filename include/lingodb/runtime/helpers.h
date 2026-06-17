@@ -93,7 +93,10 @@ class VarLen32 {
       }
    }
    uint8_t* getPtr() {
-      if (len <= shortLen) {
+      if (isLazy()) {
+         return reinterpret_cast<uint8_t*>(*(uintptr_t*) (&bytes[4]));
+      }
+      if (getLen() <= shortLen) {
          return bytes;
       } else {
          return reinterpret_cast<uint8_t*>(*(uintptr_t*) (&bytes[4]));
