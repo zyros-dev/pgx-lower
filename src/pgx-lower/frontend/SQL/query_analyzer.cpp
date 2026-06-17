@@ -173,6 +173,16 @@ static auto postgresTypeName(const Oid postgresType) -> std::string {
     }
 }
 
+static auto unsupportedTypeMessage(const Oid postgresType) -> std::string {
+    switch (postgresType) {
+    case BYTEAOID:
+    case CHAROID:
+    case NAMEOID:
+    case CSTRINGOID: return "unsupported type " + postgresTypeName(postgresType);
+    default: return "unsupported PostgreSQL type OID " + std::to_string(postgresType);
+    }
+}
+
 static auto postgresCollationIsSupported(const Oid collationOid) -> bool {
     return collationOid == InvalidOid || collationOid == DEFAULT_COLLATION_OID || collationOid == C_COLLATION_OID
            || collationOid == POSIX_COLLATION_OID;
@@ -1192,8 +1202,8 @@ auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> A
                                            std::move(location));
     }
     if (!isTypeSupportedByMLIR(typeOid)) {
-        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type,
-                                           "unsupported type " + postgresTypeName(typeOid), std::move(location));
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type, unsupportedTypeMessage(typeOid),
+                                           std::move(location));
     }
     return AnalyzerResult::supported();
 }

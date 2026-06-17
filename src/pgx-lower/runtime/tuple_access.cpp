@@ -535,8 +535,17 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
     case FLOAT4OID:
     case FLOAT8OID:
     case DATEOID:
-    case TIMESTAMPOID:
-    case TIMESTAMPTZOID: return value;
+    case TIMESTAMPOID: return value;
+
+    case TIMEOID:
+        PGX_ERROR("unsupported temporal type TIMEOID; time semantics are not supported by pgx-lower");
+        throw std::runtime_error("Unsupported temporal type");
+    case TIMETZOID:
+        PGX_ERROR("unsupported temporal type TIMETZOID; time with time zone semantics are not supported by pgx-lower");
+        throw std::runtime_error("Unsupported temporal type");
+    case TIMESTAMPTZOID:
+        PGX_ERROR("unsupported temporal type TIMESTAMPTZOID; timezone semantics are not supported by pgx-lower");
+        throw std::runtime_error("Unsupported temporal type");
 
     case INTERVALOID: {
         // Since psql stores intervals in a different way to how we do, we need to

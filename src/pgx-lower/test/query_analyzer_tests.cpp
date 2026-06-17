@@ -70,6 +70,15 @@ auto makeTypedConst(Oid typeOid, int32_t typmod = -1, Oid collation = InvalidOid
     return value;
 }
 
+void requireUnsupportedTemporalConst(Oid typeOid) {
+    auto value = makeTypedConst(typeOid);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&value));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+    REQUIRE(result.humanSummary().find("unsupported PostgreSQL type OID") != std::string::npos);
+}
+
 auto makeIntVar(AttrNumber attno) -> Var {
     auto value = Var{};
     value.xpr.type = T_Var;
@@ -543,6 +552,13 @@ PGX_TEST_FN(query_analyzer_string_type_boundary) {
     const auto cstringResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&cstringValue));
     REQUIRE(!cstringResult.isSupported());
     REQUIRE(cstringResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unsupported_temporal_type_oids) {
+    requireUnsupportedTemporalConst(TIMEOID);
+    requireUnsupportedTemporalConst(TIMETZOID);
+    requireUnsupportedTemporalConst(TIMESTAMPTZOID);
     PG_RETURN_VOID();
 }
 

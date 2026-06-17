@@ -1,0 +1,44 @@
+LOAD 'pgx_lower.so';
+SET DateStyle = 'ISO, MDY';
+SET IntervalStyle = 'postgres';
+SET TimeZone = 'UTC';
+SET extra_float_digits = 0;
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_60_temporal_support_boundary_pset */
+\pset format csv
+CREATE TEMP TABLE temporal_unsupported_boundary(
+    id int4,
+    t time,
+    tz time with time zone,
+    tstz timestamp with time zone
+);
+CREATE TEMP TABLE temporal_timestamp_boundary(
+    id int4,
+    ts timestamp
+);
+INSERT INTO temporal_unsupported_boundary VALUES
+    (1, time '12:34:56', time with time zone '12:34:56+10',
+     timestamp with time zone '2000-01-02 03:04:05+10');
+INSERT INTO temporal_timestamp_boundary VALUES
+    (1, timestamp '2000-01-02 03:04:05');
+SET pgx_lower.execution_mode = 'auto';
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_60_temporal_support_boundary_001 */
+SELECT t FROM temporal_unsupported_boundary;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported PostgreSQL type OID 1083 at Plan.targetlist[0].expr.type
+t
+12:34:56
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_60_temporal_support_boundary_002 */
+SELECT tz FROM temporal_unsupported_boundary;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported PostgreSQL type OID 1266 at Plan.targetlist[0].expr.type
+tz
+12:34:56+10
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_60_temporal_support_boundary_003 */
+SELECT tstz FROM temporal_unsupported_boundary;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported PostgreSQL type OID 1184 at Plan.targetlist[0].expr.type
+tstz
+2000-01-01 17:04:05+00
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_60_temporal_support_boundary_004 */
+SELECT ts FROM temporal_timestamp_boundary;
+ts
+2000-01-02 03:04:05
+DROP TABLE temporal_unsupported_boundary;
+DROP TABLE temporal_timestamp_boundary;

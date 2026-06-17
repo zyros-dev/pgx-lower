@@ -81,7 +81,7 @@ enum class ColumnType {
     FLOAT, // FLOAT4OID
     DOUBLE, // FLOAT8OID
     DATE, // DATEOID
-    TIMESTAMP, // TIMESTAMPOID, TIMESTAMPTZOID
+    TIMESTAMP, // TIMESTAMPOID
     INTERVAL // INTERVALOID
 };
 
@@ -89,6 +89,65 @@ struct ColumnSpec {
     std::string name{};
     ColumnType type{ColumnType::INVALID};
 };
+
+namespace {
+
+constexpr const char* kUnsupportedTimeMessage = "unsupported temporal type TIMEOID; time semantics are not supported "
+                                                "by pgx-lower";
+constexpr const char* kUnsupportedTimetzMessage = "unsupported temporal type TIMETZOID; time with time zone semantics "
+                                                  "are not supported by pgx-lower";
+constexpr const char* kUnsupportedTstzMessage = "unsupported temporal type TIMESTAMPTZOID; timezone semantics are not "
+                                                "supported by pgx-lower";
+
+struct RuntimeColumnTypeClassification {
+    bool supported{};
+    ColumnType columnType{ColumnType::INVALID};
+    const char* columnTypeName{};
+    const char* unsupportedMessage{};
+};
+
+void classifyRuntimeColumnType(const Oid typeOid, RuntimeColumnTypeClassification* classification) {
+    switch (typeOid) {
+    case BOOLOID: *classification = {true, ::ColumnType::BOOLEAN, "boolean", nullptr}; return;
+    case INT2OID: *classification = {true, ::ColumnType::SMALLINT, "smallint", nullptr}; return;
+    case INT4OID: *classification = {true, ::ColumnType::INTEGER, "integer", nullptr}; return;
+    case INT8OID: *classification = {true, ::ColumnType::BIGINT, "bigint", nullptr}; return;
+    case FLOAT4OID: *classification = {true, ::ColumnType::FLOAT, "float", nullptr}; return;
+    case FLOAT8OID: *classification = {true, ::ColumnType::DOUBLE, "double", nullptr}; return;
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID:
+    case CHAROID: *classification = {true, ::ColumnType::STRING, "string", nullptr}; return;
+    case NUMERICOID: *classification = {true, ::ColumnType::NUMERIC, "numeric", nullptr}; return;
+    case DATEOID: *classification = {true, ::ColumnType::DATE, "date", nullptr}; return;
+    case TIMESTAMPOID: *classification = {true, ::ColumnType::TIMESTAMP, "timestamp", nullptr}; return;
+    case INTERVALOID: *classification = {true, ::ColumnType::INTERVAL, "interval", nullptr}; return;
+    case TIMEOID: *classification = {false, ::ColumnType::INVALID, nullptr, kUnsupportedTimeMessage}; return;
+    case TIMETZOID: *classification = {false, ::ColumnType::INVALID, nullptr, kUnsupportedTimetzMessage}; return;
+    case TIMESTAMPTZOID: *classification = {false, ::ColumnType::INVALID, nullptr, kUnsupportedTstzMessage}; return;
+    default: *classification = {false, ::ColumnType::INVALID, nullptr, nullptr}; return;
+    }
+}
+
+} // namespace
+
+bool pgx_lower_runtime_type_oid_supported_for_testing(const Oid typeOid) {
+    auto classification = RuntimeColumnTypeClassification{};
+    classifyRuntimeColumnType(typeOid, &classification);
+    return classification.supported;
+}
+
+const char* pgx_lower_runtime_column_type_name_for_testing(const Oid typeOid) {
+    auto classification = RuntimeColumnTypeClassification{};
+    classifyRuntimeColumnType(typeOid, &classification);
+    return classification.columnTypeName;
+}
+
+const char* pgx_lower_runtime_unsupported_message_for_testing(const Oid typeOid) {
+    auto classification = RuntimeColumnTypeClassification{};
+    classifyRuntimeColumnType(typeOid, &classification);
+    return classification.unsupportedMessage;
+}
 
 // Per-column decode metadata cached at iterator-start time so the per-row hot
 // loop in process_tuple_into_batch avoids TupleDescAttr lookups and type-OID
@@ -439,26 +498,17 @@ static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterat
                             throw std::runtime_error("Column not found in table");
                         }
 
-                        switch (type_oid) {
-                        case BOOLOID: col_spec.type = ::ColumnType::BOOLEAN; break;
-                        case INT2OID: col_spec.type = ::ColumnType::SMALLINT; break;
-                        case INT4OID: col_spec.type = ::ColumnType::INTEGER; break;
-                        case INT8OID: col_spec.type = ::ColumnType::BIGINT; break;
-                        case FLOAT4OID: col_spec.type = ::ColumnType::FLOAT; break;
-                        case FLOAT8OID: col_spec.type = ::ColumnType::DOUBLE; break;
-                        case TEXTOID:
-                        case VARCHAROID:
-                        case BPCHAROID:
-                        case CHAROID: col_spec.type = ::ColumnType::STRING; break;
-                        case NUMERICOID: col_spec.type = ::ColumnType::NUMERIC; break;
-                        case DATEOID: col_spec.type = ::ColumnType::DATE; break;
-                        case TIMESTAMPOID:
-                        case TIMESTAMPTZOID: col_spec.type = ::ColumnType::TIMESTAMP; break;
-                        case INTERVALOID: col_spec.type = ::ColumnType::INTERVAL; break;
-                        default:
-                            PGX_ERROR("Unsupported type %d for column '%s'", type_oid, col_spec.name.c_str());
+                        auto classification = RuntimeColumnTypeClassification{};
+                        classifyRuntimeColumnType(type_oid, &classification);
+                        if (!classification.supported) {
+                            if (classification.unsupportedMessage) {
+                                PGX_ERROR("%s", classification.unsupportedMessage);
+                            } else {
+                                PGX_ERROR("Unsupported type %d for column '%s'", type_oid, col_spec.name.c_str());
+                            }
                             throw std::runtime_error("Failed to parse column type");
                         }
+                        col_spec.type = classification.columnType;
 
                         iter->columns.push_back(col_spec);
                     }

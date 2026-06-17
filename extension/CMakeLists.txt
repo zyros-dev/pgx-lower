@@ -23,6 +23,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/postgresql_type_mapper_tests.cpp
             ../src/pgx-lower/test/string_varlena_runtime_tests.cpp
             ../src/pgx-lower/test/string_runtime_bridge_tests.cpp
+            ../src/pgx-lower/test/temporal_runtime_tests.cpp
         )
     endif()
 
@@ -127,6 +128,7 @@ if(NOT BUILDING_UNIT_TESTS)
             51_aggorder_fallback
             52_aggdistinct_fallback
             53_bpchar_predicate
+            60_temporal_support_boundary
             62_string_support_boundary
             63_string_varlena_runtime
 )
