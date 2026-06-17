@@ -5,6 +5,7 @@ extern "C" {
 #include "catalog/pg_type.h"
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
+#include "utils/fmgroids.h"
 #include "utils/builtins.h"
 }
 
@@ -95,6 +96,19 @@ struct Fixture {
         c.constisnull = isNull;
         c.constbyval = false;
         c.constlen = -1;
+        return c;
+    }
+
+    static auto makeDateConst(int32_t value, bool isNull = false) -> Const {
+        auto c = Const{};
+        c.xpr.type = T_Const;
+        c.consttype = DATEOID;
+        c.consttypmod = kTypmodUnconstrained;
+        c.constcollid = InvalidOid;
+        c.constvalue = Datum{static_cast<uintptr_t>(value)};
+        c.constisnull = isNull;
+        c.constbyval = true;
+        c.constlen = sizeof(int32_t);
         return c;
     }
 };
@@ -200,6 +214,28 @@ PGX_TEST_FN(expression_coalesce_non_null_fallback_is_not_nullable) {
     REQUIRE(value);
     requirePgIdentity(value.getType(), TEXTOID, kTypmodUnconstrained, DEFAULT_COLLATION_OID,
                       mlir::db::PgNullability::Never);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(expression_extract_date_result_preserves_pg_numeric_nullability) {
+    Fixture f;
+    auto ctx = f.makeContext();
+    auto field = Fixture::makeTextConst(TEXTOID, kTypmodUnconstrained, "year", DEFAULT_COLLATION_OID, false);
+    auto date = Fixture::makeDateConst(0, true);
+    auto extract = FuncExpr{};
+    extract.xpr.type = T_FuncExpr;
+    extract.funcid = F_EXTRACT_TEXT_DATE;
+    extract.funcresulttype = NUMERICOID;
+    extract.inputcollid = DEFAULT_COLLATION_OID;
+    extract.funccollid = InvalidOid;
+    extract.args = list_make2(&field, &date);
+
+    const mlir::Value value = f.translator.translate_expression(ctx, reinterpret_cast<Expr*>(&extract));
+    REQUIRE(value);
+    auto asNullable = mlir::dyn_cast_or_null<mlir::db::AsNullableOp>(value.getDefiningOp());
+    REQUIRE(asNullable);
+    REQUIRE(mlir::isa<mlir::db::CastOp>(asNullable.getVal().getDefiningOp()));
+    requirePgIdentity(value.getType(), NUMERICOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Maybe);
     PG_RETURN_VOID();
 }
 

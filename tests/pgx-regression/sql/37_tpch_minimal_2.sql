@@ -46,7 +46,7 @@ FROM test_items
 WHERE i_discount BETWEEN 0.05 - 0.01 AND 0.05 + 0.01
   AND i_quantity < 24;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_37_tpch_minimal_2_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_37_tpch_minimal_2_002 */
 SELECT o_year, sum(volume) as revenue
 FROM (
     SELECT extract(year from o_date) as o_year,
@@ -57,7 +57,7 @@ FROM (
 GROUP BY o_year
 ORDER BY o_year;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_37_tpch_minimal_2_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_37_tpch_minimal_2_003 */
 SELECT o_year, sum(profit) as total_profit
 FROM (
     SELECT extract(year from o_date) as o_year,

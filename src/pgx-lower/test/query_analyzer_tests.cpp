@@ -667,6 +667,39 @@ PGX_TEST_FN(query_analyzer_date_int4_arithmetic) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_accepts_extract_from_date) {
+    auto field = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto date = makeTypedConst(DATEOID);
+    auto extract = FuncExpr{};
+    extract.xpr.type = T_FuncExpr;
+    extract.funcid = F_EXTRACT_TEXT_DATE;
+    extract.funcresulttype = NUMERICOID;
+    extract.inputcollid = DEFAULT_COLLATION_OID;
+    extract.funccollid = InvalidOid;
+    extract.args = list_make2(&field, &date);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&extract));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_extract_from_timestamp) {
+    auto field = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto timestamp = makeTypedConst(TIMESTAMPOID);
+    auto extract = FuncExpr{};
+    extract.xpr.type = T_FuncExpr;
+    extract.funcid = F_EXTRACT_TEXT_TIMESTAMP;
+    extract.funcresulttype = NUMERICOID;
+    extract.inputcollid = DEFAULT_COLLATION_OID;
+    extract.funccollid = InvalidOid;
+    extract.args = list_make2(&field, &timestamp);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&extract));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_day_interval_date_arithmetic) {
     auto date = makeTypedConst(DATEOID);
     auto dayInterval = makeIntervalConst(0, 90, 0);

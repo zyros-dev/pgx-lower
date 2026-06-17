@@ -208,7 +208,7 @@ where
  1193053.2253
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=tpch_q07 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q07 */
 -- TPC-H Query 7
 select
         supp_nation,
@@ -249,7 +249,6 @@ order by
         supp_nation,
         cust_nation,
         l_year;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function extract() at Plan.lefttree.lefttree.targetlist[2].expr
         supp_nation        |        cust_nation        | l_year |   revenue   
 ---------------------------+---------------------------+--------+-------------
  FRANCE                    | GERMANY                   |   1995 | 268068.5774
@@ -304,7 +303,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
    1996 | 0.000000000000000000000000
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=tpch_q09 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q09 */
 -- TPC-H Query 9
 select
         nation,
@@ -338,7 +337,6 @@ group by
 order by
         nation,
         o_year desc;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function extract() at Plan.lefttree.lefttree.targetlist[1].expr
           nation           | o_year |  sum_profit  
 ---------------------------+--------+--------------
  ALGERIA                   |   1998 |   97864.5682

@@ -169,7 +169,7 @@ VALUES (1, 1, 1, 1, 17.00, 21168.23, 0.04, 0.02, 'N', 'O', '1996-03-13', '1996-0
        (5, 5, 5, 2, 10.00, 18050.00, 0.07, 0.02, 'A', 'F', '1994-10-16', '1994-09-25', '1994-10-20', 'DELIVER IN PERSON', 'SHIP', 'Lineitem comment 8');
 
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_38_tpch_minimal_3_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_38_tpch_minimal_3_001 */
 select
     supp_nation,
     cust_nation,

@@ -462,6 +462,21 @@ module {
     REQUIRE(runDBToStd(f.ctx, *nullablePgNumericCompare));
     requireNotContains(moduleToString(*nullablePgNumericCompare), "db.compare");
 
+    auto pgNumericHash = parseModule(f.ctx, R"mlir(
+module {
+  func.func @pg_numeric_hash(%v: !db.pg_numeric<typmod = -1>) -> index {
+    %key = util.pack %v : !db.pg_numeric<typmod = -1> -> tuple<!db.pg_numeric<typmod = -1>>
+    %hash = db.hash %key : tuple<!db.pg_numeric<typmod = -1>>
+    return %hash : index
+  }
+}
+)mlir");
+    REQUIRE(pgNumericHash);
+    REQUIRE(runDBToStd(f.ctx, *pgNumericHash));
+    const std::string pgNumericHashLowered = moduleToString(*pgNumericHash);
+    requireNotContains(pgNumericHashLowered, "db.hash");
+    requireContains(pgNumericHashLowered, "pgx_numeric_hash");
+
     auto nullablePgKeyHash = parseModule(f.ctx, R"mlir(
 module {
   func.func @nullable_pg_key_hash(%v: !db.pg_int4) -> index {

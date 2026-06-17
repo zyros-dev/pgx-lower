@@ -159,7 +159,7 @@ where
         and l_discount between 0.06 - 0.01 and 0.06 + 0.01
         and l_quantity < 24;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=tpch_q07 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q07 */
 -- TPC-H Query 7
 select
         supp_nation,
@@ -241,7 +241,7 @@ group by
 order by
         o_year;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=tpch_q09 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q09 */
 -- TPC-H Query 9
 select
         nation,

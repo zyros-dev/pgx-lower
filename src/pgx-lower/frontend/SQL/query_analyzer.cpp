@@ -543,6 +543,7 @@ static constexpr PgFunctionSignature supportedScalarFunctions[] = {
     {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {INT4OID, InvalidOid, InvalidOid}},
     {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
+    {"extract", PROKIND_FUNCTION, NUMERICOID, 2, {TEXTOID, DATEOID, InvalidOid}},
 };
 
 static constexpr PgFunctionSignature supportedAggregates[] = {

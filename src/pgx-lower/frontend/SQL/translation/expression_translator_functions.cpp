@@ -53,6 +53,36 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
+namespace {
+
+auto castExtractRuntimeResult(const QueryCtxT& ctx, mlir::Location loc, mlir::MLIRContext& context,
+                              const FuncExpr* funcExpr, mlir::Value runtimeResult, const bool hasNullableOperand)
+    -> mlir::Value {
+    const auto typeMapper = PostgreSQLTypeMapper(context);
+    const auto targetType = typeMapper.map_postgre_sqltype(funcExpr->funcresulttype, -1, funcExpr->funccollid,
+                                                           hasNullableOperand);
+    if (runtimeResult.getType() == targetType) {
+        return runtimeResult;
+    }
+
+    const auto nullableRuntimeType = mlir::dyn_cast<mlir::db::NullableType>(runtimeResult.getType());
+    if (hasNullableOperand && nullableRuntimeType && mlir::db::isPgValueType(targetType)
+        && mlir::db::getPgNullability(targetType) == mlir::db::PgNullability::Maybe)
+    {
+        auto isNull = ctx.builder.create<mlir::db::IsNullOp>(loc, runtimeResult);
+        mlir::Value payload = ctx.builder.create<mlir::db::NullableGetVal>(loc, nullableRuntimeType.getType(),
+                                                                           runtimeResult);
+        const auto nonNullTargetType = mlir::db::withPgNullability(targetType, mlir::db::PgNullability::Never);
+        if (payload.getType() != nonNullTargetType) {
+            payload = ctx.builder.create<mlir::db::CastOp>(loc, nonNullTargetType, payload);
+        }
+        return ctx.builder.create<mlir::db::AsNullableOp>(loc, targetType, payload, isNull);
+    }
+
+    return ctx.builder.create<mlir::db::CastOp>(loc, targetType, runtimeResult);
+}
+
+} // namespace
 
 auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr,
                                                                     const TranslationResult& child_result,
@@ -312,21 +342,17 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         // args[0] is the field to extract (e.g., 'year', 'month', 'day')
         // args[1] is the date/timestamp value
+        const auto hasNullableOperand = std::any_of(args.begin(), args.end(), [](const mlir::Value arg) {
+            return pgx_lower::frontend::sql::is_sql_nullable_type(arg.getType());
+        });
         mlir::Type resultType = ctx.builder.getI64Type();
-        bool hasNullableOperand{};
-        for (const auto& arg : args) {
-            if (isa<mlir::db::NullableType>(arg.getType())) {
-                hasNullableOperand = true;
-                break;
-            }
-        }
         if (hasNullableOperand) {
             resultType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
         }
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(
             loc, resultType, ctx.builder.getStringAttr("ExtractFromDate"), mlir::ValueRange{args[0], args[1]});
 
-        return op.getRes();
+        return castExtractRuntimeResult(ctx, loc, context_, func_expr, op.getRes(), hasNullableOperand);
     } else if (func == "extract") {
         if (args.size() != 2) {
             PGX_ERROR("EXTRACT requires exactly 2 arguments, got %zu", args.size());
@@ -334,21 +360,17 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating EXTRACT function to ExtractFromDate runtime call");
+        const auto hasNullableOperand = std::any_of(args.begin(), args.end(), [](const mlir::Value arg) {
+            return pgx_lower::frontend::sql::is_sql_nullable_type(arg.getType());
+        });
         mlir::Type resultType = ctx.builder.getI64Type();
-        bool hasNullableOperand{};
-        for (const auto& arg : args) {
-            if (isa<mlir::db::NullableType>(arg.getType())) {
-                hasNullableOperand = true;
-                break;
-            }
-        }
         if (hasNullableOperand) {
             resultType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
         }
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(
             loc, resultType, ctx.builder.getStringAttr("ExtractFromDate"), mlir::ValueRange{args[0], args[1]});
 
-        return op.getRes();
+        return castExtractRuntimeResult(ctx, loc, context_, func_expr, op.getRes(), hasNullableOperand);
     } else if (func == "numeric") {
         if (args.size() < 1 || args.size() > 3) {
             PGX_ERROR("NUMERIC cast requires 1-3 arguments, got %zu", args.size());

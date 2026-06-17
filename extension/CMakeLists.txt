@@ -133,6 +133,7 @@ if(NOT BUILDING_UNIT_TESTS)
             62_string_support_boundary
             63_string_varlena_runtime
             66_temporal_date_int4_arithmetic
+            67_temporal_date_extract
 )
 
 

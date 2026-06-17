@@ -1853,7 +1853,7 @@ class HashLowering : public ConversionPattern {
       return builder.create<mlir::util::Hash64>(loc, builder.getIndexType(), asIndex);
    }
    Value hashImpl(OpBuilder& builder, Location loc, Value v, Value totalHash, Type originalType) const {
-       if (v.getType().isa<mlir::IntegerType>() && getBaseType(originalType).isa<mlir::db::DecimalType>()) {
+       if (v.getType().isa<mlir::IntegerType>() && isNumericCarrierType(getBaseType(originalType))) {
            Value datum = numericCarrierToDatum(builder, loc, v);
            Value hash = rt::NumericRuntime::pgx_numeric_hash(builder, loc)({datum})[0];
            Value asIndex = builder.create<arith::IndexCastOp>(loc, builder.getIndexType(), hash);

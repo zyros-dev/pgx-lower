@@ -182,7 +182,7 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 ORDER BY r.region_name ASC, country_id DESC, c.country_name ASC;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_016 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_016 */
 SELECT EXTRACT(year FROM event_date) as year, COUNT(*) as cnt
 FROM date_test
 GROUP BY EXTRACT(year FROM event_date)
@@ -210,7 +210,7 @@ JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY avg_id DESC;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_019 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_019 */
 SELECT year, total_countries
 FROM (
     SELECT EXTRACT(year FROM event_date) as year,
@@ -242,3 +242,5 @@ FROM (
     GROUP BY r.region_name
 ) sub
 ORDER BY ratio DESC;
+
+-- end 41_sorts
