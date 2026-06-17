@@ -124,8 +124,10 @@ build, test, lint, queue, Docker, Postgres, thor, setup, and repo maintenance.
   extend a `pgx-cli` command.
 - The old recipe layer has been retired. Do not reintroduce parallel workflow
   commands outside `pgx-cli` unless a new spec explicitly calls for it.
-- Run `pgx-cli repo audit-tools` after adding or moving workflow files. Loose
-  shell/Python helper entrypoints are not part of the normal repo shape.
+- Before claiming helper/tool cleanup complete, run
+  `pgx-cli repo audit-tools --inventory`. Unexpected helper entrypoints must be
+  migrated into pgx-cli, marked internal, or explicitly deferred in the active
+  spec.
 
 ## How we work: spec-first, human-in-the-loop
 
