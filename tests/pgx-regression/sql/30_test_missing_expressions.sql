@@ -65,10 +65,10 @@ SELECT id FROM expr_test_data WHERE NOT flag;
 -- Test T_A_Expr - string concatenation
 SELECT text1 || ' ' || text2 AS combined_text FROM expr_test_data;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_019 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_019 */
 -- Test T_A_Expr - LIKE operations
 SELECT id, text1 FROM expr_test_data WHERE text1 LIKE 'h%';
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_020 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_020 */
 SELECT id, text1 FROM expr_test_data WHERE text1 NOT LIKE '%xyz%';
 
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_021 */

@@ -14,7 +14,7 @@ SELECT id FROM pgx_bool_truth_source WHERE flag ORDER BY id;
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_47_pg_bool_predicate_truth_002 */
 SELECT id FROM pgx_bool_truth_source WHERE flag IS NULL ORDER BY id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_47_pg_bool_predicate_truth_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_47_pg_bool_predicate_truth_003 */
 SELECT s.id, m.marker
 FROM pgx_bool_truth_source s
 JOIN pgx_bool_truth_marker m ON s.flag

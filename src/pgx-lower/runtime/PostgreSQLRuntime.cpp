@@ -659,146 +659,150 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionConte
 }
 
 namespace {
-    [[nodiscard]] bool check_batch_validity(DataSourceIterator* iter) noexcept {
-        if (!iter->table_handle) {
-            PGX_LOG(RUNTIME, DEBUG, "Finished running with: %p branch 1 (no table_handle)", iter);
-            return false;
-        }
-
-        if (iter->batch && iter->current_row_in_batch < iter->batch->num_rows) {
-            PGX_LOG(RUNTIME, DEBUG, "Returning true - current_row=%zu in batch with %zu rows",
-                    iter->current_row_in_batch, iter->batch->num_rows);
-            return true;
-        }
-
+[[nodiscard]] bool check_batch_validity(DataSourceIterator* iter) noexcept {
+    if (!iter->table_handle) {
+        PGX_LOG(RUNTIME, DEBUG, "Finished running with: %p branch 1 (no table_handle)", iter);
         return false;
     }
 
-    void prepare_new_batch(DataSourceIterator* iter, TupleDesc tupleDesc) {
-        if (iter->batch) {
-            PGX_LOG(RUNTIME, DEBUG, "Destroying exhausted batch (had %zu rows)", iter->batch->num_rows);
-            destroy_batch_storage(iter->batch);
-            iter->batch = nullptr;
-            iter->current_row_in_batch = 0;
-        }
-
-        const size_t capacity = calculate_batch_capacity(tupleDesc);
-        const size_t num_cols = iter->columns.size();
-        iter->batch = create_batch_storage(tupleDesc, num_cols, capacity);
-        PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu", capacity, num_cols);
-    }
-
-    void process_tuple_into_batch(DataSourceIterator* iter, TupleDesc tupleDesc,
-                                   Datum* temp_values, bool* temp_nulls) {
-        const auto tuple = g_current_tuple_passthrough.originalTuple;
-        if (!tuple) {
-            PGX_ERROR("g_current_tuple_passthrough.originalTuple is NULL");
-            return;
-        }
-
-        heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
-        const size_t row_idx = iter->batch->num_rows;
-        const size_t num_cols = iter->columns.size();
-        const ColumnDecodeMeta* metas = iter->column_decode_meta.data();
-        const int32_t* positions = iter->column_positions.data();
-
-        for (size_t json_col_idx{}; json_col_idx < num_cols; json_col_idx++) {
-            const ColumnDecodeMeta& meta = metas[json_col_idx];
-            const int pg_col_idx = positions[json_col_idx];
-            const bool is_null = temp_nulls[pg_col_idx];
-            const Datum value = temp_values[pg_col_idx];
-
-            switch (meta.kind) {
-            case DecodeKind::STRING: {
-                if (is_null) {
-                    iter->batch->string_lengths[json_col_idx][row_idx] = 0;
-                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
-                } else {
-                    const Datum transferred_datum = datumTransfer(value, meta.attbyval, meta.attlen);
-                    const auto pg_text = DatumGetTextPP(transferred_datum);
-                    iter->batch->string_lengths[json_col_idx][row_idx] = VARSIZE_ANY_EXHDR(pg_text);
-                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(
-                        const_cast<char*>(VARDATA_ANY(pg_text)));
-                    iter->batch->column_values[json_col_idx][row_idx] = transferred_datum;
-                }
-                break;
-            }
-            case DecodeKind::NUMERIC: {
-                // PGX-LOWER: store the PG Numeric datum. datumTransfer copies the
-                // varlena into the batch memory context so the pointer stays valid.
-                if (is_null) {
-                    iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::NumericDatumCarrier{0};
-                } else {
-                    const Datum transferred = datumTransfer(value, meta.attbyval, meta.attlen);
-                    iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::numeric_datum_to_carrier(transferred);
-                }
-                break;
-            }
-            case DecodeKind::INTERVAL: {
-                if (is_null) {
-                    iter->batch->column_values[json_col_idx][row_idx] = 0;
-                    iter->batch->column_nulls[json_col_idx][row_idx] = false;
-                } else {
-                    Interval* interval = DatumGetIntervalP(value);
-                    int64_t totalMicroseconds = interval->time +
-                        (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
-                    if (interval->month != 0) {
-                        constexpr int64_t AVERAGE_DAYS_PER_MONTH = 30;
-                        totalMicroseconds += static_cast<int64_t>(interval->month) * AVERAGE_DAYS_PER_MONTH
-                                             * USECS_PER_DAY;
-                    }
-                    iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
-                }
-                break;
-            }
-            case DecodeKind::DATUM_BYVAL: {
-                iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0} : value;
-                break;
-            }
-            case DecodeKind::DATUM_BYREF: {
-                iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0}
-                                                                            : datumTransfer(value, meta.attbyval,
-                                                                                            meta.attlen);
-                break;
-            }
-            }
-
-            iter->batch->column_nulls[json_col_idx][row_idx] = !is_null;
-        }
-
-        iter->batch->num_rows++;
-    }
-
-    [[nodiscard]] bool read_and_fill_batch(DataSourceIterator* iter, TupleDesc tupleDesc) {
-        Datum temp_values[MaxTupleAttributeNumber];
-        bool temp_nulls[MaxTupleAttributeNumber];
-        const size_t capacity = iter->batch->capacity;
-
-        while (iter->batch->num_rows < capacity) {
-            PGX_HOT_LOG(RUNTIME, TRACE, "Reading tuple %zu", iter->batch->num_rows);
-            const int64_t read_result = read_next_tuple_from_table(iter->table_handle);
-
-            if (read_result != 1) {
-                PGX_LOG(RUNTIME, DEBUG, "End of table after %zu rows", iter->batch->num_rows);
-                break;
-            }
-
-            process_tuple_into_batch(iter, tupleDesc, temp_values, temp_nulls);
-        }
-
-        return iter->batch->num_rows > 0;
-    }
-
-    [[nodiscard]] bool finalize_batch(DataSourceIterator* iter) noexcept {
-        if (iter->batch->num_rows == 0) {
-            PGX_LOG(RUNTIME, DEBUG, "Batch is empty, end of table");
-            return false;
-        }
-
-        iter->current_row_in_batch = 0;
-        PGX_LOG(RUNTIME, DEBUG, "Batch filled with %zu rows, current_row reset to 0", iter->batch->num_rows);
+    if (iter->batch && iter->current_row_in_batch < iter->batch->num_rows) {
+        PGX_LOG(RUNTIME, DEBUG, "Returning true - current_row=%zu in batch with %zu rows", iter->current_row_in_batch,
+                iter->batch->num_rows);
         return true;
     }
+
+    return false;
+}
+
+void prepare_new_batch(DataSourceIterator* iter, TupleDesc tupleDesc) {
+    if (iter->batch) {
+        PGX_LOG(RUNTIME, DEBUG, "Destroying exhausted batch (had %zu rows)", iter->batch->num_rows);
+        destroy_batch_storage(iter->batch);
+        iter->batch = nullptr;
+        iter->current_row_in_batch = 0;
+    }
+
+    const size_t capacity = calculate_batch_capacity(tupleDesc);
+    const size_t num_cols = iter->columns.size();
+    iter->batch = create_batch_storage(tupleDesc, num_cols, capacity);
+    PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu", capacity, num_cols);
+}
+
+void process_tuple_into_batch(DataSourceIterator* iter, TupleDesc tupleDesc, Datum* temp_values, bool* temp_nulls) {
+    const auto tuple = g_current_tuple_passthrough.originalTuple;
+    if (!tuple) {
+        PGX_ERROR("g_current_tuple_passthrough.originalTuple is NULL");
+        return;
+    }
+
+    heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
+    const size_t row_idx = iter->batch->num_rows;
+    const size_t num_cols = iter->columns.size();
+    const ColumnDecodeMeta* metas = iter->column_decode_meta.data();
+    const int32_t* positions = iter->column_positions.data();
+
+    for (size_t json_col_idx{}; json_col_idx < num_cols; json_col_idx++) {
+        const ColumnDecodeMeta& meta = metas[json_col_idx];
+        const int pg_col_idx = positions[json_col_idx];
+        const bool is_null = temp_nulls[pg_col_idx];
+        const Datum value = temp_values[pg_col_idx];
+
+        switch (meta.kind) {
+        case DecodeKind::STRING: {
+            if (is_null) {
+                iter->batch->string_lengths[json_col_idx][row_idx] = 0;
+                iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
+                iter->batch->column_values[json_col_idx][row_idx] = Datum{0};
+            } else {
+                const auto* pg_text = DatumGetTextPP(value);
+                const auto payload_length = VARSIZE_ANY_EXHDR(pg_text);
+                const char* payload_bytes = VARDATA_ANY(pg_text);
+
+                const MemoryContext oldContext = MemoryContextSwitchTo(iter->batch->batchContext);
+                const auto* batch_owned_text = cstring_to_text_with_len(payload_bytes, payload_length);
+                MemoryContextSwitchTo(oldContext);
+
+                iter->batch->string_lengths[json_col_idx][row_idx] = VARSIZE_ANY_EXHDR(batch_owned_text);
+                iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(
+                    const_cast<char*>(VARDATA_ANY(batch_owned_text)));
+                iter->batch->column_values[json_col_idx][row_idx] = PointerGetDatum(batch_owned_text);
+            }
+            break;
+        }
+        case DecodeKind::NUMERIC: {
+            // PGX-LOWER: store the PG Numeric datum. datumTransfer copies the
+            // varlena into the batch memory context so the pointer stays valid.
+            if (is_null) {
+                iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::NumericDatumCarrier{0};
+            } else {
+                const Datum transferred = datumTransfer(value, meta.attbyval, meta.attlen);
+                iter->batch->numeric_values[json_col_idx][row_idx] = ::runtime::numeric_datum_to_carrier(transferred);
+            }
+            break;
+        }
+        case DecodeKind::INTERVAL: {
+            if (is_null) {
+                iter->batch->column_values[json_col_idx][row_idx] = 0;
+                iter->batch->column_nulls[json_col_idx][row_idx] = false;
+            } else {
+                Interval* interval = DatumGetIntervalP(value);
+                int64_t totalMicroseconds = interval->time + (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
+                if (interval->month != 0) {
+                    constexpr int64_t AVERAGE_DAYS_PER_MONTH = 30;
+                    totalMicroseconds += static_cast<int64_t>(interval->month) * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY;
+                }
+                iter->batch->column_values[json_col_idx][row_idx] = Int64GetDatum(totalMicroseconds);
+            }
+            break;
+        }
+        case DecodeKind::DATUM_BYVAL: {
+            iter->batch->column_values[json_col_idx][row_idx] = is_null ? Datum{0} : value;
+            break;
+        }
+        case DecodeKind::DATUM_BYREF: {
+            iter->batch->column_values[json_col_idx][row_idx] = is_null
+                                                                    ? Datum{0}
+                                                                    : datumTransfer(value, meta.attbyval, meta.attlen);
+            break;
+        }
+        }
+
+        iter->batch->column_nulls[json_col_idx][row_idx] = !is_null;
+    }
+
+    iter->batch->num_rows++;
+}
+
+[[nodiscard]] bool read_and_fill_batch(DataSourceIterator* iter, TupleDesc tupleDesc) {
+    Datum temp_values[MaxTupleAttributeNumber];
+    bool temp_nulls[MaxTupleAttributeNumber];
+    const size_t capacity = iter->batch->capacity;
+
+    while (iter->batch->num_rows < capacity) {
+        PGX_HOT_LOG(RUNTIME, TRACE, "Reading tuple %zu", iter->batch->num_rows);
+        const int64_t read_result = read_next_tuple_from_table(iter->table_handle);
+
+        if (read_result != 1) {
+            PGX_LOG(RUNTIME, DEBUG, "End of table after %zu rows", iter->batch->num_rows);
+            break;
+        }
+
+        process_tuple_into_batch(iter, tupleDesc, temp_values, temp_nulls);
+    }
+
+    return iter->batch->num_rows > 0;
+}
+
+[[nodiscard]] bool finalize_batch(DataSourceIterator* iter) noexcept {
+    if (iter->batch->num_rows == 0) {
+        PGX_LOG(RUNTIME, DEBUG, "Batch is empty, end of table");
+        return false;
+    }
+
+    iter->current_row_in_batch = 0;
+    PGX_LOG(RUNTIME, DEBUG, "Batch filled with %zu rows, current_row reset to 0", iter->batch->num_rows);
+    return true;
+}
 } // anonymous namespace
 
 bool DataSourceIteration::isValid() {

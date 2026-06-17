@@ -6,12 +6,12 @@ INSERT INTO pgx_bpchar_source VALUES ('BUILDING'), ('AUTOMOBILE');
 /* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_53_bpchar_predicate_pset */
 \pset format unaligned
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_53_bpchar_predicate_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_53_bpchar_predicate_001 */
 SELECT count(*) AS building_count
 FROM pgx_bpchar_source
 WHERE segment = 'BUILDING';
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_53_bpchar_predicate_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_53_bpchar_predicate_002 */
 SELECT count(*) AS building_count
 FROM pgx_bpchar_source
 WHERE 'BUILDING' = segment;

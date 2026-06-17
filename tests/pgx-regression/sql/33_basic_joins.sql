@@ -53,7 +53,7 @@ SELECT table_a.name, table_b.amount
 FROM table_a, table_b
 WHERE table_a.id = table_b.id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_33_basic_joins_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_33_basic_joins_003 */
 SELECT table_a.name, table_b.amount, table_b.status
 FROM table_a, table_b
 WHERE table_a.id = table_b.id AND table_b.status = 'active';
@@ -91,7 +91,7 @@ WHERE table_a.id = table_c.id
 GROUP BY table_c.category
 ORDER BY table_c.category;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_33_basic_joins_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_33_basic_joins_010 */
 SELECT a1.name AS name1, a2.name AS name2
 FROM table_a a1, table_a a2
 WHERE a1.value < a2.value AND a1.id < a2.id

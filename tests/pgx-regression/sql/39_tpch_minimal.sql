@@ -216,7 +216,7 @@ where
 order by
     s_suppkey;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_39_tpch_minimal_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_39_tpch_minimal_003 */
 select
     sum(l_extendedprice) / 7.0 as avg_yearly
 from

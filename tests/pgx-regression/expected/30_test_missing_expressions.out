@@ -190,7 +190,7 @@ SELECT id FROM expr_test_data WHERE NOT flag;
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_018 */
 -- Test T_A_Expr - string concatenation
 SELECT text1 || ' ' || text2 AS combined_text FROM expr_test_data;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported operator OID 654 at Plan.targetlist[0].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text || text at Plan.targetlist[0].expr
  combined_text 
 ---------------
  hello world
@@ -200,16 +200,18 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported o
  demo value
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_019 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_019 */
 -- Test T_A_Expr - LIKE operations
 SELECT id, text1 FROM expr_test_data WHERE text1 LIKE 'h%';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id | text1 
 ----+-------
   1 | hello
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_30_test_missing_expressions_020 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_020 */
 SELECT id, text1 FROM expr_test_data WHERE text1 NOT LIKE '%xyz%';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text !~~ text at Plan.qual[0]
  id |  text1  
 ----+---------
   1 | hello
@@ -362,7 +364,7 @@ SELECT CAST(value1 AS DECIMAL(10,2)) AS decimal_value FROM expr_test_data;
 
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_30_test_missing_expressions_033 */
 SELECT CAST(value1 AS VARCHAR(10)) AS string_value FROM expr_test_data;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported CoerceViaIO from type OID 23 to type OID 1043 at Plan.targetlist[0].expr.args[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function varchar() at Plan.targetlist[0].expr
  string_value 
 --------------
  10

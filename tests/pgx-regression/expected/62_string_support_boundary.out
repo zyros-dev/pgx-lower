@@ -1,0 +1,81 @@
+LOAD 'pgx_lower.so';
+CREATE TEMP TABLE string_boundary_supported(
+    id int4,
+    t text,
+    v varchar(8),
+    c char(5)
+);
+INSERT INTO string_boundary_supported VALUES
+    (1, 'alpha', 'alpha', 'A'),
+    (2, 'beta', 'beta', 'B');
+CREATE TEMP TABLE string_boundary_unsupported(
+    id int4,
+    b bytea
+);
+INSERT INTO string_boundary_unsupported VALUES
+    (1, decode('616c706861', 'hex')),
+    (2, decode('62657461', 'hex'));
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_62_string_support_boundary_pset */
+\pset format csv
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_001 */
+SELECT id, t, v, c, id AS witness FROM string_boundary_supported ORDER BY id;
+id,t,v,c,witness
+1,alpha,alpha,A    ,1
+2,beta,beta,B    ,2
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_002 */
+SELECT id,
+       'const-text'::text AS t,
+       'const-v'::varchar(8) AS v,
+       'C'::char(5) AS c,
+       id AS witness
+FROM string_boundary_supported
+WHERE id = 1;
+id,t,v,c,witness
+1,const-text,const-v,C    ,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_003 */
+SELECT b, id AS witness FROM string_boundary_unsupported WHERE id = 1;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported type bytea at Plan.targetlist[0].expr.type
+b,witness
+\x616c706861,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_004 */
+SELECT 'x'::"char" AS char_value, id AS witness FROM string_boundary_supported WHERE id = 1;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported type "char" at Plan.targetlist[0].expr.type
+char_value,witness
+x,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_005 */
+SELECT 'pgx_lower'::name AS name_value, id AS witness FROM string_boundary_supported WHERE id = 1;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported type name at Plan.targetlist[0].expr.type
+name_value,witness
+pgx_lower,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_006 */
+SELECT 'pgx'::cstring AS cstring_value, id AS witness FROM string_boundary_supported WHERE id = 1;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported type cstring at Plan.targetlist[0].expr.type
+cstring_value,witness
+pgx,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_007 */
+SELECT t, id AS witness FROM string_boundary_supported WHERE t = 'alpha'::text;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.qual[0]
+t,witness
+alpha,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_008 */
+SELECT c, id AS witness FROM string_boundary_supported WHERE c = 'A'::char(5);
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar = bpchar at Plan.qual[0]
+c,witness
+A    ,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_009 */
+SELECT t, id AS witness FROM string_boundary_supported WHERE t LIKE 'a%'::text;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
+t,witness
+alpha,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_010 */
+SELECT c, id AS witness FROM string_boundary_supported WHERE c LIKE 'A%'::text;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar ~~ text at Plan.qual[0]
+c,witness
+A    ,1
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_011 */
+SELECT v::text AS cast_value, id AS witness FROM string_boundary_supported WHERE id = 1;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string cast varchar -> text at Plan.targetlist[0].expr
+cast_value,witness
+alpha,1
+DROP TABLE string_boundary_unsupported;
+DROP TABLE string_boundary_supported;

@@ -109,7 +109,7 @@ SELECT string_col,
        string_col || '!' AS concatenated,
        LENGTH(string_col) AS str_length
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported operator OID 654 at Plan.targetlist[5].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.targetlist[1].expr
  string_col | is_hello | after_a | before_z | starts_with_h | concatenated | str_length 
 ------------+----------+---------+----------+---------------+--------------+------------
  hello      | t        | t       | t        | t             | hello!       |          5
@@ -125,7 +125,7 @@ SELECT char_col,
        TRIM(char_col) AS trimmed,
        LENGTH(char_col) AS char_length
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function btrim() at Plan.targetlist[2].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar = bpchar at Plan.targetlist[1].expr
   char_col  | exact_match | trimmed  | char_length 
 ------------+-------------+----------+-------------
  fixed      | t           | fixed    |           5

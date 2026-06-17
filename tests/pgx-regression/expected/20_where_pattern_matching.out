@@ -19,28 +19,31 @@ VALUES ('Alice Smith', 'alice.smith@company.com', 'Engineering', 75000, 'active'
        ('Eve Brown', 'eve.brown@company.com', 'Marketing', 68000, 'pending'),
        ('Frank Miller', 'frank.m@company.com', 'Sales', 72000, 'active'),
        ('Grace Taylor', 'grace@company.com', 'Engineering', 85000, 'inactive');
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_001 */
 SELECT id, name
 FROM test_where_patterns
 WHERE name LIKE 'A%';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |    name     
 ----+-------------
   1 | Alice Smith
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_002 */
 SELECT id, name
 FROM test_where_patterns
 WHERE name LIKE '%Smith';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |    name     
 ----+-------------
   1 | Alice Smith
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_003 */
 SELECT id, name
 FROM test_where_patterns
 WHERE name LIKE '%o%';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |     name     
 ----+--------------
   2 | Bob Johnson
@@ -50,10 +53,11 @@ WHERE name LIKE '%o%';
   7 | Grace Taylor
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_004 */
 SELECT id, email
 FROM test_where_patterns
 WHERE email LIKE '%.%@%';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |          email          
 ----+-------------------------
   1 | alice.smith@company.com
@@ -63,10 +67,11 @@ WHERE email LIKE '%.%@%';
   6 | frank.m@company.com
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_005 */
 SELECT id, email
 FROM test_where_patterns
 WHERE email LIKE '%company.com';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |          email          
 ----+-------------------------
   1 | alice.smith@company.com
@@ -78,20 +83,22 @@ WHERE email LIKE '%company.com';
   7 | grace@company.com
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_006 */
 SELECT id, name
 FROM test_where_patterns
 WHERE name LIKE '___ %';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |    name     
 ----+-------------
   2 | Bob Johnson
   5 | Eve Brown
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_007 */
 SELECT id, name
 FROM test_where_patterns
 WHERE name LIKE '% _____';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |    name     
 ----+-------------
   1 | Alice Smith
@@ -99,10 +106,11 @@ WHERE name LIKE '% _____';
   5 | Eve Brown
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_008 */
 SELECT department
 FROM test_where_patterns
 WHERE department LIKE '%ing';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  department  
 -------------
  Engineering
@@ -112,10 +120,11 @@ WHERE department LIKE '%ing';
  Engineering
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_009 */
 SELECT id, name
 FROM test_where_patterns
 WHERE name NOT LIKE 'A%';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text !~~ text at Plan.qual[0]
  id |     name     
 ----+--------------
   2 | Bob Johnson
@@ -126,10 +135,11 @@ WHERE name NOT LIKE 'A%';
   7 | Grace Taylor
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_010 */
 SELECT id, email
 FROM test_where_patterns
 WHERE email NOT LIKE '%@company.com';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text !~~ text at Plan.qual[0]
  id | email 
 ----+-------
 (0 rows)
@@ -173,10 +183,11 @@ WHERE salary IN (75000, 80000, 85000);
   7 | Grace Taylor
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_014 */
 SELECT id, name, department
 FROM test_where_patterns
 WHERE department NOT IN ('Marketing');
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text <> text at Plan.qual[0]
  id |     name     | department  
 ----+--------------+-------------
   1 | Alice Smith  | Engineering
@@ -186,10 +197,11 @@ WHERE department NOT IN ('Marketing');
   7 | Grace Taylor | Engineering
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_015 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_015 */
 SELECT id, name, status
 FROM test_where_patterns
 WHERE status NOT IN ('inactive');
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text <> text at Plan.qual[0]
  id |     name     | status  
 ----+--------------+---------
   1 | Alice Smith  | active
@@ -199,21 +211,23 @@ WHERE status NOT IN ('inactive');
   6 | Frank Miller | active
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_016 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_016 */
 SELECT id, name, department
 FROM test_where_patterns
 WHERE name LIKE 'C%'
   AND department = 'Engineering';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |    name     | department  
 ----+-------------+-------------
   3 | Carol Davis | Engineering
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_017 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_017 */
 SELECT id, name, salary
 FROM test_where_patterns
 WHERE (name LIKE '%e%' OR name LIKE '%a%')
   AND salary > 70000;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[1].args[0]
  id |     name     | salary 
 ----+--------------+--------
   1 | Alice Smith  |  75000
@@ -236,12 +250,13 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
   6 | Frank Miller
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_019 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_019 */
 SELECT id, name, email
 FROM test_where_patterns
 WHERE name LIKE '%a%'
   AND email LIKE '%@company.com'
   AND department NOT IN ('Marketing');
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text ~~ text at Plan.qual[0]
  id |     name     |          email          
 ----+--------------+-------------------------
   3 | Carol Davis  | carol.davis@company.com
@@ -250,11 +265,12 @@ WHERE name LIKE '%a%'
   7 | Grace Taylor | grace@company.com
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_020 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_020 */
 SELECT id, name, department
 FROM test_where_patterns
 WHERE (name NOT LIKE 'A%' AND name NOT LIKE 'B%')
    OR department = 'Engineering';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text !~~ text at Plan.qual[0].args[0].args[0]
  id |     name     | department  
 ----+--------------+-------------
   1 | Alice Smith  | Engineering

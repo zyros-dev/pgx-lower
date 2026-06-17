@@ -222,7 +222,8 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 
         // Convert months to microseconds using the standard approximation
         if (interval->month != 0) {
-            const int64_t monthMicroseconds = static_cast<int64_t>(interval->month * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
+            const int64_t monthMicroseconds = static_cast<int64_t>(interval->month * AVERAGE_DAYS_PER_MONTH
+                                                                   * USECS_PER_DAY);
             totalMicroseconds += monthMicroseconds;
         }
 
@@ -237,21 +238,18 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     case TEXTOID:
     case VARCHAROID:
     case BPCHAROID: {
-        // For string constants, constvalue is a pointer to the text data
-        // In psql, text values are stored as varlena structures
 #ifdef POSTGRESQL_EXTENSION
         if (constNode->constvalue != 0u) {
-            auto* textval = DatumGetTextP(constNode->constvalue);
-            const char* str = VARDATA(textval);
-            const int len = VARSIZE(textval) - VARHDRSZ;
-            const std::string string_value(str, len);
+            const auto* packedText = DatumGetTextPP(constNode->constvalue);
+            const auto payloadLength = VARSIZE_ANY_EXHDR(packedText);
+            const char* payloadBytes = VARDATA_ANY(packedText);
+            const std::string stringValue(payloadBytes, payloadLength);
 
-            PGX_LOG(AST_TRANSLATE, DEBUG, "String constant: value='%s', type_oid=%d, typmod=%d, mlirType=%s",
-                    string_value.c_str(), constNode->consttype, constNode->consttypmod,
-                    mlirType.getAsOpaquePointer() ? "valid" : "invalid");
+            PGX_LOG(AST_TRANSLATE, DEBUG, "String constant length=%d, type_oid=%d, typmod=%d", payloadLength,
+                    constNode->consttype, constNode->consttypmod);
 
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
-                                                        builder.getStringAttr(string_value));
+                                                        builder.getStringAttr(stringValue));
         }
         return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
 

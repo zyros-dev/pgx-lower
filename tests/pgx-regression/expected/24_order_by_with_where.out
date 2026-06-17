@@ -49,12 +49,13 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Grace | HR         |  55000
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_24_order_by_with_where_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_24_order_by_with_where_003 */
 SELECT name, department, years
 FROM test_order_where
 WHERE years > 2
   AND department = 'IT'
 ORDER BY years;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.lefttree.qual[1]
  name  | department | years 
 -------+------------+-------
  David | IT         |     4

@@ -209,20 +209,20 @@ void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runt
             prepare_computed_results(tb->current_column_index + 1);
         }
 
-        if (!is_null && value.getLen() > 0) {
+        if (!is_null) {
             PGX_LOG(RUNTIME, DEBUG, "VarLen32: len=%u, ptr=%p, first chars: %.10s", value.getLen(), value.getPtr(),
                     value.getPtr());
 
             const MemoryContext oldContext = CurrentMemoryContext;
             MemoryContextSwitchTo(CurTransactionContext);
 
-            const text* textval = cstring_to_text_with_len(reinterpret_cast<const char*>(value.getPtr()), value.getLen());
+            const auto* textval = cstring_to_text_with_len(reinterpret_cast<const char*>(value.getPtr()), value.getLen());
             const Datum datum = PointerGetDatum(textval);
-            g_computed_results.setResult(tb->current_column_index, datum, is_null, TEXTOID);
+            g_computed_results.setResult(tb->current_column_index, datum, false, {InvalidOid, -1, InvalidOid});
 
             MemoryContextSwitchTo(oldContext);
         } else {
-            g_computed_results.setResult(tb->current_column_index, 0, true, TEXTOID);
+            g_computed_results.setResult(tb->current_column_index, 0, true, {InvalidOid, -1, InvalidOid});
         }
 
         tb->current_column_index++;
@@ -426,7 +426,8 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call table_scan_getnextslot with scanDesc=%p", handle->scanDesc);
+    PGX_HOT_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call table_scan_getnextslot with scanDesc=%p",
+                handle->scanDesc);
 
     bool has_tuple{};
     try {
@@ -535,8 +536,7 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
     case FLOAT8OID:
     case DATEOID:
     case TIMESTAMPOID:
-    case TIMESTAMPTZOID:
-        return value;
+    case TIMESTAMPTZOID: return value;
 
     case INTERVALOID: {
         // Since psql stores intervals in a different way to how we do, we need to
@@ -566,8 +566,8 @@ static bool validate_memory_context_safety(const char* operation) {
     return true;
 }
 
-static bool
-stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datum* values, const bool* nulls, const int numColumns) {
+static bool stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datum* values,
+                                        const bool* nulls, const int numColumns) {
     PGX_IO(RUNTIME);
     PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: slot=%p, dest=%p, numColumns=%d", slot, dest, numColumns);
     if (!slot || !dest) {
@@ -588,8 +588,9 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
             Oid actualType = actualMetadata.type_oid;
 
             if (expectedType != actualType) {
-                PGX_LOG(RUNTIME, DEBUG, "stream_tuple_to_destination: TYPE MISMATCH attr[%d]: expected=%u actual=%u - FIXING",
-                        i, expectedType, actualType);
+                PGX_LOG(RUNTIME, DEBUG,
+                        "stream_tuple_to_destination: TYPE MISMATCH attr[%d]: expected=%u actual=%u - FIXING", i,
+                        expectedType, actualType);
 
                 int16 typLen = 0;
                 bool typByVal{};
@@ -617,8 +618,8 @@ stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, const Datu
         slot->tts_isnull[i] = nulls[i];
         Oid actualType = (i < g_computed_results.numComputedColumns) ? g_computed_results.computedMetadata[i].type_oid
                                                                      : InvalidOid;
-        PGX_LOG(RUNTIME, DEBUG, "  Column %d: value=%ld, isnull=%d, actualType=%u",
-                i, static_cast<long>(values[i]), nulls[i], actualType);
+        PGX_LOG(RUNTIME, DEBUG, "  Column %d: value=%ld, isnull=%d, actualType=%u", i, static_cast<long>(values[i]),
+                nulls[i], actualType);
     }
 
     slot->tts_nvalid = numColumns;
@@ -706,7 +707,7 @@ static bool process_computed_results_for_streaming() {
     }
 
     const bool result = stream_tuple_to_destination(slot, g_tuple_streamer.dest, processedValues, processedNulls,
-                                              g_computed_results.numComputedColumns);
+                                                    g_computed_results.numComputedColumns);
 
     pfree(processedValues);
     pfree(processedNulls);
@@ -792,7 +793,7 @@ extern "C" const char* get_string_field(void*, int32_t field_index, bool* is_nul
 
     bool isnull{};
     const Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num,
-                               g_current_tuple_passthrough.tupleDesc, &isnull);
+                                     g_current_tuple_passthrough.tupleDesc, &isnull);
     *is_null = isnull;
     if (isnull) {
         *length = 0;
@@ -863,9 +864,11 @@ extern "C" int64_t get_text_field(void*, const int32_t field_index, bool* is_nul
     switch (TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid) {
     case TEXTOID:
     case VARCHAROID:
-    case CHAROID: {
-        auto* textval = DatumGetTextP(value);
-        return reinterpret_cast<int64_t>(VARDATA(textval));
+    case BPCHAROID: {
+        const auto* textval = DatumGetTextPP(value);
+        const auto length = VARSIZE_ANY_EXHDR(textval);
+        const char* bytes = VARDATA_ANY(textval);
+        return reinterpret_cast<int64_t>(pnstrdup(bytes, length));
     }
     default: *is_null = true; return 0;
     }

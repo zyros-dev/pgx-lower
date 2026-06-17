@@ -150,6 +150,29 @@ static auto postgresTypeIsStringType(const Oid postgresType) -> bool {
     }
 }
 
+static auto postgresTypeIsUnsupportedStringLikeValueType(const Oid postgresType) -> bool {
+    switch (postgresType) {
+    case BYTEAOID:
+    case CHAROID:
+    case NAMEOID:
+    case CSTRINGOID: return true;
+    default: return false;
+    }
+}
+
+static auto postgresTypeName(const Oid postgresType) -> std::string {
+    switch (postgresType) {
+    case TEXTOID: return "text";
+    case VARCHAROID: return "varchar";
+    case BPCHAROID: return "bpchar";
+    case BYTEAOID: return "bytea";
+    case CHAROID: return "\"char\"";
+    case NAMEOID: return "name";
+    case CSTRINGOID: return "cstring";
+    default: return "OID " + std::to_string(postgresType);
+    }
+}
+
 static auto postgresCollationIsSupported(const Oid collationOid) -> bool {
     return collationOid == InvalidOid || collationOid == DEFAULT_COLLATION_OID || collationOid == C_COLLATION_OID
            || collationOid == POSIX_COLLATION_OID;
@@ -319,24 +342,23 @@ static constexpr const char* arithmeticOperatorNames[] = {"+", "-", "*", "/"};
 static constexpr const char* likeOperatorNames[] = {"~~", "!~~"};
 
 static constexpr PgOperatorTypeSignature supportedEqualityOperatorSignatures[] = {
-    {BOOLOID, BOOLOID, BOOLOID},         {BOOLOID, INT2OID, INT2OID},      {BOOLOID, INT4OID, INT4OID},
-    {BOOLOID, INT8OID, INT8OID},         {BOOLOID, INT2OID, INT4OID},      {BOOLOID, INT4OID, INT2OID},
-    {BOOLOID, INT2OID, INT8OID},         {BOOLOID, INT8OID, INT2OID},      {BOOLOID, INT4OID, INT8OID},
-    {BOOLOID, INT8OID, INT4OID},         {BOOLOID, FLOAT4OID, FLOAT4OID},  {BOOLOID, FLOAT8OID, FLOAT8OID},
-    {BOOLOID, FLOAT4OID, FLOAT8OID},     {BOOLOID, FLOAT8OID, FLOAT4OID},  {BOOLOID, NUMERICOID, NUMERICOID},
-    {BOOLOID, TEXTOID, TEXTOID},         {BOOLOID, BPCHAROID, BPCHAROID},  {BOOLOID, DATEOID, DATEOID},
-    {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID}, {BOOLOID, TIMESTAMPOID, TIMESTAMPOID},
-    {BOOLOID, INTERVALOID, INTERVALOID},
+    {BOOLOID, BOOLOID, BOOLOID},           {BOOLOID, INT2OID, INT2OID},         {BOOLOID, INT4OID, INT4OID},
+    {BOOLOID, INT8OID, INT8OID},           {BOOLOID, INT2OID, INT4OID},         {BOOLOID, INT4OID, INT2OID},
+    {BOOLOID, INT2OID, INT8OID},           {BOOLOID, INT8OID, INT2OID},         {BOOLOID, INT4OID, INT8OID},
+    {BOOLOID, INT8OID, INT4OID},           {BOOLOID, FLOAT4OID, FLOAT4OID},     {BOOLOID, FLOAT8OID, FLOAT8OID},
+    {BOOLOID, FLOAT4OID, FLOAT8OID},       {BOOLOID, FLOAT8OID, FLOAT4OID},     {BOOLOID, NUMERICOID, NUMERICOID},
+    {BOOLOID, DATEOID, DATEOID},           {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID},
+    {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, INTERVALOID, INTERVALOID},
 };
 
 static constexpr PgOperatorTypeSignature supportedOrderingOperatorSignatures[] = {
-    {BOOLOID, INT2OID, INT2OID},      {BOOLOID, INT4OID, INT4OID},           {BOOLOID, INT8OID, INT8OID},
-    {BOOLOID, INT2OID, INT4OID},      {BOOLOID, INT4OID, INT2OID},           {BOOLOID, INT2OID, INT8OID},
-    {BOOLOID, INT8OID, INT2OID},      {BOOLOID, INT4OID, INT8OID},           {BOOLOID, INT8OID, INT4OID},
-    {BOOLOID, FLOAT4OID, FLOAT4OID},  {BOOLOID, FLOAT8OID, FLOAT8OID},       {BOOLOID, FLOAT4OID, FLOAT8OID},
-    {BOOLOID, FLOAT8OID, FLOAT4OID},  {BOOLOID, NUMERICOID, NUMERICOID},     {BOOLOID, TEXTOID, TEXTOID},
-    {BOOLOID, BPCHAROID, BPCHAROID},  {BOOLOID, DATEOID, DATEOID},           {BOOLOID, DATEOID, TIMESTAMPOID},
-    {BOOLOID, TIMESTAMPOID, DATEOID}, {BOOLOID, TIMESTAMPOID, TIMESTAMPOID}, {BOOLOID, INTERVALOID, INTERVALOID},
+    {BOOLOID, INT2OID, INT2OID},         {BOOLOID, INT4OID, INT4OID},       {BOOLOID, INT8OID, INT8OID},
+    {BOOLOID, INT2OID, INT4OID},         {BOOLOID, INT4OID, INT2OID},       {BOOLOID, INT2OID, INT8OID},
+    {BOOLOID, INT8OID, INT2OID},         {BOOLOID, INT4OID, INT8OID},       {BOOLOID, INT8OID, INT4OID},
+    {BOOLOID, FLOAT4OID, FLOAT4OID},     {BOOLOID, FLOAT8OID, FLOAT8OID},   {BOOLOID, FLOAT4OID, FLOAT8OID},
+    {BOOLOID, FLOAT8OID, FLOAT4OID},     {BOOLOID, NUMERICOID, NUMERICOID}, {BOOLOID, DATEOID, DATEOID},
+    {BOOLOID, DATEOID, TIMESTAMPOID},    {BOOLOID, TIMESTAMPOID, DATEOID},  {BOOLOID, TIMESTAMPOID, TIMESTAMPOID},
+    {BOOLOID, INTERVALOID, INTERVALOID},
 };
 
 static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[] = {
@@ -365,8 +387,7 @@ static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[]
 };
 
 static constexpr PgOperatorTypeSignature supportedLikeOperatorSignatures[] = {
-    {BOOLOID, TEXTOID, TEXTOID},
-    {BOOLOID, BPCHAROID, TEXTOID},
+    {InvalidOid, InvalidOid, InvalidOid},
 };
 
 static auto
@@ -484,20 +505,12 @@ static auto scalarArrayElementType(const Node* rightNode) -> Oid {
 }
 
 static constexpr PgFunctionSignature supportedScalarFunctions[] = {
-    {"upper", PROKIND_FUNCTION, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
-    {"lower", PROKIND_FUNCTION, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
-    {"substr", PROKIND_FUNCTION, TEXTOID, 2, {TEXTOID, INT4OID, InvalidOid}},
-    {"substr", PROKIND_FUNCTION, TEXTOID, 3, {TEXTOID, INT4OID, INT4OID}},
-    {"substring", PROKIND_FUNCTION, TEXTOID, 2, {TEXTOID, INT4OID, InvalidOid}},
-    {"substring", PROKIND_FUNCTION, TEXTOID, 3, {TEXTOID, INT4OID, INT4OID}},
     {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {INT8OID, InvalidOid, InvalidOid}},
     {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {INT2OID, InvalidOid, InvalidOid}},
     {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {INT4OID, InvalidOid, InvalidOid}},
     {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
     {"numeric", PROKIND_FUNCTION, NUMERICOID, 1, {FLOAT8OID, InvalidOid, InvalidOid}},
     {"numeric", PROKIND_FUNCTION, NUMERICOID, 2, {NUMERICOID, INT4OID, InvalidOid}},
-    {"varchar", PROKIND_FUNCTION, VARCHAROID, 3, {VARCHAROID, INT4OID, BOOLOID}},
-    {"text", PROKIND_FUNCTION, TEXTOID, 1, {BPCHAROID, InvalidOid, InvalidOid}},
     {"int4", PROKIND_FUNCTION, INT4OID, 1, {BOOLOID, InvalidOid, InvalidOid}},
     {"int4", PROKIND_FUNCTION, INT4OID, 1, {INT8OID, InvalidOid, InvalidOid}},
     {"int4", PROKIND_FUNCTION, INT4OID, 1, {INT2OID, InvalidOid, InvalidOid}},
@@ -569,6 +582,46 @@ static auto postgresFunctionName(const Oid functionOid) -> std::string {
     auto functionName = std::string(name);
     pfree(const_cast<char*>(name));
     return functionName;
+}
+
+static auto exprArgumentType(const List* expressions, const int index) -> Oid {
+    if (!expressions || index < 0 || index >= list_length(expressions)) {
+        return InvalidOid;
+    }
+    const auto* expr = static_cast<const Node*>(lfirst(list_nth_cell(expressions, index)));
+    return expr ? exprType(const_cast<Node*>(expr)) : InvalidOid;
+}
+
+static auto functionExprUsesStringScalarBoundary(const FuncExpr* func) -> bool {
+    if (!func) {
+        return false;
+    }
+    if (postgresTypeIsStringType(func->funcresulttype)
+        || postgresTypeIsUnsupportedStringLikeValueType(func->funcresulttype))
+    {
+        return true;
+    }
+    ListCell* lc = nullptr;
+    foreach (lc, func->args) {
+        const auto* arg = static_cast<const Node*>(lfirst(lc));
+        const auto argType = arg ? exprType(const_cast<Node*>(arg)) : InvalidOid;
+        if (postgresTypeIsStringType(argType) || postgresTypeIsUnsupportedStringLikeValueType(argType)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static auto operatorExprUsesStringScalarBoundary(const OpExpr* op) -> bool {
+    if (!op || !op->args || list_length(op->args) != 2) {
+        return false;
+    }
+    const auto lhsType = exprArgumentType(op->args, 0);
+    const auto rhsType = exprArgumentType(op->args, 1);
+    return postgresTypeIsStringType(lhsType) || postgresTypeIsStringType(rhsType)
+           || postgresTypeIsUnsupportedStringLikeValueType(lhsType)
+           || postgresTypeIsUnsupportedStringLikeValueType(rhsType) || postgresTypeIsStringType(op->opresulttype)
+           || postgresTypeIsUnsupportedStringLikeValueType(op->opresulttype);
 }
 
 static auto targetListEntryType(const List* targetList, const AttrNumber column) -> Oid {
@@ -1089,8 +1142,7 @@ auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> A
     }
     if (!isTypeSupportedByMLIR(typeOid)) {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type,
-                                           "unsupported PostgreSQL type OID " + std::to_string(typeOid),
-                                           std::move(location));
+                                           "unsupported type " + postgresTypeName(typeOid), std::move(location));
     }
     return AnalyzerResult::supported();
 }
@@ -1111,7 +1163,11 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_FuncExpr: {
         const auto* func = reinterpret_cast<const FuncExpr*>(expr);
-        if (!isFunctionSupported(func)) {
+        if (functionExprUsesStringScalarBoundary(func)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
+                                        "unsupported string function " + postgresFunctionName(func->funcid) + "()",
+                                        location);
+        } else if (!isFunctionSupported(func)) {
             const auto functionName = postgresFunctionName(func->funcid);
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
                                         functionName.empty() ? "unsupported function OID " + std::to_string(func->funcid)
@@ -1129,7 +1185,19 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
 
     case T_OpExpr: {
         const auto* op = reinterpret_cast<const OpExpr*>(expr);
-        if (!isOperatorSupported(op)) {
+        if (operatorExprUsesStringScalarBoundary(op)) {
+            const auto lhsType = exprArgumentType(op->args, 0);
+            const auto rhsType = exprArgumentType(op->args, 1);
+            std::string operatorName = "?";
+            if (char* rawOperatorName = get_opname(op->opno)) {
+                operatorName = rawOperatorName;
+                pfree(rawOperatorName);
+            }
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
+                                        "unsupported string operator " + postgresTypeName(lhsType) + " " + operatorName
+                                            + " " + postgresTypeName(rhsType),
+                                        location);
+        } else if (!isOperatorSupported(op)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
                                         "unsupported operator OID " + std::to_string(op->opno), location);
         }
@@ -1203,7 +1271,19 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported relabel collation",
                                         location);
         }
-        mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), location + ".arg"));
+        if (relabel->arg) {
+            const auto inputType = exprType(reinterpret_cast<Node*>(relabel->arg));
+            if (postgresTypeIsStringType(inputType) || postgresTypeIsStringType(relabel->resulttype)) {
+                result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
+                                            "unsupported string cast " + postgresTypeName(inputType) + " -> "
+                                                + postgresTypeName(relabel->resulttype),
+                                            location);
+            }
+            mergeAnalyzerResult(result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), location + ".arg"));
+        } else {
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "RelabelType argument is null",
+                                        location + ".arg");
+        }
         mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
         return supportedOrUnsupported(result);
     }
@@ -1216,7 +1296,12 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
         }
         if (coerce->arg) {
             const auto inputType = exprType(reinterpret_cast<Node*>(coerce->arg));
-            if (!postgresTypeIsStringType(inputType) || !postgresTypeIsStringType(coerce->resulttype)) {
+            if (postgresTypeIsStringType(inputType) && postgresTypeIsStringType(coerce->resulttype)) {
+                result.addUnsupportedReason(UnsupportedReasonKind::unsupported_function,
+                                            "unsupported string cast " + postgresTypeName(inputType) + " -> "
+                                                + postgresTypeName(coerce->resulttype),
+                                            location);
+            } else {
                 result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node,
                                             "unsupported CoerceViaIO from type OID " + std::to_string(inputType)
                                                 + " to type OID " + std::to_string(coerce->resulttype),

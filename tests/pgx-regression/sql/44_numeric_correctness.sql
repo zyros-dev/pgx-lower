@@ -20,12 +20,12 @@ VALUES ('pos', 12345.6789),
        ('inf', 'Infinity'::NUMERIC),
        ('ninf', '-Infinity'::NUMERIC);
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_44_numeric_correctness_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_44_numeric_correctness_001 */
 SELECT label, n
 FROM numeric_correctness
 ORDER BY n, label;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_44_numeric_correctness_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_44_numeric_correctness_002 */
 SELECT label,
        n = 'NaN'::NUMERIC AS eq_nan,
        n > 99999999999999999999999999999999999999::NUMERIC AS gt_boundary,

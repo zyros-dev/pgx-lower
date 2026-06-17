@@ -147,6 +147,40 @@ PGX_TEST_FN(expression_coerce_via_io_preserves_pg_result_metadata) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(expression_param_preserves_string_pg_metadata) {
+    Fixture f;
+    auto relation = f.builder.create<mlir::relalg::ConstRelationOp>(
+        f.builder.getUnknownLoc(), f.builder.getArrayAttr({}), f.builder.getArrayAttr({}));
+    auto ctx = pgx_lower::frontend::sql::TranslationContext{.current_stmt = PlannedStmt{},
+                                                            .builder = f.builder,
+                                                            .current_module = f.module,
+                                                            .current_tuple = relation.getResult(),
+                                                            .outer_tuple = mlir::Value{}};
+    postgresql_ast::PostgreSQLTypeMapper mapper(f.ctx);
+    auto paramType = mapper.map_postgre_sqltype(VARCHAROID, kVarcharTypmod, DEFAULT_COLLATION_OID, true);
+    ctx.params.emplace(7, pgx_lower::frontend::sql::ResolvedParam{.table_name = "outer_scope",
+                                                                  .column_name = "string_param",
+                                                                  .type_oid = VARCHAROID,
+                                                                  .typmod = kVarcharTypmod,
+                                                                  .collation = DEFAULT_COLLATION_OID,
+                                                                  .nullable = true,
+                                                                  .mlir_type = paramType});
+
+    auto param = Param{};
+    param.xpr.type = T_Param;
+    param.paramkind = PARAM_EXEC;
+    param.paramid = 7;
+    param.paramtype = VARCHAROID;
+    param.paramtypmod = kVarcharTypmod;
+    param.paramcollid = DEFAULT_COLLATION_OID;
+
+    const mlir::Value value = f.translator.translate_expression(ctx, reinterpret_cast<Expr*>(&param));
+    REQUIRE(value);
+    REQUIRE(mlir::isa<mlir::relalg::GetColumnOp>(value.getDefiningOp()));
+    requirePgIdentity(value.getType(), VARCHAROID, kVarcharTypmod, DEFAULT_COLLATION_OID, mlir::db::PgNullability::Maybe);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(expression_coalesce_non_null_fallback_is_not_nullable) {
     Fixture f;
     auto fn = f.builder.create<mlir::func::FuncOp>(f.builder.getUnknownLoc(), "coalesce_metadata",

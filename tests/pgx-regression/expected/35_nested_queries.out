@@ -47,7 +47,7 @@ SELECT name
 FROM products
 WHERE category_id = ANY(ARRAY(SELECT category_id FROM categories WHERE active = 1))
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.qual[0].right
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
    name   
 ----------
  Chair
@@ -58,12 +58,13 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  Mouse
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_002 */
 SELECT name, price
 FROM products
 WHERE price > (SELECT AVG(price)
                FROM products)
 ORDER BY name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
   name  | price 
 --------+-------
  Desk   |   500
@@ -77,7 +78,7 @@ WHERE price > ALL (SELECT price
                    FROM products
                    WHERE category_id = 20)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 23 at Plan.lefttree.qual[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
   name   | price 
 ---------+-------
  Chair   |   200
@@ -93,7 +94,7 @@ WHERE price > (SELECT AVG(price)
                FROM products
                WHERE category_id = p.category_id)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 23 at Plan.lefttree.qual[0].args[1]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
    name   | price 
 ----------+-------
  Desk     |   500
@@ -101,11 +102,12 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  Laptop   |  1000
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_005 */
 SELECT name
 FROM products
 WHERE category_id IN (SELECT category_id FROM categories WHERE active = 1)
 ORDER BY name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
    name   
 ----------
  Chair
@@ -121,7 +123,7 @@ SELECT name
 FROM products
 WHERE category_id NOT IN (SELECT category_id FROM categories WHERE active = 0)
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 23 at Plan.lefttree.qual[0].args[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
    name   
 ----------
  Chair
@@ -132,11 +134,12 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  Mouse
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_007 */
 SELECT name
 FROM categories c
 WHERE EXISTS (SELECT 1 FROM products WHERE category_id = c.category_id)
 ORDER BY name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
     name     
 -------------
  Accessories
@@ -144,11 +147,12 @@ ORDER BY name;
  Furniture
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_008 */
 SELECT name
 FROM categories c
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE category_id = c.category_id)
 ORDER BY name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
      name     
 --------------
  Discontinued
@@ -179,7 +183,7 @@ SELECT name, price,
         WHERE i.product_id = p.product_id) as max_stock
 FROM products p
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 23 at Plan.lefttree.targetlist[2].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
    name   | price | max_stock 
 ----------+-------+-----------
  Chair    |   200 |          
@@ -190,7 +194,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
  Mouse    |    25 |       200
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_011 */
 SELECT c.name, stats.total_price
 FROM categories c
 JOIN (SELECT category_id, SUM(price) as total_price
@@ -198,6 +202,7 @@ JOIN (SELECT category_id, SUM(price) as total_price
       GROUP BY category_id) AS stats
 ON c.category_id = stats.category_id
 ORDER BY c.name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
     name     | total_price 
 -------------+-------------
  Accessories |         100

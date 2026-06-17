@@ -60,10 +60,11 @@ WHERE table_a.id = table_b.id;
  cherry |     30
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_33_basic_joins_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_33_basic_joins_003 */
 SELECT table_a.name, table_b.amount, table_b.status
 FROM table_a, table_b
 WHERE table_a.id = table_b.id AND table_b.status = 'active';
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.righttree.lefttree.qual[0]
   name  | amount | status 
 --------+--------+--------
  apple  |     10 | active
@@ -151,11 +152,12 @@ ORDER BY table_c.category;
         2 |         700
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_33_basic_joins_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_33_basic_joins_010 */
 SELECT a1.name AS name1, a2.name AS name2
 FROM table_a a1, table_a a2
 WHERE a1.value < a2.value AND a1.id < a2.id
 ORDER BY a1.name, a2.name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  name1  | name2  
 --------+--------
  apple  | banana

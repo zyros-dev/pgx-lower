@@ -45,7 +45,7 @@ SELECT DISTINCT category + status AS combined
 FROM test_distinct
 ORDER BY combined;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_31_distinct_statement_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_31_distinct_statement_005 */
 SELECT DISTINCT name
 FROM test_distinct
 ORDER BY name;

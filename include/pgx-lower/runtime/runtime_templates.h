@@ -67,7 +67,6 @@ inline Datum toDatum<Interval*>(Interval* v) {
     return IntervalPGetDatum(v);
 }
 
-
 template<typename T>
 constexpr Oid getTypeOid() = delete;
 
@@ -104,7 +103,7 @@ constexpr Oid getTypeOid<double>() {
 
 template<>
 constexpr Oid getTypeOid<::runtime::VarLen32>() {
-    return TEXTOID;
+    return InvalidOid;
 }
 
 template<>

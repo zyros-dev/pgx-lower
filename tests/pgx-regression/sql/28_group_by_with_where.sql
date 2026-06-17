@@ -27,7 +27,7 @@ VALUES ('Laptop Pro', 'Electronics', 1500.00, 1, 'Premium', '2024-01-01', 'North
        ('Headphones', 'Electronics', 120.00, 6, 'Premium', '2024-01-09', 'West'),
        ('Conference Table', 'Furniture', 800.00, 1, 'Business', '2024-01-10', 'South');
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_001 */
 SELECT category, COUNT(*) AS order_count
 FROM product_orders
 WHERE category = 'Electronics'

@@ -1,12 +1,14 @@
 extern "C" {
 #include "postgres.h"
 #include "fmgr.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_operator_d.h"
 #include "catalog/pg_type.h"
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
 #include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 }
 
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
@@ -50,15 +52,18 @@ auto makeBoolConst() -> Const {
     return value;
 }
 
-auto makeTypedConst(Oid typeOid) -> Const {
+auto makeTypedConst(Oid typeOid, int32_t typmod = -1, Oid collation = InvalidOid, bool isNull = false) -> Const {
     auto value = Const{};
     value.xpr.type = T_Const;
     value.consttype = typeOid;
-    value.consttypmod = -1;
-    value.constcollid = OidIsValid(typeOid) && (typeOid == TEXTOID || typeOid == VARCHAROID || typeOid == BPCHAROID)
-                            ? DEFAULT_COLLATION_OID
-                            : InvalidOid;
-    value.constisnull = false;
+    value.consttypmod = typmod;
+    value.constcollid = collation;
+    if (!OidIsValid(value.constcollid) && OidIsValid(typeOid)
+        && (typeOid == TEXTOID || typeOid == VARCHAROID || typeOid == BPCHAROID))
+    {
+        value.constcollid = DEFAULT_COLLATION_OID;
+    }
+    value.constisnull = isNull;
     value.constbyval = false;
     value.constlen = -1;
     value.constvalue = Datum{0};
@@ -510,8 +515,115 @@ PGX_TEST_FN(query_analyzer_rejects_max_bpchar_aggregate) {
     PG_RETURN_VOID();
 }
 
-PGX_TEST_FN(query_analyzer_accepts_string_coerce_via_io) {
-    auto arg = makeTypedConst(TEXTOID);
+PGX_TEST_FN(query_analyzer_string_type_boundary) {
+    auto text = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto varchar = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
+    auto bpchar = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
+    auto bytea = makeTypedConst(BYTEAOID);
+    auto internalChar = makeTypedConst(CHAROID);
+    auto nameValue = makeTypedConst(NAMEOID);
+    auto cstringValue = makeTypedConst(CSTRINGOID);
+
+    REQUIRE(pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&text)).isSupported());
+    REQUIRE(pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&varchar)).isSupported());
+    REQUIRE(pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpchar)).isSupported());
+
+    const auto byteaResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bytea));
+    REQUIRE(!byteaResult.isSupported());
+    REQUIRE(byteaResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+
+    const auto charResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&internalChar));
+    REQUIRE(!charResult.isSupported());
+    REQUIRE(charResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+
+    const auto nameResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&nameValue));
+    REQUIRE(!nameResult.isSupported());
+    REQUIRE(nameResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+
+    const auto cstringResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&cstringValue));
+    REQUIRE(!cstringResult.isSupported());
+    REQUIRE(cstringResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_string_operator_boundary) {
+    auto textLhs = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto textRhs = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto textEq = OpExpr{};
+    textEq.xpr.type = T_OpExpr;
+    textEq.opno = TextEqualOperator;
+    textEq.opfuncid = F_TEXTEQ;
+    textEq.opresulttype = BOOLOID;
+    textEq.inputcollid = DEFAULT_COLLATION_OID;
+    textEq.opcollid = InvalidOid;
+    textEq.args = list_make2(&textLhs, &textRhs);
+
+    const auto textEqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&textEq));
+    REQUIRE(!textEqResult.isSupported());
+    REQUIRE(textEqResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    const Oid bpcharEqOid = OpernameGetOprid(list_make1(makeString(const_cast<char*>("="))), BPCHAROID, BPCHAROID);
+    auto bpcharLhs = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
+    auto bpcharRhs = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
+    auto bpcharEq = OpExpr{};
+    bpcharEq.xpr.type = T_OpExpr;
+    bpcharEq.opno = bpcharEqOid;
+    bpcharEq.opfuncid = get_opcode(bpcharEqOid);
+    bpcharEq.opresulttype = BOOLOID;
+    bpcharEq.inputcollid = DEFAULT_COLLATION_OID;
+    bpcharEq.opcollid = InvalidOid;
+    bpcharEq.args = list_make2(&bpcharLhs, &bpcharRhs);
+
+    const auto bpcharEqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpcharEq));
+    REQUIRE(!bpcharEqResult.isSupported());
+    REQUIRE(bpcharEqResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    auto varcharLhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
+    auto varcharRhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
+    auto varcharEq = OpExpr{};
+    varcharEq.xpr.type = T_OpExpr;
+    varcharEq.opno = TextEqualOperator;
+    varcharEq.opfuncid = F_TEXTEQ;
+    varcharEq.opresulttype = BOOLOID;
+    varcharEq.inputcollid = DEFAULT_COLLATION_OID;
+    varcharEq.opcollid = InvalidOid;
+    varcharEq.args = list_make2(&varcharLhs, &varcharRhs);
+
+    const auto varcharEqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&varcharEq));
+    REQUIRE(!varcharEqResult.isSupported());
+    REQUIRE(varcharEqResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    auto likePattern = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto textLike = OpExpr{};
+    textLike.xpr.type = T_OpExpr;
+    textLike.opno = OID_TEXT_LIKE_OP;
+    textLike.opfuncid = F_TEXTLIKE;
+    textLike.opresulttype = BOOLOID;
+    textLike.inputcollid = DEFAULT_COLLATION_OID;
+    textLike.opcollid = InvalidOid;
+    textLike.args = list_make2(&textLhs, &likePattern);
+
+    const auto textLikeResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&textLike));
+    REQUIRE(!textLikeResult.isSupported());
+    REQUIRE(textLikeResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    auto bpcharLike = OpExpr{};
+    bpcharLike.xpr.type = T_OpExpr;
+    bpcharLike.opno = OID_BPCHAR_LIKE_OP;
+    bpcharLike.opfuncid = F_BPCHARLIKE;
+    bpcharLike.opresulttype = BOOLOID;
+    bpcharLike.inputcollid = DEFAULT_COLLATION_OID;
+    bpcharLike.opcollid = InvalidOid;
+    bpcharLike.args = list_make2(&bpcharLhs, &likePattern);
+
+    const auto bpcharLikeResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpcharLike));
+    REQUIRE(!bpcharLikeResult.isSupported());
+    REQUIRE(bpcharLikeResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_string_cast_boundary) {
+    auto arg = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
     auto coerce = CoerceViaIO{};
     coerce.xpr.type = T_CoerceViaIO;
     coerce.arg = reinterpret_cast<Expr*>(&arg);
@@ -520,7 +632,24 @@ PGX_TEST_FN(query_analyzer_accepts_string_coerce_via_io) {
     coerce.coerceformat = COERCE_IMPLICIT_CAST;
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&coerce));
-    REQUIRE(result.isSupported());
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_relabel_string_cast_boundary) {
+    auto arg = makeTypedConst(VARCHAROID, 12, DEFAULT_COLLATION_OID);
+    auto relabel = RelabelType{};
+    relabel.xpr.type = T_RelabelType;
+    relabel.arg = reinterpret_cast<Expr*>(&arg);
+    relabel.resulttype = TEXTOID;
+    relabel.resulttypmod = -1;
+    relabel.resultcollid = DEFAULT_COLLATION_OID;
+    relabel.relabelformat = COERCE_EXPLICIT_CAST;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&relabel));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
     PG_RETURN_VOID();
 }
 
@@ -698,7 +827,7 @@ PGX_TEST_FN(query_analyzer_rejects_unsupported_agg_group_collation) {
     PG_RETURN_VOID();
 }
 
-PGX_TEST_FN(query_analyzer_accepts_agg_group_operator_for_child_target_type) {
+PGX_TEST_FN(query_analyzer_rejects_string_agg_group_operator_for_child_target_type) {
     auto aggValue = makeTypedConst(INT4OID);
     auto aggTarget = TargetEntry{};
     aggTarget.xpr.type = T_TargetEntry;
@@ -731,7 +860,8 @@ PGX_TEST_FN(query_analyzer_accepts_agg_group_operator_for_child_target_type) {
     agg.grpCollations = grpCollations;
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&agg));
-    REQUIRE(result.isSupported());
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
     PG_RETURN_VOID();
 }
 

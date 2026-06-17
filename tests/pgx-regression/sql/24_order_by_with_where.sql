@@ -33,7 +33,7 @@ SELECT name, department, salary
 FROM test_order_where
 WHERE salary >= 50000
 ORDER BY name;
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_24_order_by_with_where_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_24_order_by_with_where_003 */
 SELECT name, department, years
 FROM test_order_where
 WHERE years > 2
