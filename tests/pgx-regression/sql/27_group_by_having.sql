@@ -25,28 +25,28 @@ VALUES ('Alice', 'Sales', 5000.00, 0.10, '2024-01-01'),
        ('Alice', 'Sales', 5500.00, 0.10, '2024-01-09'),
        ('David', 'IT', 1800.00, 0.15, '2024-01-10');
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_27_group_by_having_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_001 */
 SELECT department, COUNT(*) AS sale_count
 FROM employee_sales
 GROUP BY department
 HAVING COUNT(*) > 2
 ORDER BY department;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_27_group_by_having_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_002 */
 SELECT employee_name, SUM(sale_amount) AS total_sales
 FROM employee_sales
 GROUP BY employee_name
 HAVING SUM(sale_amount) > 8000
 ORDER BY employee_name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_27_group_by_having_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_003 */
 SELECT department, AVG(sale_amount) AS avg_sale
 FROM employee_sales
 GROUP BY department
 HAVING AVG(sale_amount) > 3000
 ORDER BY department;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_27_group_by_having_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_004 */
 SELECT department,
        COUNT(*)         AS sale_count,
        SUM(sale_amount) AS total_sales,
@@ -57,7 +57,7 @@ HAVING COUNT(*) >= 2
    AND SUM(sale_amount) > 5000
 ORDER BY department;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_27_group_by_having_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_27_group_by_having_005 */
 SELECT employee_name,
        COUNT(*)         AS sale_count,
        MIN(sale_amount) AS min_sale,

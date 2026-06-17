@@ -35,7 +35,7 @@ WHERE ship_date >= DATE '1997-12-15'
   AND ship_date <= DATE '1997-12-20'
 ORDER BY id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_43_decode_at_scan_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_43_decode_at_scan_003 */
 -- Group-by exercising decimal aggregation + string grouping.
 SELECT status, sum(quantity * price) AS revenue
 FROM decode_at_scan_t

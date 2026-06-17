@@ -50,7 +50,7 @@ VALUES (100, 'Project Alpha', 10, 500000),
        (300, 'Project Gamma', 10, 450000),
        (400, 'Project Delta', 60, 200000);
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_001 */
 SELECT e.emp_name, e.salary, d.dept_name, d.location
 FROM employees e
          LEFT JOIN departments d ON e.dept_id = d.dept_id
@@ -62,7 +62,7 @@ FROM employees e
          RIGHT JOIN departments d ON e.dept_id = d.dept_id
 ORDER BY d.dept_id, e.emp_id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_003 */
 SELECT e.emp_name, e.salary, e.dept_id
 FROM employees e
 WHERE EXISTS (SELECT 1
@@ -70,7 +70,7 @@ WHERE EXISTS (SELECT 1
               WHERE d.dept_id = e.dept_id)
 ORDER BY e.emp_id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_004 */
 SELECT e.emp_name, e.salary, e.dept_id
 FROM employees e
 WHERE NOT EXISTS (SELECT 1
@@ -80,14 +80,14 @@ ORDER BY e.emp_id;
 
 
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_005 */
 SELECT d.dept_name, d.location
 FROM departments d
 WHERE d.dept_id IN (SELECT p.dept_id
                     FROM projects p)
 ORDER BY d.dept_id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_006 */
 SELECT e.emp_name, d.dept_name
 FROM employees e
          LEFT JOIN departments d ON e.dept_id = d.dept_id
@@ -95,7 +95,7 @@ WHERE d.location = 'Building A'
    OR d.location IS NULL
 ORDER BY e.emp_id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_007 */
 SELECT e.emp_name,
        d.dept_name,
        p.project_name,
@@ -105,7 +105,7 @@ FROM employees e
          LEFT JOIN projects p ON d.dept_id = p.dept_id
 ORDER BY e.emp_id, p.project_id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_34_advanced_joins_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_34_advanced_joins_008 */
 SELECT e1.emp_name as employee,
        e2.emp_name as colleague,
        e1.dept_id

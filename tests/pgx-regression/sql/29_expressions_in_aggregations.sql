@@ -46,7 +46,7 @@ SELECT
     MAX(years_experience + 100) AS max_exp_plus
 FROM comprehensive_data;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_004 */
 SELECT
     department,
     AVG(salary + bonus) AS avg_total_comp,
@@ -69,7 +69,7 @@ SELECT
 FROM comprehensive_data
 WHERE years_experience > 0;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_007 */
 SELECT
     department,
     SUM(salary + (bonus * 2)) AS total_with_double_bonus,
@@ -88,7 +88,7 @@ SELECT
     MIN(bonus / 100) AS min_bonus_hundred
 FROM comprehensive_data;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_009 */
 SELECT
     department,
     AVG(salary + bonus) AS avg_compensation,
@@ -119,7 +119,7 @@ FROM comprehensive_data
 GROUP BY department
 ORDER BY department;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_013 */
 SELECT
     department,
     SUM(salary + bonus - 1000) AS adjusted_compensation,

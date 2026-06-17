@@ -43,7 +43,7 @@ ORDER BY id;
 ----+-------+-----------
 (0 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_43_decode_at_scan_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_43_decode_at_scan_003 */
 -- Group-by exercising decimal aggregation + string grouping.
 SELECT status, sum(quantity * price) AS revenue
 FROM decode_at_scan_t
@@ -51,6 +51,7 @@ WHERE ship_date >= DATE '1997-06-01'
   AND ship_date <  DATE '1997-09-01'
 GROUP BY status
 ORDER BY status;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.groupCol[0]
  status |   revenue    
 --------+--------------
  A      |  966304.0000
@@ -64,7 +65,7 @@ SELECT note
 FROM decode_at_scan_t
 WHERE id BETWEEN 100 AND 105
 ORDER BY id;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 340 at Plan.lefttree
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback missing_metadata: sort key target metadata is missing at Plan.sortCol[0]
       note      
 ----------------
  item-note-0100

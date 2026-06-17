@@ -33,11 +33,12 @@ ORDER BY salary;
  David |  65000
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_24_order_by_with_where_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_24_order_by_with_where_002 */
 SELECT name, department, salary
 FROM test_order_where
 WHERE salary >= 50000
 ORDER BY name;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  name  | department | salary 
 -------+------------+--------
  Alice | Sales      |  50000
@@ -74,11 +75,12 @@ ORDER BY salary DESC;
  Henry |  26 |  48000
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_24_order_by_with_where_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_24_order_by_with_where_005 */
 SELECT name, department, salary, years
 FROM test_order_where
 WHERE salary >= 45000
 ORDER BY department, salary DESC;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  name  | department | salary | years 
 -------+------------+--------+-------
  Grace | HR         |  55000 |     3
@@ -96,7 +98,7 @@ SELECT name, department, age
 FROM test_order_where
 WHERE department IN ('IT', 'Sales')
 ORDER BY department, age;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.qual[0].right
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  name  | department | age 
 -------+------------+-----
  Bob   | IT         |  25

@@ -62,26 +62,26 @@ VALUES ('Electronics', 'Laptop', 1200, 2),
        ('Books', 'Textbook', 125, 4),
        ('Electronics', 'Tablet', 450, 2);
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_004 */
 SELECT department, COUNT(*) AS item_count
 FROM sales_data
 GROUP BY department;
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_005 */
 SELECT department, SUM(amount) AS total_sales
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_006 */
 SELECT department, AVG(amount) AS avg_amount
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_007 */
 SELECT department, MIN(amount) AS min_amount, MAX(amount) AS max_amount
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_008 */
 SELECT department,
        COUNT(*)      AS item_count,
        SUM(amount)   AS total_sales,

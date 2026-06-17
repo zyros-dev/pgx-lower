@@ -51,14 +51,14 @@ VALUES ('Charlie'),
 
 SET client_min_messages TO DEBUG1;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_21_order_by_basic_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_21_order_by_basic_005 */
 SELECT name
 FROM test_order_string
 ORDER BY name;
 
 SET client_min_messages TO NOTICE;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_21_order_by_basic_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_21_order_by_basic_006 */
 SELECT name
 FROM test_order_string
 ORDER BY name DESC;
@@ -77,7 +77,7 @@ VALUES (99.99),
        (5000.00),
        (999999999999.99);
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_21_order_by_basic_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_21_order_by_basic_007 */
 SELECT price * 2.2
 FROM test_order_decimal
 ORDER BY price;

@@ -18,10 +18,11 @@ VALUES ('Sales', 50000, 3, 'Alice'),
        ('Sales', 50000, 1, 'Eve'),
        ('IT', 60000, 6, 'Frank'),
        ('HR', 55000, 3, 'Grace');
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_001 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department, salary;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
@@ -33,10 +34,11 @@ ORDER BY department, salary;
  Sales      |  50000 | Alice
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_002 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department ASC, salary ASC;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
@@ -48,10 +50,11 @@ ORDER BY department ASC, salary ASC;
  Sales      |  50000 | Alice
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_003 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department ASC, salary DESC;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department | salary | name  
 ------------+--------+-------
  HR         |  55000 | Grace
@@ -63,10 +66,11 @@ ORDER BY department ASC, salary DESC;
  Sales      |  45000 | Carol
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_004 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department DESC, salary DESC;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 666 at Plan.sortCol[0]
  department | salary | name  
 ------------+--------+-------
  Sales      |  50000 | Alice
@@ -78,10 +82,11 @@ ORDER BY department DESC, salary DESC;
  HR         |  55000 | Grace
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_005 */
 SELECT department, salary, years, name
 FROM test_order_multi
 ORDER BY department, salary, years;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department | salary | years | name  
 ------------+--------+-------+-------
  HR         |  55000 |     3 | Grace
@@ -93,10 +98,11 @@ ORDER BY department, salary, years;
  Sales      |  50000 |     3 | Alice
 (7 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_006 */
 SELECT department, salary, years, name
 FROM test_order_multi
 ORDER BY department ASC, salary DESC, years ASC;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department | salary | years | name  
 ------------+--------+-------+-------
  HR         |  55000 |     3 | Grace
