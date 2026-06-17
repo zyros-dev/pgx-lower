@@ -988,6 +988,10 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_expr_node, "unsupported aggregate filter",
                                         location);
         }
+        if (!isCollationSupported(agg->inputcollid) || !isCollationSupported(agg->aggcollid)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation, "unsupported aggregate collation",
+                                        location);
+        }
         if (aggregateSupported && agg->aggtype == BYTEAOID && (!agg->aggargtypes || list_length(agg->aggargtypes) <= 0))
         {
             result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,

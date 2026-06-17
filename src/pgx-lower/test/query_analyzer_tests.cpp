@@ -388,6 +388,28 @@ PGX_TEST_FN(query_analyzer_rejects_bytea_typed_aggregate_without_argtypes) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_unsupported_aggregate_collation) {
+    auto argValue = makeTypedConst(TEXTOID);
+    auto argTarget = TargetEntry{};
+    argTarget.xpr.type = T_TargetEntry;
+    argTarget.expr = reinterpret_cast<Expr*>(&argValue);
+    argTarget.resno = 1;
+
+    auto aggregate = Aggref{};
+    aggregate.xpr.type = T_Aggref;
+    aggregate.aggfnoid = F_MIN_TEXT;
+    aggregate.aggtype = TEXTOID;
+    aggregate.aggcollid = 999999;
+    aggregate.inputcollid = 999999;
+    aggregate.args = list_make1(&argTarget);
+    aggregate.aggargtypes = list_make1_oid(TEXTOID);
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&aggregate));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_collation);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_string_coerce_via_io) {
     auto arg = makeTypedConst(TEXTOID);
     auto coerce = CoerceViaIO{};
