@@ -149,6 +149,7 @@ function runInit(args: string[], output: OperationOutput, config: AgentEvidenceC
   }
 
   const evidence: EvidenceFile = {
+    requiredClaims: claims.map((claim) => claim!.id),
     claims: claims.map((claim) => ({
       id: claim!.id,
       claim: claim!.claim,
@@ -218,14 +219,16 @@ function runDefer(args: string[], output: OperationOutput, config: AgentEvidence
 }
 
 function runCheck(args: string[], output: OperationOutput, config: AgentEvidenceConfig): number {
-  const parsed = parseOptions(args, new Set(["--file"]));
+  const parsed = parseCheckOptions(args);
   if (!parsed) {
-    output.stderr += "Usage: agent evidence check [--file <path>]\n";
+    output.stderr += "Usage: agent evidence check [--require-required-claims] [--file <path>]\n";
     return 1;
   }
 
   const path = evidencePath(config, parsed.file);
-  const result = checkEvidenceFile(readEvidence(path));
+  const result = checkEvidenceFile(readEvidence(path), {
+    requireRequiredClaims: parsed.requireRequiredClaims
+  });
   if (result.ok) {
     output.stdout += "agent evidence check: ok\n";
     return 0;
@@ -272,6 +275,27 @@ function parseOptions(args: string[], allowed: Set<string>): { file?: string; va
   }
 
   return { file, values };
+}
+
+function parseCheckOptions(args: string[]): { file?: string; requireRequiredClaims: boolean } | undefined {
+  let file: string | undefined;
+  let requireRequiredClaims = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--require-required-claims") {
+      requireRequiredClaims = true;
+      continue;
+    }
+    if (arg === "--file") {
+      const value = args[index + 1];
+      if (!value) return undefined;
+      file = value;
+      index += 1;
+      continue;
+    }
+    return undefined;
+  }
+  return { file, requireRequiredClaims };
 }
 
 function evidencePath(config: AgentEvidenceConfig, overridePath: string | undefined): string {
@@ -330,7 +354,7 @@ function evidenceUsage(): string {
     "  agent evidence init --claim id:text [--claim id:text ...] [--file <path>]",
     "  agent evidence add --id <id> --green <evidence> [--artifact <path>] [--command <command>] [--file <path>]",
     "  agent evidence defer --id <id> --reason <reason> [--file <path>]",
-    "  agent evidence check [--file <path>]",
+    "  agent evidence check [--require-required-claims] [--file <path>]",
     ""
   ].join("\n");
 }

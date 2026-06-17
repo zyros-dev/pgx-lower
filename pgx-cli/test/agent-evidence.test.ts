@@ -78,7 +78,86 @@ describe("agent evidence", () => {
       );
       expect(exitCode).toBe(0);
       expect(output.stdout).toContain(".pgx-cli/evidence/current.json");
-      expect(readFileSync(join(root, ".pgx-cli/evidence/current.json"), "utf8")).toContain("bounded-output");
+      const evidence = JSON.parse(readFileSync(join(root, ".pgx-cli/evidence/current.json"), "utf8")) as {
+        requiredClaims?: string[];
+      };
+      expect(evidence.requiredClaims).toEqual(["bounded-output"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("init writes required claims for every initialized claim id", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const file = join(root, "evidence.json");
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand([
+        "evidence",
+        "init",
+        "--file",
+        file,
+        "--claim",
+        "review-gate:final review gate passed",
+        "--claim",
+        "strict-preflight:strict preflight passed"
+      ], output, { localProjectPath: root })).toBe(0);
+
+      const evidence = JSON.parse(readFileSync(file, "utf8")) as { requiredClaims?: string[] };
+      expect(evidence.requiredClaims).toEqual(["review-gate", "strict-preflight"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("check require-required-claims fails when the evidence file has no required claim contract", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const file = join(root, "evidence.json");
+      writeFileSync(file, `${JSON.stringify({
+        claims: [
+          {
+            id: "review-gate",
+            claim: "final review gate passed",
+            kind: "gate",
+            greenEvidence: "pgx-cli dev gate review passed"
+          }
+        ]
+      })}\n`);
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand([
+        "evidence",
+        "check",
+        "--file",
+        file,
+        "--require-required-claims"
+      ], output, { localProjectPath: root })).toBe(1);
+      expect(output.stderr).toContain("evidence requiredClaims missing");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("non-readiness check remains backward compatible without required claims", () => {
+    const root = mkdtempSync(join(tmpdir(), "pgx-evidence-"));
+    try {
+      const file = join(root, "evidence.json");
+      writeFileSync(file, `${JSON.stringify({
+        claims: [
+          {
+            id: "review-gate",
+            claim: "final review gate passed",
+            kind: "gate",
+            greenEvidence: "pgx-cli dev gate review passed"
+          }
+        ]
+      })}\n`);
+      const output = { stdout: "", stderr: "" };
+
+      expect(runAgentEvidenceCommand(["evidence", "check", "--file", file], output, { localProjectPath: root })).toBe(0);
+      expect(output.stdout).toContain("agent evidence check: ok");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -127,8 +206,10 @@ describe("agent evidence", () => {
       expect(runAgentEvidenceCommand(["evidence", "check", "--file", file], output, { localProjectPath: root })).toBe(0);
 
       const evidence = JSON.parse(readFileSync(file, "utf8")) as {
+        requiredClaims?: string[];
         claims: Array<{ id: string; greenEvidence?: string; artifact?: string; command?: string; deferredReason?: string }>;
       };
+      expect(evidence.requiredClaims).toEqual(["bounded-output", "hook-install"]);
       expect(evidence.claims).toEqual([
         {
           id: "bounded-output",

@@ -199,7 +199,7 @@ function evidenceCheck(config: PrReadyConfig, evidence: string): ReadyCheck {
       name: "evidence",
       ok: false,
       detail: `evidence file missing: ${displayPath(config, path)}`,
-      next: `pgx-cli agent evidence check --file ${evidence}`
+      next: readinessEvidenceCheckCommand(evidence)
     };
   }
 
@@ -210,16 +210,20 @@ function evidenceCheck(config: PrReadyConfig, evidence: string): ReadyCheck {
       name: "evidence",
       ok: result.ok,
       detail: result.ok ? `complete: ${displayPath(config, path)}` : result.messages.join("; "),
-      next: result.ok ? undefined : `pgx-cli agent evidence check --file ${evidence}`
+      next: result.ok ? undefined : readinessEvidenceCheckCommand(evidence)
     };
   } catch (error) {
     return {
       name: "evidence",
       ok: false,
       detail: `evidence file unreadable: ${error instanceof Error ? error.message : String(error)}`,
-      next: `pgx-cli agent evidence check --file ${evidence}`
+      next: readinessEvidenceCheckCommand(evidence)
     };
   }
+}
+
+function readinessEvidenceCheckCommand(evidence: string): string {
+  return `pgx-cli agent evidence check --require-required-claims --file ${evidence}`;
 }
 
 function reviewGateCheck(config: PrReadyConfig, reviewRun: string | undefined, currentHead: string): ReadyCheck {

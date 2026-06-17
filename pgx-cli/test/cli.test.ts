@@ -215,7 +215,7 @@ describe("runCli", () => {
     expect(io.stdout).toContain("pgx-cli rg [--source] [--lines N] [--glob G] <pattern> [path...]");
     expect(io.stdout).toContain("pgx-cli ir inspect latest [--head N|--tail N|--pattern P]");
     expect(io.stdout).toContain("pgx-cli agent evidence init --claim id:text");
-    expect(io.stdout).toContain("pgx-cli agent evidence check");
+    expect(io.stdout).toContain("pgx-cli agent evidence check [--require-required-claims] [--file <path>]");
     expect(io.stdout).toContain("tunnel");
     expect(io.stdout).toContain("doctor");
     expect(io.stdout).toContain("clion doctor");

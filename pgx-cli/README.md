@@ -72,7 +72,7 @@ pgx-cli queue flush
 pgx-cli thor shell --dangerous -- git status --short
 pgx-cli codex-policy check -- ssh comfy true
 pgx-cli codex-policy rules
-pgx-cli agent evidence check --file .pgx-cli/evidence/current.json
+pgx-cli agent evidence check --require-required-claims --file .pgx-cli/evidence/current.json
 pgx-cli pr ready --evidence .pgx-cli/evidence/current.json
 pgx-cli request feature make the compile gate easier to inspect
 pgx-cli request complaint thor command output is too noisy

@@ -194,6 +194,7 @@ describe("pr ready", () => {
 
       expect(exitCode).toBe(1);
       expect(output.stdout).toContain("fail evidence");
+      expect(output.stdout).toContain("pgx-cli agent evidence check --require-required-claims --file .pgx-cli/evidence/current.json");
       expect(output.stderr).toContain("evidence requiredClaims missing");
     });
   });
@@ -223,6 +224,7 @@ describe("pr ready", () => {
 
       expect(exitCode).toBe(1);
       expect(output.stdout).toContain("fail evidence");
+      expect(output.stdout).toContain("pgx-cli agent evidence check --require-required-claims --file .pgx-cli/evidence/current.json");
       expect(output.stderr).toContain("missing required evidence: strict-preflight");
     });
   });
