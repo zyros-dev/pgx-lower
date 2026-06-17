@@ -686,6 +686,43 @@ PGX_TEST_FN(query_analyzer_rejects_unsupported_agg_group_collation) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_accepts_agg_group_operator_for_child_target_type) {
+    auto aggValue = makeTypedConst(INT4OID);
+    auto aggTarget = TargetEntry{};
+    aggTarget.xpr.type = T_TargetEntry;
+    aggTarget.expr = reinterpret_cast<Expr*>(&aggValue);
+    aggTarget.resno = 1;
+    aggTarget.resjunk = false;
+
+    auto childValue = makeTypedConst(BPCHAROID);
+    auto childTarget = TargetEntry{};
+    childTarget.xpr.type = T_TargetEntry;
+    childTarget.expr = reinterpret_cast<Expr*>(&childValue);
+    childTarget.resno = 1;
+    childTarget.resjunk = false;
+
+    auto childScan = SeqScan{};
+    childScan.scan.plan.type = T_SeqScan;
+    childScan.scan.plan.targetlist = list_make1(&childTarget);
+    childScan.scan.scanrelid = 1;
+
+    auto agg = Agg{};
+    AttrNumber grpColIdx[1]{1};
+    Oid grpOperators[1]{BpcharEqualOperator};
+    Oid grpCollations[1]{InvalidOid};
+    agg.plan.type = T_Agg;
+    agg.plan.targetlist = list_make1(&aggTarget);
+    agg.plan.lefttree = reinterpret_cast<Plan*>(&childScan);
+    agg.numCols = 1;
+    agg.grpColIdx = grpColIdx;
+    agg.grpOperators = grpOperators;
+    agg.grpCollations = grpCollations;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&agg));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_agg_grouping_sets) {
     AggPlanFixture fixture;
     fixture.agg.groupingSets = list_make1_int(1);

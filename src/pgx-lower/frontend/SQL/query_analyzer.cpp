@@ -683,7 +683,8 @@ static auto analyzeAggMetadata(const Agg* agg, const std::string& location) -> A
                                         "unsupported aggregate grouping collation", itemLocation);
         }
 
-        const auto keyType = targetListEntryType(agg->plan.targetlist, agg->grpColIdx[index]);
+        const auto* groupingTargetList = agg->plan.lefttree ? agg->plan.lefttree->targetlist : agg->plan.targetlist;
+        const auto keyType = targetListEntryType(groupingTargetList, agg->grpColIdx[index]);
         if (keyType == InvalidOid) {
             result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
                                         "aggregate grouping key target metadata is missing", itemLocation);
