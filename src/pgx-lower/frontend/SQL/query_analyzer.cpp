@@ -667,6 +667,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_NestLoop:
     case T_MergeJoin:
     case T_HashJoin:
+        break;
     case T_Sort:
         mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location));
         break;

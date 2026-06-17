@@ -479,6 +479,24 @@ PGX_TEST_FN(query_analyzer_rejects_explicit_descending_nulls_last_sort) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_accepts_seq_scan_without_sort_metadata) {
+    auto value = makeIntConst();
+    auto target = TargetEntry{};
+    target.xpr.type = T_TargetEntry;
+    target.expr = reinterpret_cast<Expr*>(&value);
+    target.resno = 1;
+    target.resjunk = false;
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make1(&target);
+    scan.scan.scanrelid = 1;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_missing_target_expr_metadata) {
     auto target = TargetEntry{};
     target.xpr.type = T_TargetEntry;
