@@ -23,6 +23,9 @@ extern "C" {
 
 namespace {
 
+constexpr Oid Int4LessEqualOperator = 523;
+constexpr Oid Int4GreaterOperator = 521;
+
 auto makeIntConst() -> Const {
     auto value = Const{};
     value.xpr.type = T_Const;
@@ -425,6 +428,16 @@ PGX_TEST_FN(query_analyzer_rejects_missing_sort_column_metadata) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_rejects_missing_sort_nulls_first_metadata) {
+    SortPlanFixture fixture;
+    fixture.sort.nullsFirst = nullptr;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::missing_metadata);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_non_ordering_sort_operator) {
     SortPlanFixture fixture;
     fixture.sortOperators[0] = Int4EqualOperator;
@@ -432,6 +445,37 @@ PGX_TEST_FN(query_analyzer_rejects_non_ordering_sort_operator) {
     const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
     REQUIRE(!result.isSupported());
     REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_non_strict_sort_operator) {
+    SortPlanFixture fixture;
+    fixture.sortOperators[0] = Int4LessEqualOperator;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_explicit_ascending_nulls_first_sort) {
+    SortPlanFixture fixture;
+    fixture.nullsFirst[0] = true;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_explicit_descending_nulls_last_sort) {
+    SortPlanFixture fixture;
+    fixture.sortOperators[0] = Int4GreaterOperator;
+    fixture.nullsFirst[0] = false;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&fixture.sort));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_plan_node);
     PG_RETURN_VOID();
 }
 

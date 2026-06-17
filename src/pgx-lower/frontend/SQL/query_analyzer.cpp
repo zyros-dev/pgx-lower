@@ -311,6 +311,7 @@ static auto operatorCatalogMatches(const Oid operatorOid, const Oid resultType, 
 
 static constexpr const char* equalityOperatorNames[] = {"=", "<>"};
 static constexpr const char* orderingOperatorNames[] = {"<", "<=", ">", ">="};
+static constexpr const char* strictOrderingOperatorNames[] = {"<", ">"};
 static constexpr const char* arithmeticOperatorNames[] = {"+", "-", "*", "/"};
 static constexpr const char* likeOperatorNames[] = {"~~", "!~~"};
 
@@ -421,13 +422,32 @@ static auto sortOperatorMatchesTargetType(const Oid operatorOid, const Oid keyTy
     const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
     const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
                          && oper->oprresult == BOOLOID && oper->oprleft == keyType && oper->oprright == keyType
-                         && operatorNameMatchesAny(NameStr(oper->oprname), orderingOperatorNames,
-                                                   std::size(orderingOperatorNames))
+                         && operatorNameMatchesAny(NameStr(oper->oprname), strictOrderingOperatorNames,
+                                                   std::size(strictOrderingOperatorNames))
                          && operatorTypeSignatureMatchesAny(oper->oprresult, oper->oprleft, oper->oprright,
                                                             supportedOrderingOperatorSignatures,
                                                             std::size(supportedOrderingOperatorSignatures));
     ReleaseSysCache(tuple);
     return matches;
+}
+
+static auto sortOperatorDirection(const Oid operatorOid, bool& descending) -> bool {
+    const char* name = get_opname(operatorOid);
+    if (!name) {
+        return false;
+    }
+
+    const auto operatorName = std::string(name);
+    pfree(const_cast<char*>(name));
+    if (operatorName == "<") {
+        descending = false;
+        return true;
+    }
+    if (operatorName == ">") {
+        descending = true;
+        return true;
+    }
+    return false;
 }
 
 static auto scalarArrayOperatorSignatureIsLowerable(const Oid operatorOid, const Oid lhsType, const Oid rhsType) -> bool {
@@ -574,7 +594,7 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "sort node is null", location);
     }
     if (sort->numCols < 0
-        || (sort->numCols > 0 && (!sort->sortColIdx || !sort->sortOperators || !sort->collations)))
+        || (sort->numCols > 0 && (!sort->sortColIdx || !sort->sortOperators || !sort->collations || !sort->nullsFirst)))
     {
         return AnalyzerResult::unsupported(UnsupportedReasonKind::missing_metadata, "sort metadata is incomplete",
                                            location);
@@ -598,6 +618,20 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
                                         "unsupported sort operator OID "
                                             + std::to_string(sort->sortOperators[index]),
                                         itemLocation);
+            continue;
+        }
+
+        auto descending = false;
+        if (!sortOperatorDirection(sort->sortOperators[index], descending)) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
+                                        "unsupported sort operator OID "
+                                            + std::to_string(sort->sortOperators[index]),
+                                        itemLocation);
+            continue;
+        }
+        if (sort->nullsFirst[index] != descending) {
+            result.addUnsupportedReason(UnsupportedReasonKind::unsupported_plan_node,
+                                        "unsupported explicit sort null ordering", itemLocation);
         }
     }
     return supportedOrUnsupported(result);
