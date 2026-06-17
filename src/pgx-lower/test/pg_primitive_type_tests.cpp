@@ -114,7 +114,7 @@ PGX_TEST_FN(pg_primitive_type_metadata_and_carriers) {
     assertPgIdentity(mlir::db::PgNumericType::get(&f.ctx, kNumericTypmod), "!db.pg_numeric<typmod = 786438>",
                      NUMERICOID, kNumericTypmod, InvalidOid, mlir::db::PgNullability::Never, "i64");
     assertPgIdentity(mlir::db::PgDateType::get(&f.ctx), "!db.pg_date", DATEOID, kTypmodUnconstrained, InvalidOid,
-                     mlir::db::PgNullability::Never, "i64");
+                     mlir::db::PgNullability::Never, "i32");
     assertPgIdentity(mlir::db::PgTimestampType::get(&f.ctx, kTypmodUnconstrained), "!db.pg_timestamp<typmod = -1>",
                      TIMESTAMPOID, kTypmodUnconstrained, InvalidOid, mlir::db::PgNullability::Never, "i64");
     assertPgIdentity(mlir::db::PgIntervalType::get(&f.ctx, kTypmodUnconstrained), "!db.pg_interval<typmod = -1>",

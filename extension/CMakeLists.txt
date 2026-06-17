@@ -132,6 +132,7 @@ if(NOT BUILDING_UNIT_TESTS)
             61_interval_truthfulness
             62_string_support_boundary
             63_string_varlena_runtime
+            66_temporal_date_int4_arithmetic
 )
 
 

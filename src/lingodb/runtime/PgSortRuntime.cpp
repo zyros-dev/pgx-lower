@@ -136,9 +136,9 @@ void PgSortState::build_tuple_desc() {
 
     for (int32_t i = 0; i < spec->num_columns; i++) {
         uint32_t tuple_desc_oid = spec->columns[i].type_oid;
-        if (tuple_desc_oid == DATEOID || tuple_desc_oid == TIMESTAMPOID) {
+        if (tuple_desc_oid == TIMESTAMPOID) {
             tuple_desc_oid = INT8OID;
-            PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: Mapping datetime type_oid=%u to INT8OID for column '%s'",
+            PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: Mapping timestamp type_oid=%u to INT8OID for column '%s'",
                     spec->columns[i].type_oid, spec->columns[i].column_name);
         }
 

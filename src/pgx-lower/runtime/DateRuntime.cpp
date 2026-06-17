@@ -5,22 +5,7 @@
 extern "C" {
 #include "postgres.h"
 #include "utils/date.h"
-#include "utils/timestamp.h"
 #include "utils/datetime.h"
-#include "datatype/timestamp.h"
-}
-
-// Convert nanoseconds since PostgreSQL epoch (2000-01-01) to PostgreSQL DateADT (days since 2000-01-01)
-static inline DateADT nanosToPostgresDate(int64_t nanos) {
-    constexpr int64_t NANOS_PER_DAY = 86400000000000LL;
-    int64_t days = nanos / NANOS_PER_DAY;
-    return static_cast<DateADT>(days);
-}
-
-static inline int64_t postgresTimestampToNanos(Timestamp ts) {
-    constexpr int64_t POSTGRES_EPOCH_OFFSET_USEC = INT64CONST(946684800000000);
-    int64_t micros = ts + POSTGRES_EPOCH_OFFSET_USEC;
-    return micros * 1000;
 }
 
 int64_t runtime::DateRuntime::subtractMonths(int64_t, int64_t) {
@@ -39,13 +24,12 @@ int64_t runtime::DateRuntime::addMonths(int64_t, int64_t) {
     return 0;
 }
 
-int64_t runtime::DateRuntime::extractYear(int64_t nanos) {
-    PGX_LOG(RUNTIME, DEBUG, "extractYear called with nanos=%ld", nanos);
+int64_t runtime::DateRuntime::extractYear(int64_t date) {
+    PGX_LOG(RUNTIME, DEBUG, "extractYear called with date=%ld", date);
 
-    DateADT pg_date{nanosToPostgresDate(nanos)};
-    PGX_LOG(RUNTIME, DEBUG, "converted to pg_date=%d", pg_date);
+    const auto pg_date = static_cast<DateADT>(date);
 
-    int jd{pg_date + POSTGRES_EPOCH_JDATE};
+    const int jd{pg_date + POSTGRES_EPOCH_JDATE};
     PGX_LOG(RUNTIME, DEBUG, "julian date=%d", jd);
 
     int year{};
@@ -58,10 +42,10 @@ int64_t runtime::DateRuntime::extractYear(int64_t nanos) {
     return year;
 }
 
-int64_t runtime::DateRuntime::extractMonth(int64_t nanos) {
-    DateADT pg_date{nanosToPostgresDate(nanos)};
+int64_t runtime::DateRuntime::extractMonth(int64_t date) {
+    const auto pg_date = static_cast<DateADT>(date);
 
-    int jd{pg_date + POSTGRES_EPOCH_JDATE};
+    const int jd{pg_date + POSTGRES_EPOCH_JDATE};
     int year{};
     int month{};
     int day{};
@@ -70,10 +54,10 @@ int64_t runtime::DateRuntime::extractMonth(int64_t nanos) {
     return month;
 }
 
-int64_t runtime::DateRuntime::extractDay(int64_t nanos) {
-    DateADT pg_date{nanosToPostgresDate(nanos)};
+int64_t runtime::DateRuntime::extractDay(int64_t date) {
+    const auto pg_date = static_cast<DateADT>(date);
 
-    int jd{pg_date + POSTGRES_EPOCH_JDATE};
+    const int jd{pg_date + POSTGRES_EPOCH_JDATE};
     int year{};
     int month{};
     int day{};

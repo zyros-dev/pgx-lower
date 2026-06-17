@@ -634,6 +634,39 @@ PGX_TEST_FN(query_analyzer_accepts_interval_projection) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_date_int4_arithmetic) {
+    auto date = makeTypedConst(DATEOID);
+    auto int4 = makeTypedConst(INT4OID);
+    auto int8 = makeTypedConst(INT8OID);
+
+    auto datePlusInt4 = makeBinaryOperatorExpr("+", DATEOID, reinterpret_cast<Node*>(&date),
+                                               reinterpret_cast<Node*>(&int4));
+    REQUIRE(OidIsValid(datePlusInt4.opno));
+    REQUIRE(OidIsValid(datePlusInt4.opfuncid));
+    const auto plusInt4Result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&datePlusInt4));
+    REQUIRE(plusInt4Result.isSupported());
+
+    auto dateMinusInt4 = makeBinaryOperatorExpr("-", DATEOID, reinterpret_cast<Node*>(&date),
+                                                reinterpret_cast<Node*>(&int4));
+    REQUIRE(OidIsValid(dateMinusInt4.opno));
+    REQUIRE(OidIsValid(dateMinusInt4.opfuncid));
+    const auto minusInt4Result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&dateMinusInt4));
+    REQUIRE(minusInt4Result.isSupported());
+
+    auto datePlusInt8 = makeBinaryOperatorExpr("+", DATEOID, reinterpret_cast<Node*>(&date),
+                                               reinterpret_cast<Node*>(&int8));
+    const auto plusInt8Result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&datePlusInt8));
+    REQUIRE(!plusInt8Result.isSupported());
+    REQUIRE(plusInt8Result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+
+    auto dateMinusInt8 = makeBinaryOperatorExpr("-", DATEOID, reinterpret_cast<Node*>(&date),
+                                                reinterpret_cast<Node*>(&int8));
+    const auto minusInt8Result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&dateMinusInt8));
+    REQUIRE(!minusInt8Result.isSupported());
+    REQUIRE(minusInt8Result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_day_interval_date_arithmetic) {
     auto date = makeTypedConst(DATEOID);
     auto dayInterval = makeIntervalConst(0, 90, 0);

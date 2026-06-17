@@ -195,6 +195,7 @@ PGX_TEST_FN(ast_const_date) {
     auto* op = v.getDefiningOp();
     REQUIRE(op);
     REQUIRE(mlir::isa<mlir::db::ConstantOp>(op));
+    REQUIRE(mlir::isa<mlir::db::PgDateType>(v.getType()));
     requirePgIdentity(v.getType(), DATEOID, -1, InvalidOid, mlir::db::PgNullability::Never);
     PG_RETURN_VOID();
 }

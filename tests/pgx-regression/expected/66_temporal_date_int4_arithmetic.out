@@ -1,0 +1,37 @@
+LOAD 'pgx_lower.so';
+SET DateStyle = 'ISO, MDY';
+SET IntervalStyle = 'postgres';
+SET TimeZone = 'UTC';
+SET extra_float_digits = 0;
+CREATE TEMP TABLE temporal_date_int4_arithmetic(
+    id int4,
+    d date,
+    n int4
+);
+INSERT INTO temporal_date_int4_arithmetic VALUES
+    (1, date '2000-01-01', 7),
+    (2, date '1999-12-31', -1);
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_66_temporal_date_int4_arithmetic_pset */
+\pset format csv
+SET pgx_lower.execution_mode = 'auto';
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_66_temporal_date_int4_arithmetic_001 */
+SELECT id, d + 7 AS plus_const FROM temporal_date_int4_arithmetic ORDER BY id;
+id,plus_const
+1,2000-01-08
+2,2000-01-07
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_66_temporal_date_int4_arithmetic_002 */
+SELECT id, d - 7 AS minus_const FROM temporal_date_int4_arithmetic ORDER BY id;
+id,minus_const
+1,1999-12-25
+2,1999-12-24
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_66_temporal_date_int4_arithmetic_003 */
+SELECT id, d + n AS plus_column FROM temporal_date_int4_arithmetic ORDER BY id;
+id,plus_column
+1,2000-01-08
+2,1999-12-30
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_66_temporal_date_int4_arithmetic_004 */
+SELECT id, d - n AS minus_column FROM temporal_date_int4_arithmetic ORDER BY id;
+id,minus_column
+1,1999-12-25
+2,2000-01-01
+DROP TABLE temporal_date_int4_arithmetic;

@@ -17,7 +17,9 @@ size_t get_physical_size(uint32_t type_oid) {
     if (type_oid == INTERVALOID) {
         return sizeof(pgx_lower::runtime::PgIntervalValue);
     }
-    if (type_oid == DATEOID || type_oid == TIMESTAMPOID) {
+    if (type_oid == DATEOID) {
+        type_oid = INT4OID;
+    } else if (type_oid == TIMESTAMPOID) {
         type_oid = INT8OID;
     }
 
@@ -43,7 +45,9 @@ PhysicalType get_physical_type(uint32_t type_oid) {
     if (type_oid == INTERVALOID) {
         return PhysicalType::INTERVAL;
     }
-    if (type_oid == DATEOID || type_oid == TIMESTAMPOID) {
+    if (type_oid == DATEOID) {
+        type_oid = INT4OID;
+    } else if (type_oid == TIMESTAMPOID) {
         type_oid = INT8OID;
     }
 

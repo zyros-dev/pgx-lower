@@ -364,7 +364,8 @@ mlir::Type getPgPhysicalCarrierType(mlir::Type type) {
         .Case<PgInt8Type>([&](auto) { return mlir::IntegerType::get(context, 64); })
         .Case<PgFloat4Type>([&](auto) { return mlir::Float32Type::get(context); })
         .Case<PgFloat8Type>([&](auto) { return mlir::Float64Type::get(context); })
-        .Case<PgNumericType, PgDateType, PgTimestampType>([&](auto) { return mlir::IntegerType::get(context, 64); })
+        .Case<PgNumericType, PgTimestampType>([&](auto) { return mlir::IntegerType::get(context, 64); })
+        .Case<PgDateType>([&](auto) { return mlir::IntegerType::get(context, 32); })
         .Case<PgIntervalType>([&](auto) {
             return mlir::TupleType::get(context,
                                         {mlir::IntegerType::get(context, 64), mlir::IntegerType::get(context, 32),
