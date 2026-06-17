@@ -29,8 +29,9 @@ class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::
       mapping.map(higher.getPredicateArgument(), lower.getPredicateArgument());
       builder.setInsertionPointToEnd(&lower.getPredicateBlock());
       mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
-      ::mlir::Value combined = builder.create<mlir::db::AndOp>(higher->getLoc(),
-                                                               ValueRange{lowerPredVal, mapping.lookup(higherPredVal)});
+      llvm::SmallVector<::mlir::Value, 2> predicates{lowerPredVal, mapping.lookup(higherPredVal)};
+      ::mlir::Value combined = builder.create<mlir::db::AndOp>(
+          higher->getLoc(), mlir::db::inferLogicalResultType(higher->getContext(), predicates), predicates);
       builder.create<mlir::relalg::ReturnOp>(higher->getLoc(), combined);
       lowerTerminator->erase();
    }

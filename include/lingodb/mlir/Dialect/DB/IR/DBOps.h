@@ -19,6 +19,7 @@
 namespace mlir::db {
 PgNullability combineSqlNullability(mlir::ValueRange values);
 PgNullability combineSqlNullability(llvm::ArrayRef<mlir::Type> types);
+mlir::Type inferLogicalResultType(mlir::MLIRContext* context, mlir::ValueRange values);
 } // namespace mlir::db
 mlir::Type getBaseType(mlir::Type t);
 bool isIntegerType(mlir::Type, unsigned int width);

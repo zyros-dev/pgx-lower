@@ -239,7 +239,6 @@ auto PostgreSQLASTTranslator::Impl::normalize_bpchar_operands(const QueryCtxT& c
         }
         return -1;
     };
-
     auto pad_string_constant = [&](const mlir::Value val, const int target_length) -> mlir::Value {
         auto* defOp = val.getDefiningOp();
         if (!defOp || !mlir::isa<mlir::db::ConstantOp>(defOp)) {
@@ -510,6 +509,10 @@ struct SQLTypeInference {
         if (isPgStringType(left) || isPgStringType(right) || mlir::isa<mlir::db::StringType>(left)
             || mlir::isa<mlir::db::StringType>(right))
         {
+            if (mlir::isa<mlir::db::PgBpcharType>(left) || mlir::isa<mlir::db::PgBpcharType>(right)) {
+                return mlir::db::PgBpcharType::get(context, getPgTypmodOrUnconstrained(left, right),
+                                                   getPgCollationOrInvalid(left, right));
+            }
             return mlir::db::PgTextType::get(context, getPgCollationOrInvalid(left, right));
         }
         if (mlir::isa<mlir::db::PgTimestampType, mlir::db::TimestampType>(left)

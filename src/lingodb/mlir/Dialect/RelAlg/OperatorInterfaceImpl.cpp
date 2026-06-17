@@ -304,7 +304,9 @@ void mlir::relalg::detail::addPredicate(::mlir::Operation* op, std::function<::m
    auto additionalPred = predicateProducer(lambdaOperator.getPredicateArgument(), builder);
    if (terminator->getNumOperands() > 0) {
       ::mlir::Value oldValue = terminator->getOperand(0);
-      ::mlir::Value anded = builder.create<mlir::db::AndOp>(op->getLoc(), ::mlir::ValueRange({oldValue, additionalPred}));
+      llvm::SmallVector<::mlir::Value, 2> predicates{oldValue, additionalPred};
+      ::mlir::Value anded = builder.create<mlir::db::AndOp>(
+          op->getLoc(), mlir::db::inferLogicalResultType(op->getContext(), predicates), predicates);
       builder.create<mlir::relalg::ReturnOp>(op->getLoc(), anded);
    } else {
       builder.create<mlir::relalg::ReturnOp>(op->getLoc(), additionalPred);

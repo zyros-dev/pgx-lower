@@ -494,6 +494,10 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
        auto rightOperand = unwrapNullableOperand(rewriter, cmpOp->getLoc(), adaptor.getRight());
        Value left = leftOperand.payload;
        Value right = rightOperand.payload;
+       if (mlir::isa<mlir::db::PgBpcharType>(type)) {
+           left = rt::StringRuntime::rtrim(rewriter, cmpOp->getLoc())({left})[0];
+           right = rt::StringRuntime::rtrim(rewriter, cmpOp->getLoc())({right})[0];
+       }
        switch (cmpOp.getPredicate()) {
        case db::DBCmpPredicate::eq:
            res = rt::StringRuntime::compareEq(rewriter, cmpOp->getLoc())({left, right})[0];

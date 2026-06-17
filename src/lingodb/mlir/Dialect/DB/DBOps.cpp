@@ -31,11 +31,14 @@ static Type wrapNullableType(MLIRContext* context, Type type, ValueRange values)
    }
    return type;
 }
-static Type inferLegacyLogicalResultType(MLIRContext* context, ValueRange values) {
+Type mlir::db::inferLogicalResultType(MLIRContext* context, ValueRange values) {
     if (hasPgValue(values)) {
         return mlir::db::PgBoolType::get(context, mlir::db::combineSqlNullability(values));
     }
     return wrapNullableType(context, IntegerType::get(context, 1), values);
+}
+static Type inferLegacyLogicalResultType(MLIRContext* context, ValueRange values) {
+    return mlir::db::inferLogicalResultType(context, values);
 }
 mlir::Type getBaseType(mlir::Type t) {
    if (auto nullableT = t.dyn_cast_or_null<mlir::db::NullableType>()) {

@@ -10,6 +10,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
 #include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
 #include "lingodb/mlir/Dialect/DB/Passes.h"
 #include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
@@ -160,6 +161,57 @@ PGX_TEST_FN(pg_nullability_combinators) {
     auto* block = fn.addEntryBlock();
     llvm::SmallVector<mlir::Value> values{block->getArgument(0), block->getArgument(1)};
     REQUIRE(mlir::db::combineSqlNullability(mlir::ValueRange(values)) == mlir::db::PgNullability::Maybe);
+
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(pg_logical_result_type_uses_pg_bool_for_pg_operands) {
+    Fixture f;
+
+    auto pgBool = mlir::db::PgBoolType::get(&f.ctx);
+    auto nullablePgBool = mlir::db::PgBoolType::get(&f.ctx, mlir::db::PgNullability::Maybe);
+    auto legacyNullableBool = mlir::db::NullableType::get(&f.ctx, f.builder.getI1Type());
+    auto module = mlir::ModuleOp::create(f.builder.getUnknownLoc());
+    f.builder.setInsertionPointToStart(module.getBody());
+    auto fn = f.builder.create<mlir::func::FuncOp>(
+        f.builder.getUnknownLoc(), "logical_result_types",
+        f.builder.getFunctionType({pgBool, nullablePgBool, f.builder.getI1Type(), legacyNullableBool}, {}));
+    auto* block = fn.addEntryBlock();
+
+    llvm::SmallVector<mlir::Value, 2> pgValues{block->getArgument(0), block->getArgument(1)};
+    REQUIRE(mlir::db::inferLogicalResultType(&f.ctx, pgValues) == nullablePgBool);
+
+    llvm::SmallVector<mlir::Value, 2> legacyNullableValues{block->getArgument(2), block->getArgument(3)};
+    REQUIRE(mlir::db::inferLogicalResultType(&f.ctx, legacyNullableValues) == legacyNullableBool);
+
+    llvm::SmallVector<mlir::Value, 1> legacyValues{block->getArgument(2)};
+    REQUIRE(mlir::db::inferLogicalResultType(&f.ctx, legacyValues) == f.builder.getI1Type());
+
+    llvm::SmallVector<mlir::Value, 2> mixedValues{block->getArgument(2), block->getArgument(1)};
+    REQUIRE(mlir::db::inferLogicalResultType(&f.ctx, mixedValues) == nullablePgBool);
+
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(pg_hash_join_key_type_uses_common_pg_nullability) {
+    Fixture f;
+
+    auto pgInt4 = mlir::db::PgInt4Type::get(&f.ctx);
+    auto nullablePgInt4 = mlir::db::PgInt4Type::get(&f.ctx, mlir::db::PgNullability::Maybe);
+    auto module = mlir::ModuleOp::create(f.builder.getUnknownLoc());
+    f.builder.setInsertionPointToStart(module.getBody());
+    auto fn = f.builder.create<mlir::func::FuncOp>(
+        f.builder.getUnknownLoc(), "hash_join_key_types",
+        f.builder.getFunctionType({pgInt4, nullablePgInt4, f.builder.getI32Type()}, {}));
+    auto* block = fn.addEntryBlock();
+
+    REQUIRE(mlir::relalg::HashJoinUtils::commonHashKeyType(block->getArgument(0), block->getArgument(0)) == pgInt4);
+    REQUIRE(mlir::relalg::HashJoinUtils::commonHashKeyType(block->getArgument(0), block->getArgument(1))
+            == nullablePgInt4);
+    REQUIRE(mlir::relalg::HashJoinUtils::commonHashKeyType(block->getArgument(1), block->getArgument(0))
+            == nullablePgInt4);
+    REQUIRE(mlir::relalg::HashJoinUtils::commonHashKeyType(block->getArgument(0), block->getArgument(2))
+            == block->getArgument(2).getType());
 
     PG_RETURN_VOID();
 }

@@ -726,11 +726,12 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
 
     switch (nodeTag(plan)) {
     case T_SeqScan:
+    case T_IndexScan:
     case T_NestLoop:
     case T_MergeJoin:
     case T_HashJoin: break;
     case T_Sort: mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location)); break;
-    case T_Limit:
+    case T_Limit: break;
     case T_Agg: mergeAnalyzerResult(result, analyzeAggMetadata(reinterpret_cast<const Agg*>(plan), location)); break;
     case T_Material:
     case T_Hash: break;

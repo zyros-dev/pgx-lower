@@ -87,10 +87,12 @@ class DecomposeLambdas : public ::mlir::PassWrapper<DecomposeLambdas, ::mlir::Op
                if (c1.size() == 1) {
                   c2.push_back(c1[0]);
                } else {
-                  c2.push_back(builder.create<mlir::db::AndOp>(orOp->getLoc(), c1));
+                   c2.push_back(builder.create<mlir::db::AndOp>(
+                       orOp->getLoc(), mlir::db::inferLogicalResultType(orOp->getContext(), c1), c1));
                }
             }
-            ::mlir::Value ored = builder.create<mlir::db::OrOp>(orOp->getLoc(), c2);
+            ::mlir::Value ored = builder.create<mlir::db::OrOp>(
+                orOp->getLoc(), mlir::db::inferLogicalResultType(orOp->getContext(), c2), c2);
             builder.create<mlir::relalg::ReturnOp>(currentSel->getLoc(), ored);
             terminator->erase();
          }
@@ -157,7 +159,8 @@ class DecomposeLambdas : public ::mlir::PassWrapper<DecomposeLambdas, ::mlir::Op
             }
          }
          OpBuilder builder(andop);
-         auto newAndOp = builder.create<mlir::db::AndOp>(andop->getLoc(), vals);
+         auto newAndOp = builder.create<mlir::db::AndOp>(
+             andop->getLoc(), mlir::db::inferLogicalResultType(andop->getContext(), vals), vals);
          andop->remove();
          andop->dropAllReferences();
          return newAndOp;
@@ -242,4 +245,3 @@ namespace relalg {
 std::unique_ptr<mlir::Pass> createDecomposeLambdasPass() { return std::make_unique<DecomposeLambdas>(); }
 } // end namespace relalg
 } // end namespace mlir
-

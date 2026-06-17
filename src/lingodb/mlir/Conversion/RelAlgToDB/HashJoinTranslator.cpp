@@ -2,6 +2,31 @@
 #include <lingodb/mlir/Dialect/DSA/IR/DSAOps.h>
 
 using namespace ::mlir::relalg;
+
+static ::mlir::Value
+adaptHashKeyValue(::mlir::OpBuilder& builder, ::mlir::Location loc, ::mlir::Value value, ::mlir::Type targetType) {
+    ::mlir::Type valueType = value.getType();
+    if (valueType == targetType) {
+        return value;
+    }
+    if (mlir::db::isPgValueType(valueType) && mlir::db::isPgValueType(targetType)
+        && mlir::db::getPgNullability(valueType) == mlir::db::PgNullability::Never
+        && mlir::db::withPgNullability(valueType, mlir::db::PgNullability::Maybe) == targetType)
+    {
+        return builder.create<mlir::db::AsNullableOp>(loc, targetType, value);
+    }
+    return value;
+}
+
+static ::mlir::Value packHashKey(::mlir::OpBuilder& builder, ::mlir::Location loc, mlir::TupleType keyTupleType,
+                                 std::vector<::mlir::Value> values) {
+    auto targetTypes = keyTupleType.getTypes();
+    for (size_t i = 0; i < values.size() && i < targetTypes.size(); ++i) {
+        values[i] = adaptHashKeyValue(builder, loc, values[i], targetTypes[i]);
+    }
+    return builder.create<mlir::util::PackOp>(loc, keyTupleType, values);
+}
+
 void HashJoinTranslator::setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) {
    this->consumer = consumer;
    this->requiredAttributes = requiredAttributes;
@@ -15,13 +40,13 @@ void HashJoinTranslator::setInfo(mlir::relalg::Translator* consumer, mlir::relal
    this->rightKeys = rightKeys;
    auto leftValues = availableLeft.intersect(this->requiredAttributes);
    for (size_t i = 0; i < canSave.size(); i++) {
-      if (canSave[i]) {
-         auto& x = leftKeyAttributes[i];
-         leftValues.remove(x);
-         orderedKeys.insert(*x.begin());
-      } else {
-         orderedKeys.insert(nullptr, keyTypes[i]);
-      }
+       if (canSave[i] && leftKeyAttributes[i].size() == 1 && (*leftKeyAttributes[i].begin())->type == keyTypes[i]) {
+           auto& x = leftKeyAttributes[i];
+           leftValues.remove(x);
+           orderedKeys.insert(*x.begin());
+       } else {
+           orderedKeys.insert(nullptr, keyTypes[i]);
+       }
    }
    this->orderedValues = mlir::relalg::OrderedAttributes::fromColumns(leftValues);
    keyTupleType = orderedKeys.getTupleType(op.getContext());
@@ -73,7 +98,7 @@ void HashJoinTranslator::consume(mlir::relalg::Translator* child, ::mlir::OpBuil
    auto scope = context.createScope();
    if (child == builderChild) {
       auto inlinedKeys = mlir::relalg::HashJoinUtils::inlineKeys(&joinOp->getRegion(0).front(), leftKeys, rightKeys, builder.getInsertionBlock(), builder.getInsertionPoint(), context);
-      ::mlir::Value packedKey = builder.create<mlir::util::PackOp>(loc, inlinedKeys);
+      ::mlir::Value packedKey = packHashKey(builder, loc, keyTupleType, inlinedKeys);
       auto const0 = builder.create<mlir::arith::ConstantOp>(loc, builder.getI64Type(), builder.getI64IntegerAttr(0));
       ::mlir::Value packedValues = orderedValues.pack(context, builder, loc, impl->markable ? std::vector<Value>{const0} : std::vector<Value>());
       auto insertOp = builder.create<mlir::dsa::HashtableInsert>(loc, joinHashtable, packedKey, packedValues);
@@ -89,7 +114,10 @@ void HashJoinTranslator::consume(mlir::relalg::Translator* child, ::mlir::OpBuil
    } else if (child == this->children[1].get()) {
       mlir::TupleType entryAndValuePtrType = mlir::TupleType::get(ctxt, TypeRange{entryType, util::RefType::get(ctxt, valTupleType)});
       Type iteratorType = impl->markable ? entryAndValuePtrType : entryType;
-      auto packedKey = builder.create<mlir::util::PackOp>(loc, mlir::relalg::HashJoinUtils::inlineKeys(&joinOp->getRegion(0).front(), rightKeys, leftKeys, builder.getInsertionBlock(), builder.getInsertionPoint(), context));
+      auto packedKey = packHashKey(builder, loc, keyTupleType,
+                                   mlir::relalg::HashJoinUtils::inlineKeys(&joinOp->getRegion(0).front(), rightKeys,
+                                                                           leftKeys, builder.getInsertionBlock(),
+                                                                           builder.getInsertionPoint(), context));
       ::mlir::Type htIterable = mlir::dsa::GenericIterableType::get(ctxt, iteratorType, impl->markable ? "join_ht_mod_iterator" : "join_ht_iterator");
       impl->beforeLookup(context, builder);
       ::mlir::Value hash = builder.create<mlir::db::Hash>(loc, builder.getIndexType(), packedKey);

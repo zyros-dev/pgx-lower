@@ -14,6 +14,21 @@
 namespace mlir::relalg {
 class HashJoinUtils {
    public:
+   static ::mlir::Type commonHashKeyType(::mlir::Value left, ::mlir::Value right) {
+      ::mlir::Type leftType = left.getType();
+      ::mlir::Type rightType = right.getType();
+      if (leftType == rightType) {
+         return rightType;
+      }
+      if (mlir::db::isPgValueType(leftType) && mlir::db::isPgValueType(rightType) &&
+          mlir::db::withPgNullability(leftType, mlir::db::PgNullability::Never) ==
+              mlir::db::withPgNullability(rightType, mlir::db::PgNullability::Never)) {
+         llvm::SmallVector<::mlir::Type, 2> keyTypes{leftType, rightType};
+         return mlir::db::withPgNullability(leftType, mlir::db::combineSqlNullability(keyTypes));
+      }
+      return rightType;
+   }
+
    static std::tuple<mlir::relalg::ColumnSet, mlir::relalg::ColumnSet, std::vector<::mlir::Type>, std::vector<ColumnSet>, std::vector<bool>> analyzeHJPred(::mlir::Block* block, mlir::relalg::ColumnSet availableLeft, mlir::relalg::ColumnSet availableRight) {
       llvm::DenseMap<::mlir::Value, mlir::relalg::ColumnSet> required;
       llvm::DenseSet<::mlir::Value> pureAttribute;
@@ -35,14 +50,14 @@ class HashJoinUtils {
                   rightKeys.insert(rightAttributes);
                   leftKeyAttributes.push_back(leftAttributes);
                   canSave.push_back(pureAttribute.contains(cmpOp.getLeft()));
-                  types.push_back(cmpOp.getRight().getType());
+                  types.push_back(commonHashKeyType(cmpOp.getLeft(), cmpOp.getRight()));
 
                } else if (leftAttributes.isSubsetOf(availableRight) && rightAttributes.isSubsetOf(availableLeft)) {
                   leftKeys.insert(rightAttributes);
                   rightKeys.insert(leftAttributes);
                   leftKeyAttributes.push_back(rightAttributes);
                   canSave.push_back(pureAttribute.contains(cmpOp.getRight()));
-                  types.push_back(cmpOp.getRight().getType());
+                  types.push_back(commonHashKeyType(cmpOp.getLeft(), cmpOp.getRight()));
                }
             }
          } else {
