@@ -8,6 +8,7 @@ extern "C" {
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
 #include "nodes/nodeFuncs.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/timestamp.h"
@@ -69,6 +70,12 @@ auto makeTypedConst(Oid typeOid, int32_t typmod = -1, Oid collation = InvalidOid
     value.constbyval = false;
     value.constlen = -1;
     value.constvalue = Datum{0};
+    return value;
+}
+
+auto makeTextConst(const char* text) -> Const {
+    auto value = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    value.constvalue = CStringGetTextDatum(text);
     return value;
 }
 
@@ -668,7 +675,25 @@ PGX_TEST_FN(query_analyzer_date_int4_arithmetic) {
 }
 
 PGX_TEST_FN(query_analyzer_accepts_extract_from_date) {
-    auto field = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    for (const char* fieldName : {"year", "month", "day"}) {
+        auto field = makeTextConst(fieldName);
+        auto date = makeTypedConst(DATEOID);
+        auto extract = FuncExpr{};
+        extract.xpr.type = T_FuncExpr;
+        extract.funcid = F_EXTRACT_TEXT_DATE;
+        extract.funcresulttype = NUMERICOID;
+        extract.inputcollid = DEFAULT_COLLATION_OID;
+        extract.funccollid = InvalidOid;
+        extract.args = list_make2(&field, &date);
+
+        const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&extract));
+        REQUIRE(result.isSupported());
+    }
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_unsupported_extract_field_from_date) {
+    auto field = makeTextConst("quarter");
     auto date = makeTypedConst(DATEOID);
     auto extract = FuncExpr{};
     extract.xpr.type = T_FuncExpr;
@@ -679,7 +704,8 @@ PGX_TEST_FN(query_analyzer_accepts_extract_from_date) {
     extract.args = list_make2(&field, &date);
 
     const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&extract));
-    REQUIRE(result.isSupported());
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
     PG_RETURN_VOID();
 }
 

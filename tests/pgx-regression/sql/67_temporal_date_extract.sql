@@ -13,7 +13,8 @@ INSERT INTO temporal_date_extract VALUES
     (1, date '2000-01-01'),
     (2, date '1999-12-31'),
     (3, date '2000-01-31'),
-    (4, NULL);
+    (4, NULL),
+    (5, date '2000-04-30');
 
 /* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_67_temporal_date_extract_pset */
 \pset format csv
@@ -32,6 +33,11 @@ SELECT id, extract(year from date '2000-01-31') AS extract_year,
        extract(day from date '2000-01-31') AS extract_day
 FROM temporal_date_extract
 WHERE id = 1;
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_67_temporal_date_extract_unsupported_field */
+SELECT id, extract(quarter from d) AS extract_quarter
+FROM temporal_date_extract
+ORDER BY id;
 
 SET pgx_lower.execution_mode = 'force_lower';
 

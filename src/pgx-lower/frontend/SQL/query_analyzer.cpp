@@ -18,6 +18,8 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/print.h"
+#include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/timestamp.h"
 
@@ -27,6 +29,7 @@ extern Oid g_jit_table_oid;
 #endif
 
 #include <algorithm>
+#include <cstring>
 #include <iterator>
 #include <set>
 
@@ -543,8 +546,13 @@ static constexpr PgFunctionSignature supportedScalarFunctions[] = {
     {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {INT4OID, InvalidOid, InvalidOid}},
     {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"float8", PROKIND_FUNCTION, FLOAT8OID, 1, {FLOAT4OID, InvalidOid, InvalidOid}},
-    {"extract", PROKIND_FUNCTION, NUMERICOID, 2, {TEXTOID, DATEOID, InvalidOid}},
 };
+
+static constexpr PgFunctionSignature supportedDateExtractFunction = {"extract",
+                                                                     PROKIND_FUNCTION,
+                                                                     NUMERICOID,
+                                                                     2,
+                                                                     {TEXTOID, DATEOID, InvalidOid}};
 
 static constexpr PgFunctionSignature supportedAggregates[] = {
     {"count", PROKIND_AGGREGATE, INT8OID, 0, {InvalidOid, InvalidOid, InvalidOid}},
@@ -603,6 +611,40 @@ static auto exprArgumentType(const List* expressions, const int index) -> Oid {
     }
     const auto* expr = static_cast<const Node*>(lfirst(list_nth_cell(expressions, index)));
     return expr ? exprType(const_cast<Node*>(expr)) : InvalidOid;
+}
+
+static auto textConstEquals(const Node* expr, const char* expected) -> bool {
+    if (!expr || nodeTag(expr) != T_Const) {
+        return false;
+    }
+    const auto* constExpr = reinterpret_cast<const Const*>(expr);
+    if (constExpr->constisnull || constExpr->consttype != TEXTOID) {
+        return false;
+    }
+
+    const auto rawDatum = DatumGetPointer(constExpr->constvalue);
+    auto* textValue = DatumGetTextPP(constExpr->constvalue);
+    const auto expectedLen = std::strlen(expected);
+    const auto actualLen = static_cast<size_t>(VARSIZE_ANY_EXHDR(textValue));
+    const auto matches = actualLen == expectedLen && std::strncmp(VARDATA_ANY(textValue), expected, actualLen) == 0;
+    if (reinterpret_cast<Pointer>(textValue) != rawDatum) {
+        pfree(textValue);
+    }
+    return matches;
+}
+
+static auto dateExtractFieldIsSupported(const FuncExpr* func) -> bool {
+    if (!func || !func->args || list_length(func->args) != 2) {
+        return false;
+    }
+    const auto* field = static_cast<const Node*>(lfirst(list_nth_cell(func->args, 0)));
+    return textConstEquals(field, "year") || textConstEquals(field, "month") || textConstEquals(field, "day");
+}
+
+static auto dateExtractSignatureMatches(const FuncExpr* func) -> bool {
+    return func != nullptr && func->funcid == F_EXTRACT_TEXT_DATE
+           && func->funcresulttype == supportedDateExtractFunction.resultType
+           && expressionListMatchesSignature(func->args, supportedDateExtractFunction);
 }
 
 static auto operatorName(const Oid operatorOid) -> std::string {
@@ -1611,6 +1653,9 @@ auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
 }
 
 auto QueryAnalyzer::isFunctionSupported(const FuncExpr* func) -> bool {
+    if (dateExtractSignatureMatches(func)) {
+        return dateExtractFieldIsSupported(func);
+    }
     return functionExprMatchesAny(func, supportedScalarFunctions, std::size(supportedScalarFunctions));
 }
 
