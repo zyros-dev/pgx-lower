@@ -609,14 +609,13 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
 
         const auto keyType = sortTargetType(sort->plan.targetlist, sort->sortColIdx[index]);
         if (keyType == InvalidOid) {
-            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata,
-                                        "sort key target metadata is missing", itemLocation);
+            result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "sort key target metadata is missing",
+                                        itemLocation);
             continue;
         }
         if (!sortOperatorMatchesTargetType(sort->sortOperators[index], keyType)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
-                                        "unsupported sort operator OID "
-                                            + std::to_string(sort->sortOperators[index]),
+                                        "unsupported sort operator OID " + std::to_string(sort->sortOperators[index]),
                                         itemLocation);
             continue;
         }
@@ -624,8 +623,7 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
         auto descending = false;
         if (!sortOperatorDirection(sort->sortOperators[index], descending)) {
             result.addUnsupportedReason(UnsupportedReasonKind::unsupported_operator,
-                                        "unsupported sort operator OID "
-                                            + std::to_string(sort->sortOperators[index]),
+                                        "unsupported sort operator OID " + std::to_string(sort->sortOperators[index]),
                                         itemLocation);
             continue;
         }
@@ -666,11 +664,8 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan, std::string location) -> Analy
     case T_SeqScan:
     case T_NestLoop:
     case T_MergeJoin:
-    case T_HashJoin:
-        break;
-    case T_Sort:
-        mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location));
-        break;
+    case T_HashJoin: break;
+    case T_Sort: mergeAnalyzerResult(result, analyzeSortMetadata(reinterpret_cast<const Sort*>(plan), location)); break;
     case T_Limit:
     case T_Agg:
     case T_Material:
