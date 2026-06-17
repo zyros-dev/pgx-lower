@@ -105,7 +105,7 @@ WHERE o_id = i_order_id
   AND i_shipmode IN ('MAIL', 'SHIP')
 GROUP BY i_shipmode
 ORDER BY i_shipmode;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported sorted aggregate over joined input at Plan
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.lefttree.lefttree.qual[0].right
  i_shipmode | cnt 
 ------------+-----
  MAIL       |   1

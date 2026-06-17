@@ -184,7 +184,7 @@ where
         and l_shipdate >= date '1995-09-01'
         and l_shipdate < date '1995-10-01';
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_39_tpch_minimal_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_39_tpch_minimal_002 */
 with revenue as (
     select
         l_suppkey as supplier_no,
@@ -235,7 +235,7 @@ where
         l_partkey = p_partkey
 );
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_39_tpch_minimal_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_39_tpch_minimal_004 */
 select
     sum(l_extendedprice* (1 - l_discount)) as revenue
 from

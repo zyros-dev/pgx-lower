@@ -170,7 +170,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported 
               
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_39_tpch_minimal_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_39_tpch_minimal_002 */
 with revenue as (
     select
         l_suppkey as supplier_no,
@@ -230,7 +230,7 @@ where
            
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_39_tpch_minimal_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_39_tpch_minimal_004 */
 select
     sum(l_extendedprice* (1 - l_discount)) as revenue
 from
