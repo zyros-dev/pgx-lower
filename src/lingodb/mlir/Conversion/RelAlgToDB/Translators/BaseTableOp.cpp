@@ -135,7 +135,10 @@ class BaseTableTranslator : public mlir::relalg::Translator {
             auto value = afterBuilder.create<mlir::db::PgRowGetOp>(baseTableOp->getLoc(), row, field.field.getIndex());
             context.setValueForAttribute(scope, field.column, value.getResult());
         }
+        auto previousPgRow = context.currentPgRow;
+        context.currentPgRow = row;
         consumer->consume(this, afterBuilder, context);
+        context.currentPgRow = previousPgRow;
         afterBuilder.create<mlir::scf::YieldOp>(baseTableOp->getLoc(), mlir::ValueRange{row});
 
         builder.setInsertionPointAfter(whileOp);

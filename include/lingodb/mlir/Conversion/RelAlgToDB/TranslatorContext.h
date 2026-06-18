@@ -38,6 +38,7 @@ class TranslatorContext {
       return AttributeResolverScope(symbolTable);
    }
    std::unordered_map<size_t, ::mlir::Value> builders;
+   ::mlir::Value currentPgRow;
 
    std::unordered_map<::mlir::Operation*, std::pair<::mlir::Value, std::vector<const mlir::relalg::Column*>>> materializedTmp;
 };

@@ -77,7 +77,11 @@ class MaterializeTranslator : public mlir::relalg::Translator {
    }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp::consume called");
-      
+
+      if (context.currentPgRow) {
+          builder.create<mlir::db::PgEmitRowOp>(materializeOp->getLoc(), context.currentPgRow);
+      }
+
       if (materializeOp.getCols().empty()) {
          builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
          return;

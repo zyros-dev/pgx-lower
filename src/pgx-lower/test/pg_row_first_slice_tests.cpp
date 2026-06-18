@@ -60,6 +60,7 @@ PGX_TEST_FN(pg_row_first_slice_ir_uses_row_ops) {
     const auto mlir = tester->getCurrentMLIR();
 
     requireContains(mlir, "db.pg_row_get");
+    requireContains(mlir, "db.pg_emit_row");
     requireContains(mlir, "#db.pg_row_schema");
     requireContains(mlir, "!db.pg_row");
     requireNotContains(mlir, "dsa.scan_source");

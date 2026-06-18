@@ -1718,6 +1718,45 @@ PGX_TEST_FN(query_analyzer_row_first_slice_surface) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_row_first_slice_nullable_predicate_surface) {
+    auto idTargetVar = makeTypedVar(INT8OID, 1);
+    idTargetVar.varno = 1;
+    auto payloadFilterVar = makeTypedVar(INT4OID, 2);
+    payloadFilterVar.varno = 1;
+    auto idFilterVar = makeTypedVar(INT8OID, 1);
+    idFilterVar.varno = 1;
+    auto idValue = makeTypedConst(INT8OID);
+    auto idEquals = makeBinaryOperatorExpr("=", BOOLOID, reinterpret_cast<Node*>(&idFilterVar),
+                                           reinterpret_cast<Node*>(&idValue));
+
+    auto payloadIsNotNull = NullTest{};
+    payloadIsNotNull.xpr.type = T_NullTest;
+    payloadIsNotNull.arg = reinterpret_cast<Expr*>(&payloadFilterVar);
+    payloadIsNotNull.nulltesttype = IS_NOT_NULL;
+    payloadIsNotNull.argisrow = false;
+
+    auto filter = BoolExpr{};
+    filter.xpr.type = T_BoolExpr;
+    filter.boolop = AND_EXPR;
+    filter.args = list_make2(&payloadIsNotNull, &idEquals);
+
+    auto idTarget = TargetEntry{};
+    idTarget.xpr.type = T_TargetEntry;
+    idTarget.expr = reinterpret_cast<Expr*>(&idTargetVar);
+    idTarget.resno = 1;
+    idTarget.resjunk = false;
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make1(&idTarget);
+    scan.scan.plan.qual = list_make1(&filter);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::row);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_row_first_slice_legacy_for_supported_ineligible_plan) {
     auto value = makeIntConst();
     auto target = TargetEntry{};

@@ -713,6 +713,16 @@ class PgRowGetLowering : public OpConversionPattern<mlir::db::PgRowGetOp> {
     }
 };
 
+class PgEmitRowLowering : public OpConversionPattern<mlir::db::PgEmitRowOp> {
+   public:
+    using OpConversionPattern<mlir::db::PgEmitRowOp>::OpConversionPattern;
+    LogicalResult
+    matchAndRewrite(mlir::db::PgEmitRowOp emitRowOp, OpAdaptor, ConversionPatternRewriter& rewriter) const override {
+        rewriter.eraseOp(emitRowOp);
+        return success();
+    }
+};
+
 class NotOpLowering : public OpConversionPattern<mlir::db::NotOp> {
    public:
     using OpConversionPattern<mlir::db::NotOp>::OpConversionPattern;
@@ -2152,6 +2162,7 @@ void DBToStdLoweringPass::runOnOperation() {
    patterns.insert<StringCmpOpLowering>(typeConverter, ctxt);
    patterns.insert<StringCastOpLowering>(typeConverter, ctxt);
    patterns.insert<PgRowGetLowering>(typeConverter, ctxt);
+   patterns.insert<PgEmitRowLowering>(typeConverter, ctxt);
    patterns.insert<RuntimeCallLowering>(typeConverter, ctxt);
    patterns.insert<CmpOpLowering>(typeConverter, ctxt);
    patterns.insert<BetweenLowering>(typeConverter, ctxt);

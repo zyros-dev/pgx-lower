@@ -1031,6 +1031,11 @@ static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
         }
         return true;
     }
+    case T_NullTest: {
+        const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
+        return nullTest != nullptr && !nullTest->argisrow
+               && rowFirstSliceScalarIsSupported(reinterpret_cast<const Node*>(nullTest->arg));
+    }
     default: return false;
     }
 }
