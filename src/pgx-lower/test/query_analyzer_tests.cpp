@@ -1757,6 +1757,32 @@ PGX_TEST_FN(query_analyzer_row_first_slice_nullable_predicate_surface) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_row_first_slice_rejects_not_equal_predicate) {
+    auto idTargetVar = makeTypedVar(INT8OID, 1);
+    idTargetVar.varno = 1;
+    auto idFilterVar = makeTypedVar(INT8OID, 1);
+    idFilterVar.varno = 1;
+    auto idValue = makeTypedConst(INT8OID);
+    auto notEquals = makeBinaryOperatorExpr("<>", BOOLOID, reinterpret_cast<Node*>(&idFilterVar),
+                                            reinterpret_cast<Node*>(&idValue));
+
+    auto idTarget = TargetEntry{};
+    idTarget.xpr.type = T_TargetEntry;
+    idTarget.expr = reinterpret_cast<Expr*>(&idTargetVar);
+    idTarget.resno = 1;
+    idTarget.resjunk = false;
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make1(&idTarget);
+    scan.scan.plan.qual = list_make1(&notEquals);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::legacy);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_row_first_slice_legacy_for_supported_ineligible_plan) {
     auto value = makeIntConst();
     auto target = TargetEntry{};

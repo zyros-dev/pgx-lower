@@ -34,7 +34,14 @@ id
 7
 12
 13
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_66_row_first_slice_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_66_row_first_slice_005 */
+SELECT id FROM row_first_slice WHERE id <> 7;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower legacy
+id
+1
+12
+13
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_66_row_first_slice_006 */
 SELECT row_number() OVER () FROM row_first_slice;
 NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_plan_node: unsupported plan node tag 362 at Plan
 row_number

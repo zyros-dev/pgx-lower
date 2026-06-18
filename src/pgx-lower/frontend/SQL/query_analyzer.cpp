@@ -962,6 +962,24 @@ static auto rowFirstSliceTypeIsSupported(const Oid typeOid) -> bool {
     return typeOid == INT4OID || typeOid == INT8OID;
 }
 
+static constexpr const char* rowFirstSliceComparisonOperatorNames[] = {"<", "<=", "=", ">=", ">"};
+
+static auto rowFirstSliceOperatorIsSupported(const OpExpr* op) -> bool {
+    if (!operatorExprMatchesCatalog(op) || !operatorSignatureIsLowerable(op)) {
+        return false;
+    }
+
+    const auto tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(op->opno));
+    if (!HeapTupleIsValid(tuple)) {
+        return false;
+    }
+    const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    const auto supported = operatorNameMatchesAny(NameStr(oper->oprname), rowFirstSliceComparisonOperatorNames,
+                                                  std::size(rowFirstSliceComparisonOperatorNames));
+    ReleaseSysCache(tuple);
+    return supported;
+}
+
 static auto rowFirstSliceScalarIsSupported(const Node* expr) -> bool {
     if (!expr) {
         return false;
@@ -1015,8 +1033,7 @@ static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
         const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
         return rowFirstSliceScalarIsSupported(lhs) && rowFirstSliceScalarIsSupported(rhs)
                && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(lhs)))
-               && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(rhs))) && operatorExprMatchesCatalog(op)
-               && operatorSignatureIsLowerable(op);
+               && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(rhs))) && rowFirstSliceOperatorIsSupported(op);
     }
     case T_BoolExpr: {
         const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);

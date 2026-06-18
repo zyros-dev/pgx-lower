@@ -29,7 +29,10 @@ SELECT id FROM row_first_slice WHERE payload = payload AND id = 13;
 /* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_66_row_first_slice_004 */
 SELECT id FROM row_first_slice ORDER BY id;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_66_row_first_slice_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_66_row_first_slice_005 */
+SELECT id FROM row_first_slice WHERE id <> 7;
+
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_66_row_first_slice_006 */
 SELECT row_number() OVER () FROM row_first_slice;
 
 SET pgx_lower.route_path_notices = off;
