@@ -1956,6 +1956,24 @@ PGX_TEST_FN(query_analyzer_row_primitive_surface_matrix) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_row_primitive_accepts_bare_bool_filter) {
+    auto flagFilter = makeTypedVar(BOOLOID, 1);
+    flagFilter.varno = 1;
+    auto i8 = makeTypedVar(INT8OID, 2);
+    i8.varno = 1;
+    auto i8Target = makeOutputTarget(reinterpret_cast<Expr*>(&i8), 1);
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make1(&i8Target);
+    scan.scan.plan.qual = list_make1(&flagFilter);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::row);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_row_primitive_unsupported_metadata) {
     auto bytea = makeTypedVar(BYTEAOID, 1);
     bytea.varno = 1;
@@ -1980,6 +1998,19 @@ PGX_TEST_FN(query_analyzer_row_primitive_unsupported_metadata) {
     auto intervalResult = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&intervalScan));
     REQUIRE(!intervalResult.isSupported());
     REQUIRE(intervalResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+
+    auto collatedText = makeTypedVar(TEXTOID, 1, -1, C_COLLATION_OID);
+    collatedText.varno = 1;
+    auto collatedTextTarget = makeOutputTarget(reinterpret_cast<Expr*>(&collatedText), 1);
+    auto collatedScan = SeqScan{};
+    collatedScan.scan.plan.type = T_SeqScan;
+    collatedScan.scan.plan.targetlist = list_make1(&collatedTextTarget);
+    collatedScan.scan.scanrelid = 1;
+
+    auto collatedResult = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&collatedScan));
+    REQUIRE(!collatedResult.isSupported());
+    REQUIRE(collatedResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_collation);
+    REQUIRE(collatedResult.humanSummary().find("unsupported text collation") != std::string::npos);
     PG_RETURN_VOID();
 }
 

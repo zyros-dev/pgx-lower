@@ -219,9 +219,16 @@ static auto postgresValueMetadataIsSupported(const Oid postgresType, const int32
     case TIMESTAMPOID: return typmod == -1;
     case TEXTOID:
     case VARCHAROID:
-    case BPCHAROID: return postgresCollationIsSupported(collation);
+    case BPCHAROID: return collation == InvalidOid || collation == DEFAULT_COLLATION_OID;
     default: return true;
     }
+}
+
+static auto postgresValueMetadataUnsupportedKind(const Oid postgresType, const Oid collation) -> UnsupportedReasonKind {
+    if (postgresTypeIsStringType(postgresType) && collation != InvalidOid && collation != DEFAULT_COLLATION_OID) {
+        return UnsupportedReasonKind::unsupported_collation;
+    }
+    return UnsupportedReasonKind::unsupported_type;
 }
 
 struct PgFunctionSignature {
@@ -1106,6 +1113,13 @@ static auto rowPrimitiveComparisonExprIsSupported(const Node* expr) -> bool {
            && rowPrimitiveExprIsSupported(rhs) && rowPrimitiveOperatorIsSupported(op);
 }
 
+static auto rowPrimitiveBareBoolFilterIsSupported(const Node* expr) -> bool {
+    if (!expr || nodeTag(expr) != T_Var || exprType(const_cast<Node*>(expr)) != BOOLOID) {
+        return false;
+    }
+    return rowPrimitiveScalarIsSupported(expr) && rowPrimitiveExprIsSupported(expr);
+}
+
 static auto rowPrimitiveTargetExprIsSupported(const Node* expr) -> bool {
     if (!expr) {
         return false;
@@ -1148,6 +1162,7 @@ static auto rowPrimitiveFilterExprIsSupported(const Node* expr) -> bool {
     }
 
     switch (nodeTag(expr)) {
+    case T_Var: return rowPrimitiveBareBoolFilterIsSupported(expr);
     case T_OpExpr: return rowPrimitiveComparisonExprIsSupported(expr);
     case T_BoolExpr: {
         const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
@@ -1612,7 +1627,7 @@ auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> A
     const auto typmod = exprTypmod(const_cast<Node*>(expr));
     const auto collation = exprCollation(const_cast<Node*>(expr));
     if (!postgresValueMetadataIsSupported(typeOid, typmod, collation)) {
-        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type,
+        return AnalyzerResult::unsupported(postgresValueMetadataUnsupportedKind(typeOid, collation),
                                            unsupportedTypeMetadataMessage(typeOid, typmod, collation),
                                            std::move(location));
     }

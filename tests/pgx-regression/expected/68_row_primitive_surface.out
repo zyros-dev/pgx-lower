@@ -20,6 +20,10 @@ CREATE TEMP TABLE row_primitive_unsupported(
     t text,
     iv_ym interval year to month
 );
+CREATE TEMP TABLE row_primitive_collated(
+    i8 int8 NOT NULL,
+    t text COLLATE "C"
+);
 INSERT INTO row_primitive_surface VALUES
     (true, 1, 1, 100, 1.25, 10.5, 12.34, '1998-12-01', '1998-12-01 08:30:00',
      '1 day', 'alpha', 'alpha', 'ALFA'),
@@ -28,6 +32,8 @@ INSERT INTO row_primitive_surface VALUES
     (NULL, NULL, NULL, 300, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 INSERT INTO row_primitive_unsupported VALUES
     (100, decode('61', 'hex'), 'alpha', '1 year');
+INSERT INTO row_primitive_collated VALUES
+    (100, 'alpha');
 /* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_68_row_primitive_surface_pset */
 \pset format csv
 SET DateStyle = 'ISO, YMD';
@@ -62,7 +68,14 @@ WHERE i8 = 300;
 NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower row
 flag_null,small_null,i4_null,amount_null,d_null,ts_null,iv_null,t_null
 t,t,t,t,t,t,t,t
-/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=row id=pgx_68_row_primitive_surface_004 */
+SELECT i8
+FROM row_primitive_surface
+WHERE flag;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower row
+i8
+100
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_005 */
 SELECT i8, count(*)
 FROM row_primitive_surface
 GROUP BY i8
@@ -70,7 +83,7 @@ HAVING i8 = 100;
 NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower legacy
 i8,count
 100,1
-/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_006 */
 SELECT t
 FROM row_primitive_surface
 ORDER BY i8;
@@ -79,21 +92,21 @@ t
 alpha
 beta
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_007 */
 SELECT b
 FROM row_primitive_unsupported
 WHERE i8 = 100;
 NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported type bytea at Plan.targetlist[0].expr.type
 b
 \x61
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_007 */
-SELECT t COLLATE "C" AS t
-FROM row_primitive_unsupported
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_008 */
+SELECT t
+FROM row_primitive_collated
 WHERE i8 = 100;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string cast text -> text at Plan.targetlist[0].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_collation: unsupported text collation 950 at Plan.targetlist[0].expr.type
 t
 alpha
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_009 */
 SELECT iv_ym
 FROM row_primitive_unsupported
 WHERE i8 = 100;
@@ -103,3 +116,4 @@ iv_ym
 SET pgx_lower.route_path_notices = off;
 DROP TABLE row_primitive_surface;
 DROP TABLE row_primitive_unsupported;
+DROP TABLE row_primitive_collated;

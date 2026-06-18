@@ -23,6 +23,11 @@ CREATE TEMP TABLE row_primitive_unsupported(
     iv_ym interval year to month
 );
 
+CREATE TEMP TABLE row_primitive_collated(
+    i8 int8 NOT NULL,
+    t text COLLATE "C"
+);
+
 INSERT INTO row_primitive_surface VALUES
     (true, 1, 1, 100, 1.25, 10.5, 12.34, '1998-12-01', '1998-12-01 08:30:00',
      '1 day', 'alpha', 'alpha', 'ALFA'),
@@ -32,6 +37,9 @@ INSERT INTO row_primitive_surface VALUES
 
 INSERT INTO row_primitive_unsupported VALUES
     (100, decode('61', 'hex'), 'alpha', '1 year');
+
+INSERT INTO row_primitive_collated VALUES
+    (100, 'alpha');
 
 /* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_68_row_primitive_surface_pset */
 \pset format csv
@@ -63,28 +71,33 @@ SELECT flag IS NULL AS flag_null,
 FROM row_primitive_surface
 WHERE i8 = 300;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=row id=pgx_68_row_primitive_surface_004 */
+SELECT i8
+FROM row_primitive_surface
+WHERE flag;
+
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_005 */
 SELECT i8, count(*)
 FROM row_primitive_surface
 GROUP BY i8
 HAVING i8 = 100;
 
-/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=pgx_68_row_primitive_surface_006 */
 SELECT t
 FROM row_primitive_surface
 ORDER BY i8;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_007 */
 SELECT b
 FROM row_primitive_unsupported
 WHERE i8 = 100;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_007 */
-SELECT t COLLATE "C" AS t
-FROM row_primitive_unsupported
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_008 */
+SELECT t
+FROM row_primitive_collated
 WHERE i8 = 100;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_68_row_primitive_surface_009 */
 SELECT iv_ym
 FROM row_primitive_unsupported
 WHERE i8 = 100;
@@ -93,3 +106,4 @@ SET pgx_lower.route_path_notices = off;
 
 DROP TABLE row_primitive_surface;
 DROP TABLE row_primitive_unsupported;
+DROP TABLE row_primitive_collated;
