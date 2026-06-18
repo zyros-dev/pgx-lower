@@ -132,20 +132,6 @@ bool runPhase3b(::mlir::ModuleOp module) {
         dumpModuleWithStats(module, "After dsa standard pipeline pm2", pgx_lower::log::Category::DB_LOWER);
     }
 
-    {
-        mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
-#ifndef PGX_RELEASE_MODE
-        pmFunc.enableVerifier(true);
-#else
-        pmFunc.enableVerifier(false);
-#endif
-        pmFunc.addPass(mlir::createLoopInvariantCodeMotionPass());
-        pmFunc.addPass(mlir::createSinkOpPass());
-        pmFunc.addPass(mlir::createCSEPass());
-    }
-
-    dumpModuleWithStats(module, "After func pipeline", pgx_lower::log::Category::DB_LOWER);
-
     return true;
 }
 

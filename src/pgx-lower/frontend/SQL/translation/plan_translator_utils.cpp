@@ -92,7 +92,11 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_Memoize: result = translate_memoize(ctx, reinterpret_cast<Memoize*>(plan)); break;
     case T_SubqueryScan: result = translate_subquery_scan(ctx, reinterpret_cast<SubqueryScan*>(plan)); break;
     case T_CteScan: result = translate_cte_scan(ctx, reinterpret_cast<CteScan*>(plan)); break;
-    default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
+    default: {
+        const auto message = std::string("Unsupported plan node type: ") + std::to_string(plan->type);
+        PGX_ERROR("%s", message.c_str());
+        throw std::runtime_error(message);
+    }
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_plan_node returning result with %zu columns", result.columns.size());

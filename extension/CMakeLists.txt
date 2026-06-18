@@ -12,6 +12,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/pipeline_phases_tests.cpp
             ../src/pgx-lower/test/query_analyzer_tests.cpp
             ../src/pgx-lower/test/accepted_plan_verifier_tests.cpp
+            ../src/pgx-lower/test/cleanup_sweep_tests.cpp
             ../src/pgx-lower/test/pg_primitive_type_tests.cpp
             ../src/pgx-lower/test/pg_sql_expression_nullability_tests.cpp
             ../src/pgx-lower/test/pg_bool_predicate_truth_tests.cpp

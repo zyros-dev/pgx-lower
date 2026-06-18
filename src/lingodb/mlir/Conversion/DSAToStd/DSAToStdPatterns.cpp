@@ -894,8 +894,7 @@ class FreeLowering : public OpConversionPattern<mlir::dsa::FreeOp> {
    LogicalResult matchAndRewrite(mlir::dsa::FreeOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       if (auto genericType = op.getVal().getType().dyn_cast<mlir::dsa::GenericIterableType>()) {
          if (genericType.getIteratorName() == "pgsort_iterator") {
-            // TODO: Fix runtime function registration for PgSortState::destroy
-            // rt::PgSortState::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
+             rt::PgSortState::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
          }
       }
       if (auto aggrHtType = op.getVal().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
