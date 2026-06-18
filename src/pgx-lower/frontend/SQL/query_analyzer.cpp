@@ -196,9 +196,32 @@ static auto unsupportedTypeMessage(const Oid postgresType) -> std::string {
     }
 }
 
+static auto unsupportedTypeMetadataMessage(const Oid postgresType, const int32_t typmod, const Oid collation)
+    -> std::string {
+    switch (postgresType) {
+    case INTERVALOID: return "unsupported interval typmod " + std::to_string(typmod);
+    case TIMESTAMPOID: return "unsupported timestamp typmod " + std::to_string(typmod);
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return "unsupported " + postgresTypeName(postgresType) + " collation " + std::to_string(collation);
+    default: return "unsupported PostgreSQL type metadata for OID " + std::to_string(postgresType);
+    }
+}
+
 static auto postgresCollationIsSupported(const Oid collationOid) -> bool {
     return collationOid == InvalidOid || collationOid == DEFAULT_COLLATION_OID || collationOid == C_COLLATION_OID
            || collationOid == POSIX_COLLATION_OID;
+}
+
+static auto postgresValueMetadataIsSupported(const Oid postgresType, const int32_t typmod, const Oid collation) -> bool {
+    switch (postgresType) {
+    case INTERVALOID:
+    case TIMESTAMPOID: return typmod == -1;
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return postgresCollationIsSupported(collation);
+    default: return true;
+    }
 }
 
 struct PgFunctionSignature {
@@ -981,13 +1004,61 @@ static auto collectTargetListAggregateRefs(const List* targetList) -> std::set<I
     return aggNos;
 }
 
-static auto rowFirstSliceTypeIsSupported(const Oid typeOid) -> bool {
-    return typeOid == INT4OID || typeOid == INT8OID;
+static auto rowPrimitiveTypeIsSupported(const Oid typeOid) -> bool {
+    switch (typeOid) {
+    case BOOLOID:
+    case INT2OID:
+    case INT4OID:
+    case INT8OID:
+    case FLOAT4OID:
+    case FLOAT8OID:
+    case NUMERICOID:
+    case DATEOID:
+    case TIMESTAMPOID:
+    case INTERVALOID:
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return true;
+    default: return false;
+    }
 }
 
-static constexpr const char* rowFirstSliceComparisonOperatorNames[] = {"<", "<=", "=", ">=", ">"};
+static auto rowPrimitiveStringMetadataIsSupported(const Oid typeOid, const int32_t typmod, const Oid collation) -> bool {
+    switch (typeOid) {
+    case TEXTOID: return typmod == -1 && collation == DEFAULT_COLLATION_OID;
+    case VARCHAROID:
+    case BPCHAROID: return typmod >= -1 && collation == DEFAULT_COLLATION_OID;
+    default: return true;
+    }
+}
 
-static auto rowFirstSliceOperatorIsSupported(const OpExpr* op) -> bool {
+static auto rowPrimitiveMetadataIsSupported(const Oid typeOid, const int32_t typmod, const Oid collation) -> bool {
+    if (!rowPrimitiveTypeIsSupported(typeOid)) {
+        return false;
+    }
+    switch (typeOid) {
+    case TIMESTAMPOID:
+    case INTERVALOID: return typmod == -1;
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return rowPrimitiveStringMetadataIsSupported(typeOid, typmod, collation);
+    default: return true;
+    }
+}
+
+static auto rowPrimitiveExprIsSupported(const Node* expr) -> bool {
+    if (!expr) {
+        return false;
+    }
+    const auto typeOid = exprType(const_cast<Node*>(expr));
+    const auto typmod = exprTypmod(const_cast<Node*>(expr));
+    const auto collation = exprCollation(const_cast<Node*>(expr));
+    return rowPrimitiveMetadataIsSupported(typeOid, typmod, collation);
+}
+
+static constexpr const char* rowPrimitiveComparisonOperatorNames[] = {"<", "<=", "=", ">=", ">"};
+
+static auto rowPrimitiveOperatorIsSupported(const OpExpr* op) -> bool {
     if (!operatorExprMatchesCatalog(op) || !operatorSignatureIsLowerable(op)) {
         return false;
     }
@@ -997,30 +1068,31 @@ static auto rowFirstSliceOperatorIsSupported(const OpExpr* op) -> bool {
         return false;
     }
     const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
-    const auto supported = operatorNameMatchesAny(NameStr(oper->oprname), rowFirstSliceComparisonOperatorNames,
-                                                  std::size(rowFirstSliceComparisonOperatorNames));
+    const auto supported = operatorNameMatchesAny(NameStr(oper->oprname), rowPrimitiveComparisonOperatorNames,
+                                                  std::size(rowPrimitiveComparisonOperatorNames));
     ReleaseSysCache(tuple);
     return supported;
 }
 
-static auto rowFirstSliceScalarIsSupported(const Node* expr) -> bool {
+static auto rowPrimitiveScalarIsSupported(const Node* expr) -> bool {
     if (!expr) {
         return false;
     }
     switch (nodeTag(expr)) {
     case T_Var: {
         const auto* var = reinterpret_cast<const Var*>(expr);
-        return var->varlevelsup == 0 && var->varattno > 0 && rowFirstSliceTypeIsSupported(var->vartype);
+        return var->varlevelsup == 0 && var->varattno > 0
+               && rowPrimitiveMetadataIsSupported(var->vartype, var->vartypmod, var->varcollid);
     }
     case T_Const: {
         const auto* value = reinterpret_cast<const Const*>(expr);
-        return rowFirstSliceTypeIsSupported(value->consttype);
+        return rowPrimitiveMetadataIsSupported(value->consttype, value->consttypmod, value->constcollid);
     }
     default: return false;
     }
 }
 
-static auto rowFirstSliceComparisonExprIsSupported(const Node* expr) -> bool {
+static auto rowPrimitiveComparisonExprIsSupported(const Node* expr) -> bool {
     if (!expr || nodeTag(expr) != T_OpExpr) {
         return false;
     }
@@ -1030,28 +1102,27 @@ static auto rowFirstSliceComparisonExprIsSupported(const Node* expr) -> bool {
     }
     const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
     const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
-    return rowFirstSliceScalarIsSupported(lhs) && rowFirstSliceScalarIsSupported(rhs)
-           && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(lhs)))
-           && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(rhs))) && rowFirstSliceOperatorIsSupported(op);
+    return rowPrimitiveScalarIsSupported(lhs) && rowPrimitiveScalarIsSupported(rhs) && rowPrimitiveExprIsSupported(lhs)
+           && rowPrimitiveExprIsSupported(rhs) && rowPrimitiveOperatorIsSupported(op);
 }
 
-static auto rowFirstSliceTargetExprIsSupported(const Node* expr) -> bool {
+static auto rowPrimitiveTargetExprIsSupported(const Node* expr) -> bool {
     if (!expr) {
         return false;
     }
     switch (nodeTag(expr)) {
-    case T_Var: return rowFirstSliceScalarIsSupported(expr);
+    case T_Var: return rowPrimitiveScalarIsSupported(expr);
     case T_NullTest: {
         const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
         return nullTest != nullptr && !nullTest->argisrow
-               && rowFirstSliceScalarIsSupported(reinterpret_cast<const Node*>(nullTest->arg));
+               && rowPrimitiveScalarIsSupported(reinterpret_cast<const Node*>(nullTest->arg));
     }
-    case T_OpExpr: return rowFirstSliceComparisonExprIsSupported(expr);
+    case T_OpExpr: return rowPrimitiveComparisonExprIsSupported(expr);
     default: return false;
     }
 }
 
-static auto rowFirstSliceTargetListIsSupported(const List* targetList) -> bool {
+static auto rowPrimitiveTargetListIsSupported(const List* targetList) -> bool {
     if (!targetList) {
         return false;
     }
@@ -1064,20 +1135,20 @@ static auto rowFirstSliceTargetListIsSupported(const List* targetList) -> bool {
         }
         hasOutputColumn = true;
         const auto* expr = reinterpret_cast<const Node*>(target->expr);
-        if (!rowFirstSliceTargetExprIsSupported(expr)) {
+        if (!rowPrimitiveTargetExprIsSupported(expr)) {
             return false;
         }
     }
     return hasOutputColumn;
 }
 
-static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
+static auto rowPrimitiveFilterExprIsSupported(const Node* expr) -> bool {
     if (!expr) {
         return true;
     }
 
     switch (nodeTag(expr)) {
-    case T_OpExpr: return rowFirstSliceComparisonExprIsSupported(expr);
+    case T_OpExpr: return rowPrimitiveComparisonExprIsSupported(expr);
     case T_BoolExpr: {
         const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
         if (!boolExpr || boolExpr->boolop != AND_EXPR) {
@@ -1085,7 +1156,7 @@ static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
         }
         ListCell* lc = nullptr;
         foreach (lc, boolExpr->args) {
-            if (!rowFirstSliceFilterExprIsSupported(static_cast<const Node*>(lfirst(lc)))) {
+            if (!rowPrimitiveFilterExprIsSupported(static_cast<const Node*>(lfirst(lc)))) {
                 return false;
             }
         }
@@ -1094,30 +1165,30 @@ static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
     case T_NullTest: {
         const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
         return nullTest != nullptr && !nullTest->argisrow
-               && rowFirstSliceScalarIsSupported(reinterpret_cast<const Node*>(nullTest->arg));
+               && rowPrimitiveScalarIsSupported(reinterpret_cast<const Node*>(nullTest->arg));
     }
     default: return false;
     }
 }
 
-static auto rowFirstSliceQualIsSupported(const List* quals) -> bool {
+static auto rowPrimitiveQualIsSupported(const List* quals) -> bool {
     if (!quals) {
         return true;
     }
     ListCell* lc = nullptr;
     foreach (lc, quals) {
-        if (!rowFirstSliceFilterExprIsSupported(static_cast<const Node*>(lfirst(lc)))) {
+        if (!rowPrimitiveFilterExprIsSupported(static_cast<const Node*>(lfirst(lc)))) {
             return false;
         }
     }
     return true;
 }
 
-static auto planIsRowFirstSliceEligible(const Plan* plan) -> bool {
+static auto planIsRowPrimitiveEligible(const Plan* plan) -> bool {
     if (!plan || nodeTag(plan) != T_SeqScan || plan->lefttree || plan->righttree) {
         return false;
     }
-    return rowFirstSliceTargetListIsSupported(plan->targetlist) && rowFirstSliceQualIsSupported(plan->qual);
+    return rowPrimitiveTargetListIsSupported(plan->targetlist) && rowPrimitiveQualIsSupported(plan->qual);
 }
 
 static auto collectExpressionListAggregateRefs(const List* expressions) -> std::set<Index> {
@@ -1538,6 +1609,13 @@ auto QueryAnalyzer::analyzeExprType(const Node* expr, std::string location) -> A
         return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type, unsupportedTypeMessage(typeOid),
                                            std::move(location));
     }
+    const auto typmod = exprTypmod(const_cast<Node*>(expr));
+    const auto collation = exprCollation(const_cast<Node*>(expr));
+    if (!postgresValueMetadataIsSupported(typeOid, typmod, collation)) {
+        return AnalyzerResult::unsupported(UnsupportedReasonKind::unsupported_type,
+                                           unsupportedTypeMetadataMessage(typeOid, typmod, collation),
+                                           std::move(location));
+    }
     return AnalyzerResult::supported();
 }
 
@@ -1854,7 +1932,7 @@ auto QueryAnalyzer::classifyLowerPath(const PlannedStmt* stmt) -> LowerPath {
     if (!analysis.isSupported()) {
         return LowerPath::not_applicable;
     }
-    return planIsRowFirstSliceEligible(stmt->planTree) ? LowerPath::row : LowerPath::legacy;
+    return planIsRowPrimitiveEligible(stmt->planTree) ? LowerPath::row : LowerPath::legacy;
 }
 
 auto QueryAnalyzer::classifyLowerPathForTesting(const Plan* plan) -> LowerPath {
@@ -1862,7 +1940,7 @@ auto QueryAnalyzer::classifyLowerPathForTesting(const Plan* plan) -> LowerPath {
     if (!analysis.isSupported()) {
         return LowerPath::not_applicable;
     }
-    return planIsRowFirstSliceEligible(plan) ? LowerPath::row : LowerPath::legacy;
+    return planIsRowPrimitiveEligible(plan) ? LowerPath::row : LowerPath::legacy;
 }
 
 auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {

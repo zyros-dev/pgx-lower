@@ -30,6 +30,10 @@ namespace {
 
 constexpr Oid Int4LessEqualOperator = 523;
 constexpr Oid Int4GreaterOperator = 521;
+constexpr int32_t Numeric12_2Typmod = ((12 << 16) | 2) + VARHDRSZ;
+constexpr int32_t Varchar16Typmod = 16 + VARHDRSZ;
+constexpr int32_t Bpchar4Typmod = 4 + VARHDRSZ;
+constexpr int32_t IntervalYearToMonthTypmod = 0x7FFF0004;
 
 auto makeIntConst() -> Const {
     auto value = Const{};
@@ -124,6 +128,13 @@ auto makeTypedVar(Oid typeOid, AttrNumber attno) -> Var {
     return value;
 }
 
+auto makeTypedVar(Oid typeOid, AttrNumber attno, int32_t typmod, Oid collation) -> Var {
+    auto value = makeTypedVar(typeOid, attno);
+    value.vartypmod = typmod;
+    value.varcollid = collation;
+    return value;
+}
+
 auto makeBinaryOperatorExpr(const char* name, Oid resultType, Node* lhs, Node* rhs) -> OpExpr {
     const auto lhsType = exprType(lhs);
     const auto rhsType = exprType(rhs);
@@ -138,6 +149,15 @@ auto makeBinaryOperatorExpr(const char* name, Oid resultType, Node* lhs, Node* r
     op.opcollid = InvalidOid;
     op.args = list_make2(lhs, rhs);
     return op;
+}
+
+auto makeOutputTarget(Expr* expr, AttrNumber resno) -> TargetEntry {
+    auto target = TargetEntry{};
+    target.xpr.type = T_TargetEntry;
+    target.expr = expr;
+    target.resno = resno;
+    target.resjunk = false;
+    return target;
 }
 
 struct IntervalAggregateFixture {
@@ -1862,6 +1882,104 @@ PGX_TEST_FN(query_analyzer_row_output_materialization_surface) {
 
     const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
     REQUIRE(path == pgx_lower::LowerPath::row);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_row_primitive_surface_matrix) {
+    auto flag = makeTypedVar(BOOLOID, 1);
+    flag.varno = 1;
+    auto small = makeTypedVar(INT2OID, 2);
+    small.varno = 1;
+    auto i4 = makeTypedVar(INT4OID, 3);
+    i4.varno = 1;
+    auto i8 = makeTypedVar(INT8OID, 4);
+    i8.varno = 1;
+    auto f4 = makeTypedVar(FLOAT4OID, 5);
+    f4.varno = 1;
+    auto f8 = makeTypedVar(FLOAT8OID, 6);
+    f8.varno = 1;
+    auto amount = makeTypedVar(NUMERICOID, 7, Numeric12_2Typmod, InvalidOid);
+    amount.varno = 1;
+    auto d = makeTypedVar(DATEOID, 8);
+    d.varno = 1;
+    auto ts = makeTypedVar(TIMESTAMPOID, 9);
+    ts.varno = 1;
+    auto iv = makeTypedVar(INTERVALOID, 10);
+    iv.varno = 1;
+    auto text = makeTypedVar(TEXTOID, 11, -1, DEFAULT_COLLATION_OID);
+    text.varno = 1;
+    auto varchar = makeTypedVar(VARCHAROID, 12, Varchar16Typmod, DEFAULT_COLLATION_OID);
+    varchar.varno = 1;
+    auto bpchar = makeTypedVar(BPCHAROID, 13, Bpchar4Typmod, DEFAULT_COLLATION_OID);
+    bpchar.varno = 1;
+    auto filterVar = makeTypedVar(INT8OID, 4);
+    filterVar.varno = 1;
+    auto filterValue = makeTypedConst(INT8OID);
+    auto filter = makeBinaryOperatorExpr("=", BOOLOID, reinterpret_cast<Node*>(&filterVar),
+                                         reinterpret_cast<Node*>(&filterValue));
+
+    auto flagTarget = makeOutputTarget(reinterpret_cast<Expr*>(&flag), 1);
+    auto smallTarget = makeOutputTarget(reinterpret_cast<Expr*>(&small), 2);
+    auto i4Target = makeOutputTarget(reinterpret_cast<Expr*>(&i4), 3);
+    auto i8Target = makeOutputTarget(reinterpret_cast<Expr*>(&i8), 4);
+    auto f4Target = makeOutputTarget(reinterpret_cast<Expr*>(&f4), 5);
+    auto f8Target = makeOutputTarget(reinterpret_cast<Expr*>(&f8), 6);
+    auto amountTarget = makeOutputTarget(reinterpret_cast<Expr*>(&amount), 7);
+    auto dateTarget = makeOutputTarget(reinterpret_cast<Expr*>(&d), 8);
+    auto timestampTarget = makeOutputTarget(reinterpret_cast<Expr*>(&ts), 9);
+    auto intervalTarget = makeOutputTarget(reinterpret_cast<Expr*>(&iv), 10);
+    auto textTarget = makeOutputTarget(reinterpret_cast<Expr*>(&text), 11);
+    auto varcharTarget = makeOutputTarget(reinterpret_cast<Expr*>(&varchar), 12);
+    auto bpcharTarget = makeOutputTarget(reinterpret_cast<Expr*>(&bpchar), 13);
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = NIL;
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &flagTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &smallTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &i4Target);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &i8Target);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &f4Target);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &f8Target);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &amountTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &dateTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &timestampTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &intervalTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &textTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &varcharTarget);
+    scan.scan.plan.targetlist = lappend(scan.scan.plan.targetlist, &bpcharTarget);
+    scan.scan.plan.qual = list_make1(&filter);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::row);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_row_primitive_unsupported_metadata) {
+    auto bytea = makeTypedVar(BYTEAOID, 1);
+    bytea.varno = 1;
+    auto byteaTarget = makeOutputTarget(reinterpret_cast<Expr*>(&bytea), 1);
+    auto byteaScan = SeqScan{};
+    byteaScan.scan.plan.type = T_SeqScan;
+    byteaScan.scan.plan.targetlist = list_make1(&byteaTarget);
+    byteaScan.scan.scanrelid = 1;
+
+    auto byteaResult = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&byteaScan));
+    REQUIRE(!byteaResult.isSupported());
+    REQUIRE(byteaResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
+
+    auto interval = makeTypedVar(INTERVALOID, 1, IntervalYearToMonthTypmod, InvalidOid);
+    interval.varno = 1;
+    auto intervalTarget = makeOutputTarget(reinterpret_cast<Expr*>(&interval), 1);
+    auto intervalScan = SeqScan{};
+    intervalScan.scan.plan.type = T_SeqScan;
+    intervalScan.scan.plan.targetlist = list_make1(&intervalTarget);
+    intervalScan.scan.scanrelid = 1;
+
+    auto intervalResult = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&intervalScan));
+    REQUIRE(!intervalResult.isSupported());
+    REQUIRE(intervalResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_type);
     PG_RETURN_VOID();
 }
 

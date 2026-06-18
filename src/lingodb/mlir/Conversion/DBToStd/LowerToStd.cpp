@@ -687,15 +687,60 @@ class PgRowGetLowering : public OpConversionPattern<mlir::db::PgRowGetOp> {
         mlir::Value payload;
         mlir::Value isNull;
         mlir::Type baseFieldType = getBaseType(field.getType());
-        if (mlir::isa<mlir::db::PgInt4Type>(baseFieldType)) {
+        if (mlir::isa<mlir::db::PgBoolType>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getBoolValue(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getBoolIsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgInt2Type>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getInt16Value(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getInt16IsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgInt4Type, mlir::db::PgDateType>(baseFieldType)) {
             payload = rt::PgRowRuntime::getInt32Value(rewriter, loc)(args)[0];
             if (nullable) {
                 isNull = rt::PgRowRuntime::getInt32IsNull(rewriter, loc)(args)[0];
             }
-        } else if (mlir::isa<mlir::db::PgInt8Type>(baseFieldType)) {
+        } else if (mlir::isa<mlir::db::PgInt8Type, mlir::db::PgTimestampType>(baseFieldType)) {
             payload = rt::PgRowRuntime::getInt64Value(rewriter, loc)(args)[0];
             if (nullable) {
                 isNull = rt::PgRowRuntime::getInt64IsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgFloat4Type>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getFloat32Value(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getFloat32IsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgFloat8Type>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getFloat64Value(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getFloat64IsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgNumericType>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getNumericDatumValue(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getNumericDatumIsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType, mlir::db::PgBpcharType>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getStringValue(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getStringIsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgIntervalType>(baseFieldType)) {
+            auto convertedResultType = getTypeConverter()->convertType(rowGetOp.getResult().getType());
+            auto convertedPayloadType = convertedResultType;
+            if (auto tupleType = mlir::dyn_cast_or_null<mlir::TupleType>(convertedResultType);
+                tupleType && tupleType.size() == 2)
+            {
+                convertedPayloadType = tupleType.getType(1);
+            }
+            mlir::Value time = rt::PgRowRuntime::getIntervalTime(rewriter, loc)(args)[0];
+            mlir::Value day = rt::PgRowRuntime::getIntervalDay(rewriter, loc)(args)[0];
+            mlir::Value month = rt::PgRowRuntime::getIntervalMonth(rewriter, loc)(args)[0];
+            payload = rewriter.create<mlir::util::PackOp>(loc, convertedPayloadType, mlir::ValueRange{time, day, month});
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getIntervalIsNull(rewriter, loc)(args)[0];
             }
         } else {
             return failure();
@@ -746,10 +791,34 @@ class PgEmitRowLowering : public OpConversionPattern<mlir::db::PgEmitRowOp> {
 
             if (mlir::isa<mlir::db::PgBoolType>(fieldType)) {
                 rt::PgRowRuntime::emitBool(rewriter, loc)(args);
-            } else if (mlir::isa<mlir::db::PgInt4Type>(fieldType)) {
+            } else if (mlir::isa<mlir::db::PgInt2Type>(fieldType)) {
+                rt::PgRowRuntime::emitInt16(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgInt4Type, mlir::db::PgDateType>(fieldType)) {
                 rt::PgRowRuntime::emitInt32(rewriter, loc)(args);
-            } else if (mlir::isa<mlir::db::PgInt8Type>(fieldType)) {
+            } else if (mlir::isa<mlir::db::PgInt8Type, mlir::db::PgTimestampType>(fieldType)) {
                 rt::PgRowRuntime::emitInt64(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgFloat4Type>(fieldType)) {
+                rt::PgRowRuntime::emitFloat32(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgFloat8Type>(fieldType)) {
+                rt::PgRowRuntime::emitFloat64(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgNumericType>(fieldType)) {
+                rt::PgRowRuntime::emitNumericDatum(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType, mlir::db::PgBpcharType>(fieldType)) {
+                rt::PgRowRuntime::emitString(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgIntervalType>(fieldType)) {
+                auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, payload);
+                llvm::SmallVector<mlir::Value> intervalArgs{
+                    i32(static_cast<int32_t>(index)),
+                    isNull,
+                    unpacked.getVals()[0],
+                    unpacked.getVals()[1],
+                    unpacked.getVals()[2],
+                    i32(static_cast<int32_t>(field.getOid())),
+                    i32(field.getTypmod()),
+                    i32(static_cast<int32_t>(field.getCollation())),
+                    bit(field.getNullability() == mlir::db::PgNullability::Maybe),
+                };
+                rt::PgRowRuntime::emitInterval(rewriter, loc)(intervalArgs);
             } else {
                 return failure();
             }

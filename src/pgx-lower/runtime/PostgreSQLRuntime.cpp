@@ -41,9 +41,11 @@ extern "C" {
 #include "utils/elog.h"
 #include "utils/numeric.h"
 #include "utils/datum.h"
+#include "utils/date.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "utils/timestamp.h"
 #include "fmgr.h"
 #include "utils/fmgrprotos.h"
 #include "utils/builtins.h"
@@ -592,34 +594,184 @@ void PgRowRuntime::scanEnd(void* scan) {
     delete state;
 }
 
+namespace {
+
+Datum getPgRowDatumOrNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid, int32_t typmod,
+                          int32_t collation, bool nullable, bool* isNull) {
+    return pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable, isNull);
+}
+
+bool getPgRowIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid, int32_t typmod,
+                    int32_t collation, bool nullable) {
+    bool isNull = true;
+    (void)getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull;
+}
+
+VarLen32 varLen32FromPgStringDatum(Datum value, bool isNull) {
+    if (isNull) {
+        return VarLen32(nullptr, 0);
+    }
+
+    auto* source = reinterpret_cast<varlena*>(DatumGetPointer(value));
+    auto* detoasted = pg_detoast_datum_packed(source);
+    const auto length = static_cast<uint32_t>(VARSIZE_ANY_EXHDR(detoasted));
+    auto* bytes = length == 0 ? nullptr : static_cast<uint8_t*>(MemoryContextAlloc(CurrentMemoryContext, length));
+    if (length > 0) {
+        std::memcpy(bytes, VARDATA_ANY(detoasted), length);
+    }
+    if (detoasted != source) {
+        pfree(detoasted);
+    }
+    return VarLen32(bytes, length);
+}
+
+Datum pgStringDatumFromVarLen32(VarLen32 value, uint32_t typeOid) {
+    switch (typeOid) {
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: return PointerGetDatum(cstring_to_text_with_len(value.data(), static_cast<int>(value.getLen())));
+    default:
+        PGX_ERROR("PgRowRuntime: unsupported PostgreSQL string bridge type OID %u", typeOid);
+        elog(ERROR, "PgRowRuntime: unsupported PostgreSQL string bridge type OID %u", typeOid);
+    }
+    return Datum{0};
+}
+
+} // namespace
+
+bool PgRowRuntime::getBoolValue(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return !isNull && DatumGetBool(value);
+}
+
+bool PgRowRuntime::getBoolIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                 int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
+int16_t PgRowRuntime::getInt16Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull ? 0 : DatumGetInt16(value);
+}
+
+bool PgRowRuntime::getInt16IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                  int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
 int32_t PgRowRuntime::getInt32Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                                     int32_t typmod, int32_t collation, bool nullable) {
     bool isNull = true;
-    const Datum value = pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable,
-                                      &isNull);
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
     return isNull ? 0 : DatumGetInt32(value);
 }
 
 bool PgRowRuntime::getInt32IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                                   int32_t typmod, int32_t collation, bool nullable) {
-    bool isNull = true;
-    (void)pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
-    return isNull;
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
 }
 
 int64_t PgRowRuntime::getInt64Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                                     int32_t typmod, int32_t collation, bool nullable) {
     bool isNull = true;
-    const Datum value = pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable,
-                                      &isNull);
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
     return isNull ? 0 : DatumGetInt64(value);
 }
 
 bool PgRowRuntime::getInt64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                                   int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
+float PgRowRuntime::getFloat32Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
     bool isNull = true;
-    (void)pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
-    return isNull;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull ? 0.0F : DatumGetFloat4(value);
+}
+
+bool PgRowRuntime::getFloat32IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
+double PgRowRuntime::getFloat64Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                     int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull ? 0.0 : DatumGetFloat8(value);
+}
+
+bool PgRowRuntime::getFloat64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
+NumericDatumCarrier PgRowRuntime::getNumericDatumValue(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno,
+                                                       int32_t oid, int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull ? NumericDatumCarrier{0} : numeric_datum_to_carrier(value);
+}
+
+bool PgRowRuntime::getNumericDatumIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                         int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
+VarLen32 PgRowRuntime::getStringValue(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                      int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return varLen32FromPgStringDatum(value, isNull);
+}
+
+bool PgRowRuntime::getStringIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                   int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+}
+
+int64_t PgRowRuntime::getIntervalTime(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                      int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    if (isNull) {
+        return 0;
+    }
+    const auto* interval = DatumGetIntervalP(value);
+    return interval->time;
+}
+
+int32_t PgRowRuntime::getIntervalDay(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                     int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    if (isNull) {
+        return 0;
+    }
+    const auto* interval = DatumGetIntervalP(value);
+    return interval->day;
+}
+
+int32_t PgRowRuntime::getIntervalMonth(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                       int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = getPgRowDatumOrNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    if (isNull) {
+        return 0;
+    }
+    const auto* interval = DatumGetIntervalP(value);
+    return interval->month;
+}
+
+bool PgRowRuntime::getIntervalIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                     int32_t typmod, int32_t collation, bool nullable) {
+    return getPgRowIsNull(scan, fieldIndex, relid, attno, oid, typmod, collation, nullable);
 }
 
 namespace {
@@ -702,6 +854,12 @@ void PgRowRuntime::emitBool(int32_t fieldIndex, bool isNull, bool value, int32_t
               "PgRowRuntime::emitBool");
 }
 
+void PgRowRuntime::emitInt16(int32_t fieldIndex, bool isNull, int16_t value, int32_t oid, int32_t typmod,
+                             int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, Int16GetDatum(value), oid, typmod, collation, nullable, "PgRowRuntime::emitInt16");
+}
+
 void PgRowRuntime::emitInt32(int32_t fieldIndex, bool isNull, int32_t value, int32_t oid, int32_t typmod,
                              int32_t collation, bool nullable) {
     PGX_IO(RUNTIME);
@@ -712,6 +870,46 @@ void PgRowRuntime::emitInt64(int32_t fieldIndex, bool isNull, int64_t value, int
                              int32_t collation, bool nullable) {
     PGX_IO(RUNTIME);
     emitDatum(fieldIndex, isNull, Int64GetDatum(value), oid, typmod, collation, nullable, "PgRowRuntime::emitInt64");
+}
+
+void PgRowRuntime::emitFloat32(int32_t fieldIndex, bool isNull, float value, int32_t oid, int32_t typmod,
+                               int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, Float4GetDatum(value), oid, typmod, collation, nullable, "PgRowRuntime::emitFloat32");
+}
+
+void PgRowRuntime::emitFloat64(int32_t fieldIndex, bool isNull, double value, int32_t oid, int32_t typmod,
+                               int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, Float8GetDatum(value), oid, typmod, collation, nullable, "PgRowRuntime::emitFloat64");
+}
+
+void PgRowRuntime::emitNumericDatum(int32_t fieldIndex, bool isNull, NumericDatumCarrier value, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, numeric_datum_from_carrier(value), oid, typmod, collation, nullable,
+              "PgRowRuntime::emitNumericDatum");
+}
+
+void PgRowRuntime::emitString(int32_t fieldIndex, bool isNull, VarLen32 value, int32_t oid, int32_t typmod,
+                              int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    const Datum datum = isNull ? Datum{0} : pgStringDatumFromVarLen32(value, static_cast<uint32_t>(oid));
+    emitDatum(fieldIndex, isNull, datum, oid, typmod, collation, nullable, "PgRowRuntime::emitString");
+}
+
+void PgRowRuntime::emitInterval(int32_t fieldIndex, bool isNull, int64_t time, int32_t day, int32_t month, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    Datum datum{0};
+    if (!isNull) {
+        auto* interval = static_cast<Interval*>(palloc(sizeof(Interval)));
+        interval->time = time;
+        interval->day = day;
+        interval->month = month;
+        datum = IntervalPGetDatum(interval);
+    }
+    emitDatum(fieldIndex, isNull, datum, oid, typmod, collation, nullable, "PgRowRuntime::emitInterval");
 }
 
 void PgRowRuntime::emitRowDone(int32_t expectedColumns) {

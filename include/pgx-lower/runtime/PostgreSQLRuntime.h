@@ -49,6 +49,14 @@ struct PgRowRuntime {
    static bool scanNext(void* scan);
    static void scanEnd(void* scan);
 
+   static bool getBoolValue(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid, int32_t typmod,
+                            int32_t collation, bool nullable);
+   static bool getBoolIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                             int32_t typmod, int32_t collation, bool nullable);
+   static int16_t getInt16Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static bool getInt16IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                              int32_t typmod, int32_t collation, bool nullable);
    static int32_t getInt32Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                                 int32_t typmod, int32_t collation, bool nullable);
    static bool getInt32IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
@@ -57,14 +65,50 @@ struct PgRowRuntime {
                                 int32_t typmod, int32_t collation, bool nullable);
    static bool getInt64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                               int32_t typmod, int32_t collation, bool nullable);
+   static float getFloat32Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static bool getFloat32IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static double getFloat64Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                 int32_t typmod, int32_t collation, bool nullable);
+   static bool getFloat64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static NumericDatumCarrier getNumericDatumValue(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno,
+                                                   int32_t oid, int32_t typmod, int32_t collation, bool nullable);
+   static bool getNumericDatumIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                     int32_t typmod, int32_t collation, bool nullable);
+   static VarLen32 getStringValue(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                  int32_t typmod, int32_t collation, bool nullable);
+   static bool getStringIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                               int32_t typmod, int32_t collation, bool nullable);
+   static int64_t getIntervalTime(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                  int32_t typmod, int32_t collation, bool nullable);
+   static int32_t getIntervalDay(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                 int32_t typmod, int32_t collation, bool nullable);
+   static int32_t getIntervalMonth(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                   int32_t typmod, int32_t collation, bool nullable);
+   static bool getIntervalIsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                 int32_t typmod, int32_t collation, bool nullable);
 
    static void emitRowStart(int32_t expectedColumns);
    static void emitBool(int32_t fieldIndex, bool isNull, bool value, int32_t oid, int32_t typmod, int32_t collation,
                         bool nullable);
+   static void emitInt16(int32_t fieldIndex, bool isNull, int16_t value, int32_t oid, int32_t typmod,
+                         int32_t collation, bool nullable);
    static void emitInt32(int32_t fieldIndex, bool isNull, int32_t value, int32_t oid, int32_t typmod,
                          int32_t collation, bool nullable);
    static void emitInt64(int32_t fieldIndex, bool isNull, int64_t value, int32_t oid, int32_t typmod,
                          int32_t collation, bool nullable);
+   static void emitFloat32(int32_t fieldIndex, bool isNull, float value, int32_t oid, int32_t typmod,
+                           int32_t collation, bool nullable);
+   static void emitFloat64(int32_t fieldIndex, bool isNull, double value, int32_t oid, int32_t typmod,
+                           int32_t collation, bool nullable);
+   static void emitNumericDatum(int32_t fieldIndex, bool isNull, NumericDatumCarrier value, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static void emitString(int32_t fieldIndex, bool isNull, VarLen32 value, int32_t oid, int32_t typmod,
+                          int32_t collation, bool nullable);
+   static void emitInterval(int32_t fieldIndex, bool isNull, int64_t time, int32_t day, int32_t month, int32_t oid,
+                            int32_t typmod, int32_t collation, bool nullable);
    static void emitRowDone(int32_t expectedColumns);
 };
 
