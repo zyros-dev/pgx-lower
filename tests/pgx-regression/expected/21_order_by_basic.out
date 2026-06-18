@@ -81,11 +81,10 @@ VALUES ('Charlie'),
        ('David'),
        ('Eve');
 SET client_min_messages TO DEBUG1;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_21_order_by_basic_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_21_order_by_basic_005 */
 SELECT name
 FROM test_order_string
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
   name   
 ---------
  Alice
@@ -96,11 +95,10 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
 (5 rows)
 
 SET client_min_messages TO NOTICE;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_21_order_by_basic_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_21_order_by_basic_006 */
 SELECT name
 FROM test_order_string
 ORDER BY name DESC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 666 at Plan.sortCol[0]
   name   
 ---------
  Eve

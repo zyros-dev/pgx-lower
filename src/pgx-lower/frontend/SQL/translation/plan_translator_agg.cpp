@@ -302,7 +302,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         // Track function name for spec creation
         aggregateFunctions[aggref->aggno] = funcName;
 
-        auto aggColumnName = resname ? std::string(resname) : ("agg_" + std::to_string(aggref->aggno));
+        (void)resname;
+        auto aggColumnName = "agg_" + std::to_string(aggref->aggno);
         const auto relation = block->getArgument(0);
         mlir::Value aggResult;
 

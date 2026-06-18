@@ -55,7 +55,7 @@ FROM comprehensive_data;
          10 |         20000 |          110
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_004 */
 SELECT
     department,
     AVG(salary + bonus) AS avg_total_comp,
@@ -63,7 +63,6 @@ SELECT
 FROM comprehensive_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  |   avg_total_comp    | quarterly_salary_sum 
 -------------+---------------------+----------------------
  Engineering | 110625.000000000000 |  100500.000000000000
@@ -94,7 +93,7 @@ WHERE years_experience > 0;
  19307.7380952380952714 | 8541.6666666666666667 |  15714.285714285714
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_007 */
 SELECT
     department,
     SUM(salary + (bonus * 2)) AS total_with_double_bonus,
@@ -103,7 +102,6 @@ FROM comprehensive_data
 WHERE salary > 70000
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  | total_with_double_bonus |   avg_exp_quarter    
 -------------+-------------------------+----------------------
  Engineering |               483000.00 | 168.7500000000000000
@@ -124,7 +122,7 @@ FROM comprehensive_data;
               10 |           247000.00 | 7912.5000000000000000 |            1000 | 40.0000000000000000
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_009 */
 SELECT
     department,
     AVG(salary + bonus) AS avg_compensation,
@@ -133,7 +131,6 @@ FROM comprehensive_data
 GROUP BY department
 HAVING AVG(salary + bonus) > 80000
 ORDER BY avg_compensation DESC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.lefttree.groupCol[0]
  department  |  avg_compensation   | total_exp_points 
 -------------+---------------------+------------------
  Engineering | 110625.000000000000 |            27000
@@ -168,7 +165,7 @@ SELECT
 FROM comprehensive_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text || text at Plan.lefttree.targetlist[1].expr.args[0].expr
  department  | name_dept_combinations 
 -------------+------------------------
  Engineering |                      4
@@ -177,7 +174,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Sales       |                      3
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_29_expressions_in_aggregations_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_29_expressions_in_aggregations_013 */
 SELECT
     department,
     SUM(salary + bonus - 1000) AS adjusted_compensation,
@@ -186,7 +183,6 @@ SELECT
 FROM comprehensive_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  | adjusted_compensation |    salary_factor    | max_bonus_plus_thousand 
 -------------+-----------------------+---------------------+-------------------------
  Engineering |             438500.00 | 10.0500000000000000 |                14000.00

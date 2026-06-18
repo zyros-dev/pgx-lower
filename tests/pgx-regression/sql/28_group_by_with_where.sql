@@ -34,14 +34,14 @@ WHERE category = 'Electronics'
   AND order_amount > 100
 GROUP BY category;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_002 */
 SELECT region, SUM(order_amount) AS total_sales
 FROM product_orders
 WHERE customer_type = 'Premium'
 GROUP BY region
 ORDER BY region;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_003 */
 SELECT category,
        COUNT(*)          AS order_count,
        SUM(order_amount) AS total_sales,
@@ -52,7 +52,7 @@ WHERE order_amount >= 100
 GROUP BY category
 ORDER BY category;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_004 */
 SELECT customer_type,
        COUNT(*)          AS order_count,
        SUM(order_amount) AS total_sales
@@ -61,7 +61,7 @@ WHERE order_date >= '2024-01-05'
 GROUP BY customer_type
 ORDER BY customer_type;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_005 */
 SELECT region,
        category,
        COUNT(*)          AS order_count,
@@ -74,7 +74,7 @@ WHERE (category = 'Electronics' OR category = 'Furniture')
 GROUP BY region, category
 ORDER BY region, category;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_006 */
 SELECT customer_type,
        COUNT(*)          AS order_count,
        AVG(order_amount) AS avg_order_amount

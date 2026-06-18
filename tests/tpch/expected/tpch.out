@@ -1152,7 +1152,7 @@ order by
         p_brand,
         p_type,
         p_size;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[2]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported aggregate distinct at Plan.lefttree.targetlist[3].expr
   p_brand   |          p_type           | p_size | supplier_cnt 
 ------------+---------------------------+--------+--------------
  Brand#14   | PROMO BRUSHED STEEL       |      9 |            8

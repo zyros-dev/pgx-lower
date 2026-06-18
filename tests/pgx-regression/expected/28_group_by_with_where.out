@@ -35,20 +35,19 @@ GROUP BY category;
  Electronics |           4
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_002 */
 SELECT region, SUM(order_amount) AS total_sales
 FROM product_orders
 WHERE customer_type = 'Premium'
 GROUP BY region
 ORDER BY region;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.groupCol[0]
  region | total_sales 
 --------+-------------
  North  |     1500.00
  West   |      195.00
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_003 */
 SELECT category,
        COUNT(*)          AS order_count,
        SUM(order_amount) AS total_sales,
@@ -58,14 +57,13 @@ WHERE order_amount >= 100
   AND quantity <= 3
 GROUP BY category
 ORDER BY category;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.groupCol[0]
   category   | order_count | total_sales |    avg_quantity    
 -------------+-------------+-------------+--------------------
  Electronics |           3 |     2700.00 | 1.3333333333333333
  Furniture   |           4 |     1450.00 | 1.7500000000000000
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_004 */
 SELECT customer_type,
        COUNT(*)          AS order_count,
        SUM(order_amount) AS total_sales
@@ -73,7 +71,6 @@ FROM product_orders
 WHERE order_date >= '2024-01-05'
 GROUP BY customer_type
 ORDER BY customer_type;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  customer_type | order_count | total_sales 
 ---------------+-------------+-------------
  Business      |           3 |     1250.00
@@ -81,7 +78,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Regular       |           1 |      400.00
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_005 */
 SELECT region,
        category,
        COUNT(*)          AS order_count,
@@ -93,7 +90,6 @@ WHERE (category = 'Electronics' OR category = 'Furniture')
   AND order_amount BETWEEN 100 AND 1000
 GROUP BY region, category
 ORDER BY region, category;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.groupCol[0]
  region |  category   | order_count | total_sales | min_order | max_order 
 --------+-------------+-------------+-------------+-----------+-----------
  East   | Furniture   |           1 |      300.00 |    300.00 |    300.00
@@ -102,7 +98,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported a
  West   | Electronics |           1 |      120.00 |    120.00 |    120.00
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_28_group_by_with_where_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_28_group_by_with_where_006 */
 SELECT customer_type,
        COUNT(*)          AS order_count,
        AVG(order_amount) AS avg_order_amount
@@ -111,7 +107,6 @@ WHERE quantity >= 2
 GROUP BY customer_type
 HAVING COUNT(*) >= 2
 ORDER BY customer_type;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  customer_type | order_count |   avg_order_amount   
 ---------------+-------------+----------------------
  Business      |           2 | 175.0000000000000000

@@ -26,6 +26,7 @@ extern "C" {
 #include "catalog/pg_type_d.h"
 #include "utils/memutils.h"
 #include "utils/builtins.h"
+#include "utils/typcache.h"
 }
 
 #include <cstdlib>
@@ -180,6 +181,17 @@ uint64_t runtime::StringRuntime::pgCallHash1(runtime::VarLen32 value, uint32_t t
                                              uint32_t collationOid) {
     const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
     return static_cast<uint64_t>(DatumGetUInt32(OidFunctionCall1Coll(functionOid, collationOid, datum)));
+}
+
+uint64_t
+runtime::StringRuntime::pgHashString(runtime::VarLen32 value, uint32_t typeOid, int32_t typmod, uint32_t collationOid) {
+    (void)typmod;
+    TypeCacheEntry* typentry = lookup_type_cache(typeOid, TYPECACHE_EQ_OPR_FINFO | TYPECACHE_HASH_PROC_FINFO);
+    if (!OidIsValid(typentry->eq_opr_finfo.fn_oid) || !OidIsValid(typentry->hash_proc_finfo.fn_oid)) {
+        elog(ERROR, "unsupported PostgreSQL string hash type oid %u", typeOid);
+    }
+    const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
+    return static_cast<uint64_t>(DatumGetUInt32(FunctionCall1Coll(&typentry->hash_proc_finfo, collationOid, datum)));
 }
 
 runtime::VarLen32 runtime::StringRuntime::pgCallString1(runtime::VarLen32 value, uint32_t typeOid, uint32_t functionOid,

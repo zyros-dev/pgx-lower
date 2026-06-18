@@ -28,7 +28,7 @@ SELECT name, salary
 FROM test_order_where
 WHERE salary > 50000
 ORDER BY salary;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_24_order_by_with_where_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_24_order_by_with_where_002 */
 SELECT name, department, salary
 FROM test_order_where
 WHERE salary >= 50000
@@ -44,7 +44,7 @@ SELECT name, age, salary
 FROM test_order_where
 WHERE age < 30
 ORDER BY salary DESC;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_24_order_by_with_where_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_24_order_by_with_where_005 */
 SELECT name, department, salary, years
 FROM test_order_where
 WHERE salary >= 45000

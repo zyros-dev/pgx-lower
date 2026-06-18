@@ -627,6 +627,21 @@ module {
     requireNotContains(nullablePgTextLikeLowered, "db.runtime_call");
     requireNotContains(nullablePgTextLikeLowered, "(tuple<i1, !util.varlen32>, !util.varlen32)");
 
+    auto nullablePgTextCompare = parseModule(f.ctx, R"mlir(
+module {
+  func.func @nullable_pg_text_compare(%left: !db.pg_text<collation = 100, nullable>, %right: !db.pg_text<collation = 100>) -> !db.pg_bool<nullable> {
+    %lt = db.compare lt %left : !db.pg_text<collation = 100, nullable>, %right : !db.pg_text<collation = 100> -> !db.pg_bool<nullable>
+    return %lt : !db.pg_bool<nullable>
+  }
+}
+)mlir");
+    REQUIRE(nullablePgTextCompare);
+    REQUIRE(runDBToStd(f.ctx, *nullablePgTextCompare));
+    const std::string nullablePgTextCompareLowered = moduleToString(*nullablePgTextCompare);
+    requireNotContains(nullablePgTextCompareLowered, "db.compare");
+    requireContains(nullablePgTextCompareLowered, "scf.if");
+    requireContains(nullablePgTextCompareLowered, "util.pack");
+
     auto nullableRecordAt = parseModule(f.ctx, R"mlir(
 module {
   func.func @nullable_record_at(%record: !dsa.record<tuple<tuple<i1, i32>, i32>>) -> tuple<i1, i32> {

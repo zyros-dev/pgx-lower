@@ -27,6 +27,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/postgresql_type_mapper_tests.cpp
             ../src/pgx-lower/test/string_varlena_runtime_tests.cpp
             ../src/pgx-lower/test/string_runtime_bridge_tests.cpp
+            ../src/pgx-lower/test/string_hash_group_tests.cpp
             ../src/pgx-lower/test/temporal_runtime_tests.cpp
         )
     endif()
@@ -137,6 +138,7 @@ if(NOT BUILDING_UNIT_TESTS)
             62_string_support_boundary
             63_string_varlena_runtime
             64_string_scalar_truthfulness
+            65_string_sort_hash_group
             66_row_first_slice
             66_temporal_date_int4_arithmetic
             67_row_output_materialization

@@ -301,17 +301,6 @@ static uint32_t pgStringCompareFunctionOid(mlir::Type type, mlir::db::DBCmpPredi
     return InvalidOid;
 }
 
-static uint32_t pgStringHashFunctionOid(mlir::Type type) {
-    type = getBaseType(type);
-    if (mlir::isa<mlir::db::PgBpcharType>(type)) {
-        return F_HASHBPCHAR;
-    }
-    if (mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType>(type)) {
-        return F_HASHTEXT;
-    }
-    return InvalidOid;
-}
-
 template <class Op>
 class SimpleTypeConversionPattern : public ConversionPattern {
    mlir::LogicalResult safelyMoveRegion(ConversionPatternRewriter& rewriter, mlir::TypeConverter& typeConverter, mlir::Region& source, mlir::Region& target) const {
@@ -563,7 +552,6 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
        {
            return failure();
        }
-       Value res;
        auto leftOperand = unwrapNullableOperand(rewriter, cmpOp->getLoc(), adaptor.getLeft());
        auto rightOperand = unwrapNullableOperand(rewriter, cmpOp->getLoc(), adaptor.getRight());
        Value left = leftOperand.payload;
@@ -572,48 +560,56 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
        if (auto functionOidAttr = cmpOp->getAttrOfType<mlir::IntegerAttr>("pg_function_oid")) {
            pgFunctionOid = static_cast<uint32_t>(functionOidAttr.getUInt());
        }
-       if (mlir::db::isPgValueType(type) && pgFunctionOid != InvalidOid) {
-           Value leftTypeOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgTypeOid(type), 32);
-           Value rightTypeOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgTypeOid(type), 32);
-           Value functionOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), pgFunctionOid, 32);
-           uint32_t pgCollationOid = mlir::db::getPgCollation(type);
-           if (auto collationAttr = cmpOp->getAttrOfType<mlir::IntegerAttr>("pg_input_collation_oid")) {
-               pgCollationOid = static_cast<uint32_t>(collationAttr.getUInt());
+       auto createFalse = [](OpBuilder& builder, Location loc) -> Value {
+           return builder.create<arith::ConstantOp>(loc, builder.getIntegerAttr(builder.getI1Type(), 0));
+       };
+       auto createStringComparison = [&](OpBuilder& builder, Location loc) -> Value {
+           if (mlir::db::isPgValueType(type) && pgFunctionOid != InvalidOid) {
+               Value leftTypeOid = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(type), 32);
+               Value rightTypeOid = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(type), 32);
+               Value functionOid = builder.create<arith::ConstantIntOp>(loc, pgFunctionOid, 32);
+               uint32_t pgCollationOid = mlir::db::getPgCollation(type);
+               if (auto collationAttr = cmpOp->getAttrOfType<mlir::IntegerAttr>("pg_input_collation_oid")) {
+                   pgCollationOid = static_cast<uint32_t>(collationAttr.getUInt());
+               }
+               Value collationOid = builder.create<arith::ConstantIntOp>(loc, pgCollationOid, 32);
+               return rt::StringRuntime::pgCallBool2(
+                   builder, loc)({left, leftTypeOid, right, rightTypeOid, functionOid, collationOid})[0];
            }
-           Value collationOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), pgCollationOid, 32);
-           res = rt::StringRuntime::pgCallBool2(
-               rewriter, cmpOp->getLoc())({left, leftTypeOid, right, rightTypeOid, functionOid, collationOid})[0];
-       } else {
            switch (cmpOp.getPredicate()) {
-           case db::DBCmpPredicate::eq:
-               res = rt::StringRuntime::compareEq(rewriter, cmpOp->getLoc())({left, right})[0];
-               break;
-           case db::DBCmpPredicate::neq:
-               res = rt::StringRuntime::compareNEq(rewriter, cmpOp->getLoc())({left, right})[0];
-               break;
-           case db::DBCmpPredicate::lt:
-               res = rt::StringRuntime::compareLt(rewriter, cmpOp->getLoc())({left, right})[0];
-               break;
-           case db::DBCmpPredicate::gt:
-               res = rt::StringRuntime::compareGt(rewriter, cmpOp->getLoc())({left, right})[0];
-               break;
-           case db::DBCmpPredicate::lte:
-               res = rt::StringRuntime::compareLte(rewriter, cmpOp->getLoc())({left, right})[0];
-               break;
-           case db::DBCmpPredicate::gte:
-               res = rt::StringRuntime::compareGte(rewriter, cmpOp->getLoc())({left, right})[0];
-               break;
+           case db::DBCmpPredicate::eq: return rt::StringRuntime::compareEq(builder, loc)({left, right})[0];
+           case db::DBCmpPredicate::neq: return rt::StringRuntime::compareNEq(builder, loc)({left, right})[0];
+           case db::DBCmpPredicate::lt: return rt::StringRuntime::compareLt(builder, loc)({left, right})[0];
+           case db::DBCmpPredicate::gt: return rt::StringRuntime::compareGt(builder, loc)({left, right})[0];
+           case db::DBCmpPredicate::lte: return rt::StringRuntime::compareLte(builder, loc)({left, right})[0];
+           case db::DBCmpPredicate::gte: return rt::StringRuntime::compareGte(builder, loc)({left, right})[0];
            }
-       }
+           return createFalse(builder, loc);
+       };
+
+       Value res;
        if (mlir::Value isNull = combineNullFlags(rewriter, cmpOp->getLoc(), leftOperand.isNull, rightOperand.isNull)) {
+           auto ifOp = rewriter.create<mlir::scf::IfOp>(cmpOp->getLoc(), mlir::TypeRange{rewriter.getI1Type()}, isNull);
+           ifOp.getThenRegion().emplaceBlock();
+           ifOp.getElseRegion().emplaceBlock();
+           {
+               OpBuilder::InsertionGuard guard(rewriter);
+               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+               rewriter.create<mlir::scf::YieldOp>(cmpOp->getLoc(), createFalse(rewriter, cmpOp->getLoc()));
+           }
+           {
+               OpBuilder::InsertionGuard guard(rewriter);
+               rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
+               rewriter.create<mlir::scf::YieldOp>(cmpOp->getLoc(), createStringComparison(rewriter, cmpOp->getLoc()));
+           }
+           res = ifOp.getResult(0);
            mlir::Type convertedResultType = typeConverter->convertType(cmpOp.getType());
            if (mlir::isa<mlir::TupleType>(convertedResultType)) {
                rewriter.replaceOpWithNewOp<mlir::util::PackOp>(cmpOp, convertedResultType, mlir::ValueRange{isNull, res});
                return success();
            }
-           mlir::Value falseValue = rewriter.create<arith::ConstantOp>(
-               cmpOp->getLoc(), rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
-           res = rewriter.create<arith::SelectOp>(cmpOp->getLoc(), isNull, falseValue, res);
+       } else {
+           res = createStringComparison(rewriter, cmpOp->getLoc());
        }
        rewriter.replaceOp(cmpOp, res);
        return success();
@@ -2081,13 +2077,12 @@ class HashLowering : public ConversionPattern {
       } else if (auto varLenType = v.getType().dyn_cast_or_null<mlir::util::VarLen32Type>()) {
           (void)varLenType;
           mlir::Type baseOriginalType = getBaseType(originalType);
-          const uint32_t pgHashFunctionOid = pgStringHashFunctionOid(baseOriginalType);
-          if (mlir::db::isPgValueType(baseOriginalType) && pgHashFunctionOid != InvalidOid) {
+          if (isPgStringValueType(baseOriginalType)) {
               Value typeOid = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(baseOriginalType), 32);
-              Value functionOid = builder.create<arith::ConstantIntOp>(loc, pgHashFunctionOid, 32);
+              Value typmod = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgTypmod(baseOriginalType), 32);
               Value collationOid = builder.create<arith::ConstantIntOp>(loc, mlir::db::getPgCollation(baseOriginalType),
                                                                         32);
-              Value hash = rt::StringRuntime::pgCallHash1(builder, loc)({v, typeOid, functionOid, collationOid})[0];
+              Value hash = rt::StringRuntime::pgHashString(builder, loc)({v, typeOid, typmod, collationOid})[0];
               Value asIndex = builder.create<arith::IndexCastOp>(loc, builder.getIndexType(), hash);
               return combineHashes(builder, loc, asIndex, totalHash);
           }

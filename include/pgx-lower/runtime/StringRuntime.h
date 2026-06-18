@@ -13,6 +13,8 @@ struct StringRuntime {
                                            uint32_t functionOid, uint32_t collationOid);
    static uint64_t NO_SIDE_EFFECTS pgCallHash1(VarLen32 value, uint32_t typeOid, uint32_t functionOid,
                                               uint32_t collationOid);
+   static uint64_t NO_SIDE_EFFECTS pgHashString(VarLen32 value, uint32_t typeOid, int32_t typmod,
+                                                uint32_t collationOid);
    static VarLen32 pgCallString1(VarLen32 value, uint32_t typeOid, uint32_t functionOid, uint32_t collationOid);
    static VarLen32 pgCallString2(VarLen32 value, uint32_t typeOid, int32_t arg1, uint32_t functionOid,
                                  uint32_t collationOid);

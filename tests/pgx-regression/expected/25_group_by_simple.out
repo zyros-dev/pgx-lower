@@ -72,11 +72,10 @@ VALUES ('Electronics', 'Laptop', 1200, 2),
        ('Books', 'Novel', 15, 20),
        ('Books', 'Textbook', 125, 4),
        ('Electronics', 'Tablet', 450, 2);
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_004 */
 SELECT department, COUNT(*) AS item_count
 FROM sales_data
 GROUP BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.groupCol[0]
  department  | item_count 
 -------------+------------
  Electronics |          5
@@ -84,12 +83,11 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported a
  Books       |          2
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_005 */
 SELECT department, SUM(amount) AS total_sales
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  | total_sales 
 -------------+-------------
  Books       |         140
@@ -97,12 +95,11 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Electronics |        2060
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_006 */
 SELECT department, AVG(amount) AS avg_amount
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  |      avg_amount      
 -------------+----------------------
  Books       |  70.0000000000000000
@@ -110,12 +107,11 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Electronics | 412.0000000000000000
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_007 */
 SELECT department, MIN(amount) AS min_amount, MAX(amount) AS max_amount
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  | min_amount | max_amount 
 -------------+------------+------------
  Books       |         15 |        125
@@ -123,7 +119,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Electronics |         25 |       1200
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_25_group_by_simple_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_25_group_by_simple_008 */
 SELECT department,
        COUNT(*)      AS item_count,
        SUM(amount)   AS total_sales,
@@ -131,7 +127,6 @@ SELECT department,
 FROM sales_data
 GROUP BY department
 ORDER BY department;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  department  | item_count | total_sales |    avg_quantity     
 -------------+------------+-------------+---------------------
  Books       |          2 |         140 | 12.0000000000000000

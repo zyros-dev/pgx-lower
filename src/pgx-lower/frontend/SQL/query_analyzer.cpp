@@ -487,8 +487,10 @@ static auto sortOperatorMatchesTargetType(const Oid operatorOid, const Oid keyTy
     }
 
     const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    const auto operandsMatchKey = (oper->oprleft == keyType && oper->oprright == keyType)
+                                  || (keyType == VARCHAROID && oper->oprleft == TEXTOID && oper->oprright == TEXTOID);
     const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
-                         && oper->oprresult == BOOLOID && oper->oprleft == keyType && oper->oprright == keyType
+                         && oper->oprresult == BOOLOID && operandsMatchKey
                          && operatorNameMatchesAny(NameStr(oper->oprname), strictOrderingOperatorNames,
                                                    std::size(strictOrderingOperatorNames))
                          && operatorTypeSignatureMatchesAny(oper->oprresult, oper->oprleft, oper->oprright,
@@ -612,6 +614,9 @@ static constexpr PgFunctionSignature supportedAggregates[] = {
     {"min", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"min", PROKIND_AGGREGATE, DATEOID, 1, {DATEOID, InvalidOid, InvalidOid}},
     {"min", PROKIND_AGGREGATE, TIMESTAMPOID, 1, {TIMESTAMPOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, VARCHAROID, 1, {VARCHAROID, InvalidOid, InvalidOid}},
+    {"min", PROKIND_AGGREGATE, BPCHAROID, 1, {BPCHAROID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, INT8OID, 1, {INT8OID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, INT2OID, 1, {INT2OID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, INT4OID, 1, {INT4OID, InvalidOid, InvalidOid}},
@@ -620,6 +625,9 @@ static constexpr PgFunctionSignature supportedAggregates[] = {
     {"max", PROKIND_AGGREGATE, NUMERICOID, 1, {NUMERICOID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, DATEOID, 1, {DATEOID, InvalidOid, InvalidOid}},
     {"max", PROKIND_AGGREGATE, TIMESTAMPOID, 1, {TIMESTAMPOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, TEXTOID, 1, {TEXTOID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, VARCHAROID, 1, {VARCHAROID, InvalidOid, InvalidOid}},
+    {"max", PROKIND_AGGREGATE, BPCHAROID, 1, {BPCHAROID, InvalidOid, InvalidOid}},
 };
 
 static constexpr PgFunctionSignature supportedCountAggregates[] = {
@@ -808,6 +816,14 @@ static auto relabelIsTransparentVarcharToText(const RelabelType* relabel) -> boo
         return false;
     }
     return exprType(reinterpret_cast<Node*>(relabel->arg)) == VARCHAROID && relabel->resulttype == TEXTOID;
+}
+
+static auto aggregateAllowsTransparentVarcharToTextArg(const Aggref* agg) -> bool {
+    if (!agg) {
+        return false;
+    }
+    const auto functionName = postgresFunctionName(agg->aggfnoid);
+    return functionName == "min" || functionName == "max";
 }
 
 static auto supportedStringFunctionSignatureIsLowerable(const FuncExpr* func) -> bool {
@@ -1385,8 +1401,10 @@ static auto groupingOperatorMatchesTargetType(const Oid operatorOid, const Oid k
     }
 
     const auto oper = reinterpret_cast<Form_pg_operator>(GETSTRUCT(tuple));
+    const auto operandsMatchKey = (oper->oprleft == keyType && oper->oprright == keyType)
+                                  || (keyType == VARCHAROID && oper->oprleft == TEXTOID && oper->oprright == TEXTOID);
     const auto matches = oper->oprnamespace == PG_CATALOG_NAMESPACE && oper->oprkind == 'b'
-                         && oper->oprresult == BOOLOID && oper->oprleft == keyType && oper->oprright == keyType
+                         && oper->oprresult == BOOLOID && operandsMatchKey
                          && operatorNameMatchesAny(NameStr(oper->oprname), groupingEqualityOperatorNames,
                                                    std::size(groupingEqualityOperatorNames))
                          && operatorTypeSignatureMatchesAny(oper->oprresult, oper->oprleft, oper->oprright,
@@ -1937,7 +1955,37 @@ auto QueryAnalyzer::analyzeExpr(const Node* expr, const std::string& location) -
                                             : "unsupported aggregate function " + functionName + "()",
                                         location);
         }
-        mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
+        if (aggregateSupported && aggregateAllowsTransparentVarcharToTextArg(agg) && agg->args) {
+            ListCell* lc = nullptr;
+            auto index = 0;
+            foreach (lc, agg->args) {
+                const auto* target = static_cast<const TargetEntry*>(lfirst(lc));
+                const auto argLocation = location + ".args[" + std::to_string(index) + "]";
+                if (!target || target->resjunk || !target->expr) {
+                    mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
+                    break;
+                }
+                const auto* arg = reinterpret_cast<const Node*>(target->expr);
+                if (nodeTag(arg) == T_RelabelType
+                    && relabelIsTransparentVarcharToText(reinterpret_cast<const RelabelType*>(arg)))
+                {
+                    const auto* relabel = reinterpret_cast<const RelabelType*>(arg);
+                    if (!isCollationSupported(relabel->resultcollid)) {
+                        result.addUnsupportedReason(UnsupportedReasonKind::unsupported_collation,
+                                                    "unsupported relabel collation", argLocation + ".expr");
+                    }
+                    mergeAnalyzerResult(
+                        result, analyzeExpr(reinterpret_cast<const Node*>(relabel->arg), argLocation + ".expr.arg"));
+                    mergeAnalyzerResult(result, analyzeExprType(arg, argLocation + ".type"));
+                } else {
+                    mergeAnalyzerResult(result, analyzeExpr(arg, argLocation + ".expr"));
+                    mergeAnalyzerResult(result, analyzeExprType(arg, argLocation + ".type"));
+                }
+                ++index;
+            }
+        } else {
+            mergeAnalyzerResult(result, analyzeTargetList(agg->args, location + ".args"));
+        }
         if (!aggregateSupported || agg->aggtype != BYTEAOID) {
             mergeAnalyzerResult(result, analyzeExprType(expr, location + ".type"));
         }

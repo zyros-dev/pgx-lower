@@ -21,27 +21,27 @@ VALUES ('Sales', 50000, 3, 'Alice'),
        ('IT', 60000, 6, 'Frank'),
        ('HR', 55000, 3, 'Grace');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_001 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department, salary;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_002 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department ASC, salary ASC;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_003 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department ASC, salary DESC;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_004 */
 SELECT department, salary, name
 FROM test_order_multi
 ORDER BY department DESC, salary DESC;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_005 */
 SELECT department, salary, years, name
 FROM test_order_multi
 ORDER BY department, salary, years;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_22_order_by_multiple_columns_006 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_22_order_by_multiple_columns_006 */
 SELECT department, salary, years, name
 FROM test_order_multi
 ORDER BY department ASC, salary DESC, years ASC;
