@@ -350,9 +350,12 @@ module {
     ]>> {schema = #db.pg_row_schema<[
       #db.pg_row_field<index = 0, relid = 12345, varno = 1, attno = 1, name = "l_orderkey", type = !db.pg_int8, oid = 20, typmod = -1, collation = 0, nullable = never, resjunk = false, origin = base>
     ]>}
-    db.pg_emit_row %0 : !db.pg_row<#db.pg_row_schema<[
+    %1 = db.pg_row_get %0[0] : !db.pg_row<#db.pg_row_schema<[
       #db.pg_row_field<index = 0, relid = 12345, varno = 1, attno = 1, name = "l_orderkey", type = !db.pg_int8, oid = 20, typmod = -1, collation = 0, nullable = never, resjunk = false, origin = base>
-    ]>>
+    ]>> -> !db.pg_int8
+    db.pg_emit_row %1 {schema = #db.pg_row_schema<[
+      #db.pg_row_field<index = 0, relid = 12345, varno = 1, attno = 1, name = "l_orderkey", type = !db.pg_int8, oid = 20, typmod = -1, collation = 0, nullable = never, resjunk = false, origin = base>
+    ]>} : !db.pg_int8
     return
   }
 }
@@ -389,16 +392,18 @@ module {
     PG_RETURN_VOID();
 }
 
-PGX_TEST_FN(pg_emit_row_verifier_rejects_non_row) {
+PGX_TEST_FN(pg_emit_row_verifier_rejects_schema_value_mismatch) {
     Fixture f;
     requireParseOrVerifyFails(f.ctx, R"mlir(
 module {
-  func.func @bad_emit(%value: !db.pg_int8) {
-    db.pg_emit_row %value : !db.pg_int8
+  func.func @bad_emit(%value: !db.pg_int4) {
+    db.pg_emit_row %value {schema = #db.pg_row_schema<[
+      #db.pg_row_field<index = 0, relid = 12345, varno = 1, attno = 1, name = "l_orderkey", type = !db.pg_int8, oid = 20, typmod = -1, collation = 0, nullable = never, resjunk = false, origin = base>
+    ]>} : !db.pg_int4
     return
   }
 }
 )mlir",
-                              "requires a !db.pg_row operand");
+                              "value type must match row schema field type");
     PG_RETURN_VOID();
 }

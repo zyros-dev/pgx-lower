@@ -850,20 +850,43 @@ static auto relabelIsTransparentVarcharToText(const RelabelType* relabel) -> boo
     return exprType(reinterpret_cast<Node*>(relabel->arg)) == VARCHAROID && relabel->resulttype == TEXTOID;
 }
 
-static auto targetListEntryType(const List* targetList, const AttrNumber column) -> Oid {
+static auto targetListEntry(const List* targetList, const AttrNumber column, const bool includeResjunk = false)
+    -> const TargetEntry* {
     if (!targetList) {
-        return InvalidOid;
+        return nullptr;
     }
 
     ListCell* lc = nullptr;
     foreach (lc, targetList) {
         const auto* tle = static_cast<const TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk || tle->resno != column || !tle->expr) {
+        if (!tle || (!includeResjunk && tle->resjunk) || tle->resno != column || !tle->expr) {
             continue;
         }
-        return exprType(const_cast<Node*>(reinterpret_cast<const Node*>(tle->expr)));
+        return tle;
     }
-    return InvalidOid;
+    return nullptr;
+}
+
+static auto targetListEntryType(const List* targetList, const AttrNumber column, const bool includeResjunk = false)
+    -> Oid {
+    const auto* tle = targetListEntry(targetList, column, includeResjunk);
+    if (!tle) {
+        return InvalidOid;
+    }
+    return exprType(const_cast<Node*>(reinterpret_cast<const Node*>(tle->expr)));
+}
+
+static auto sortResjunkKeyMetadataIsSupported(const Sort* sort, const TargetEntry* tle) -> bool {
+    if (!sort || !tle || !tle->resjunk || !tle->expr || !sort->plan.lefttree || nodeTag(sort->plan.lefttree) != T_SeqScan)
+    {
+        return false;
+    }
+    if (!IsA(tle->expr, Var)) {
+        return false;
+    }
+
+    const auto keyType = exprType(const_cast<Node*>(reinterpret_cast<const Node*>(tle->expr)));
+    return keyType == INT4OID || keyType == INT8OID;
 }
 
 static auto collectAggregateRefs(const Node* expr, std::set<Index>& aggNos) -> void {
@@ -997,11 +1020,41 @@ static auto rowFirstSliceScalarIsSupported(const Node* expr) -> bool {
     }
 }
 
+static auto rowFirstSliceComparisonExprIsSupported(const Node* expr) -> bool {
+    if (!expr || nodeTag(expr) != T_OpExpr) {
+        return false;
+    }
+    const auto* op = reinterpret_cast<const OpExpr*>(expr);
+    if (!op || !op->args || list_length(op->args) != 2 || op->opresulttype != BOOLOID) {
+        return false;
+    }
+    const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+    const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+    return rowFirstSliceScalarIsSupported(lhs) && rowFirstSliceScalarIsSupported(rhs)
+           && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(lhs)))
+           && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(rhs))) && rowFirstSliceOperatorIsSupported(op);
+}
+
+static auto rowFirstSliceTargetExprIsSupported(const Node* expr) -> bool {
+    if (!expr) {
+        return false;
+    }
+    switch (nodeTag(expr)) {
+    case T_Var: return rowFirstSliceScalarIsSupported(expr);
+    case T_NullTest: {
+        const auto* nullTest = reinterpret_cast<const NullTest*>(expr);
+        return nullTest != nullptr && !nullTest->argisrow
+               && rowFirstSliceScalarIsSupported(reinterpret_cast<const Node*>(nullTest->arg));
+    }
+    case T_OpExpr: return rowFirstSliceComparisonExprIsSupported(expr);
+    default: return false;
+    }
+}
+
 static auto rowFirstSliceTargetListIsSupported(const List* targetList) -> bool {
     if (!targetList) {
         return false;
     }
-
     bool hasOutputColumn = false;
     ListCell* lc = nullptr;
     foreach (lc, targetList) {
@@ -1011,7 +1064,7 @@ static auto rowFirstSliceTargetListIsSupported(const List* targetList) -> bool {
         }
         hasOutputColumn = true;
         const auto* expr = reinterpret_cast<const Node*>(target->expr);
-        if (!expr || nodeTag(expr) != T_Var || !rowFirstSliceScalarIsSupported(expr)) {
+        if (!rowFirstSliceTargetExprIsSupported(expr)) {
             return false;
         }
     }
@@ -1024,17 +1077,7 @@ static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
     }
 
     switch (nodeTag(expr)) {
-    case T_OpExpr: {
-        const auto* op = reinterpret_cast<const OpExpr*>(expr);
-        if (!op || !op->args || list_length(op->args) != 2 || op->opresulttype != BOOLOID) {
-            return false;
-        }
-        const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
-        const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
-        return rowFirstSliceScalarIsSupported(lhs) && rowFirstSliceScalarIsSupported(rhs)
-               && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(lhs)))
-               && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(rhs))) && rowFirstSliceOperatorIsSupported(op);
-    }
+    case T_OpExpr: return rowFirstSliceComparisonExprIsSupported(expr);
     case T_BoolExpr: {
         const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
         if (!boolExpr || boolExpr->boolop != AND_EXPR) {
@@ -1255,7 +1298,13 @@ static auto analyzeSortMetadata(const Sort* sort, const std::string& location) -
                                         itemLocation);
         }
 
-        const auto keyType = targetListEntryType(sort->plan.targetlist, sort->sortColIdx[index]);
+        auto keyType = targetListEntryType(sort->plan.targetlist, sort->sortColIdx[index]);
+        if (keyType == InvalidOid) {
+            const auto* resjunkTarget = targetListEntry(sort->plan.targetlist, sort->sortColIdx[index], true);
+            if (sortResjunkKeyMetadataIsSupported(sort, resjunkTarget)) {
+                keyType = exprType(const_cast<Node*>(reinterpret_cast<const Node*>(resjunkTarget->expr)));
+            }
+        }
         if (keyType == InvalidOid) {
             result.addUnsupportedReason(UnsupportedReasonKind::missing_metadata, "sort key target metadata is missing",
                                         itemLocation);

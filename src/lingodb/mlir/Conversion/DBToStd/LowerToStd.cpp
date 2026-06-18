@@ -716,8 +716,45 @@ class PgRowGetLowering : public OpConversionPattern<mlir::db::PgRowGetOp> {
 class PgEmitRowLowering : public OpConversionPattern<mlir::db::PgEmitRowOp> {
    public:
     using OpConversionPattern<mlir::db::PgEmitRowOp>::OpConversionPattern;
-    LogicalResult
-    matchAndRewrite(mlir::db::PgEmitRowOp emitRowOp, OpAdaptor, ConversionPatternRewriter& rewriter) const override {
+    LogicalResult matchAndRewrite(mlir::db::PgEmitRowOp emitRowOp, OpAdaptor adaptor,
+                                  ConversionPatternRewriter& rewriter) const override {
+        auto loc = emitRowOp->getLoc();
+        auto fields = emitRowOp.getSchema().getFields();
+        auto i32 = [&](int32_t value) -> mlir::Value {
+            return rewriter.create<mlir::arith::ConstantIntOp>(loc, value, 32);
+        };
+        auto bit = [&](bool value) -> mlir::Value {
+            return rewriter.create<mlir::arith::ConstantIntOp>(loc, value ? 1 : 0, 1);
+        };
+
+        rt::PgRowRuntime::emitRowStart(rewriter, loc)({i32(static_cast<int32_t>(fields.size()))});
+        for (auto [index, field] : llvm::enumerate(fields)) {
+            mlir::Value value = adaptor.getValues()[index];
+            auto unwrapped = unwrapNullableOperand(rewriter, loc, value);
+            mlir::Value isNull = unwrapped.isNull ? unwrapped.isNull : bit(false);
+            mlir::Value payload = unwrapped.payload;
+            mlir::Type fieldType = getNonNullablePgBaseType(field.getType());
+            llvm::SmallVector<mlir::Value> args{
+                i32(static_cast<int32_t>(index)),
+                isNull,
+                payload,
+                i32(static_cast<int32_t>(field.getOid())),
+                i32(field.getTypmod()),
+                i32(static_cast<int32_t>(field.getCollation())),
+                bit(field.getNullability() == mlir::db::PgNullability::Maybe),
+            };
+
+            if (mlir::isa<mlir::db::PgBoolType>(fieldType)) {
+                rt::PgRowRuntime::emitBool(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgInt4Type>(fieldType)) {
+                rt::PgRowRuntime::emitInt32(rewriter, loc)(args);
+            } else if (mlir::isa<mlir::db::PgInt8Type>(fieldType)) {
+                rt::PgRowRuntime::emitInt64(rewriter, loc)(args);
+            } else {
+                return failure();
+            }
+        }
+        rt::PgRowRuntime::emitRowDone(rewriter, loc)({i32(static_cast<int32_t>(fields.size()))});
         rewriter.eraseOp(emitRowOp);
         return success();
     }

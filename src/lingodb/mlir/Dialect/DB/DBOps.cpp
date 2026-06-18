@@ -252,8 +252,14 @@ LogicalResult mlir::db::PgRowProjectOp::verify() {
 }
 
 LogicalResult mlir::db::PgEmitRowOp::verify() {
-    if (!mlir::isa<mlir::db::PgRowType>(getRow().getType())) {
-        return emitOpError("requires a !db.pg_row operand");
+    auto fields = getSchema().getFields();
+    if (getValues().size() != fields.size()) {
+        return emitOpError("value count must match row schema field count");
+    }
+    for (auto [index, value] : llvm::enumerate(getValues())) {
+        if (value.getType() != fields[index].getType()) {
+            return emitOpError("value type must match row schema field type");
+        }
     }
     return success();
 }

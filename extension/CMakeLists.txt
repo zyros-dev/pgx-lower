@@ -20,6 +20,7 @@ if(NOT BUILDING_UNIT_TESTS)
             ../src/pgx-lower/test/pg_runtime_function_type_tests.cpp
             ../src/pgx-lower/test/pg_row_schema_tests.cpp
             ../src/pgx-lower/test/pg_row_first_slice_tests.cpp
+            ../src/pgx-lower/test/pg_row_output_tests.cpp
             ../src/pgx-lower/test/pg_nullability_tests.cpp
             ../src/pgx-lower/test/pg_legacy_nullable_cleanup_tests.cpp
             ../src/pgx-lower/test/postgresql_type_mapper_tests.cpp
@@ -136,6 +137,7 @@ if(NOT BUILDING_UNIT_TESTS)
             63_string_varlena_runtime
             66_row_first_slice
             66_temporal_date_int4_arithmetic
+            67_row_output_materialization
             67_temporal_date_extract
 )
 

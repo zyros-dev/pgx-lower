@@ -1,10 +1,57 @@
 #include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "pgx-lower/utility/logging.h"
+
+namespace {
+
+static bool moduleRequestsRowLowerPath(mlir::Operation* op) {
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    if (!module) {
+        return false;
+    }
+    auto attr = module->getAttrOfType<mlir::StringAttr>("pgx_lower.lower_path");
+    return attr && attr.getValue() == "row";
+}
+
+static mlir::StringAttr outputNameFor(mlir::relalg::MaterializeOp materializeOp, size_t index, mlir::OpBuilder& builder) {
+    if (index < materializeOp.getColumns().size()) {
+        if (auto name = mlir::dyn_cast_or_null<mlir::StringAttr>(materializeOp.getColumns()[index])) {
+            return name;
+        }
+    }
+    return builder.getStringAttr("col" + std::to_string(index + 1));
+}
+
+static mlir::db::PgRowFieldAttr
+rowOutputFieldForValue(mlir::Value value, uint32_t index, mlir::StringAttr outputName, mlir::OpBuilder& builder) {
+    mlir::Type type = value.getType();
+    if (!mlir::db::isPgValueType(type)) {
+        PGX_ERROR("row output materialization requires PostgreSQL semantic value types");
+        return {};
+    }
+
+    if (auto rowGet = mlir::dyn_cast_or_null<mlir::db::PgRowGetOp>(value.getDefiningOp())) {
+        auto inputField = mlir::db::getPgRowFieldByIndex(rowGet.getRow().getType(), rowGet.getIndex());
+        if (inputField) {
+            return mlir::db::PgRowFieldAttr::get(
+                builder.getContext(), index, inputField.getRelid(), inputField.getVarno(), inputField.getAttno(),
+                outputName, type, mlir::db::getPgTypeOid(type), mlir::db::getPgTypmod(type),
+                mlir::db::getPgCollation(type), mlir::db::getPgNullability(type), false, inputField.getOrigin());
+        }
+    }
+
+    return mlir::db::PgRowFieldAttr::get(builder.getContext(), index, InvalidOid, 0, 0, outputName, type,
+                                         mlir::db::getPgTypeOid(type), mlir::db::getPgTypmod(type),
+                                         mlir::db::getPgCollation(type), mlir::db::getPgNullability(type), false,
+                                         mlir::db::PgRowFieldOrigin::computed);
+}
+
+} // namespace
 
 class MaterializeTranslator : public mlir::relalg::Translator {
    mlir::relalg::MaterializeOp materializeOp;
@@ -79,7 +126,30 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp::consume called");
 
       if (context.currentPgRow) {
-          builder.create<mlir::db::PgEmitRowOp>(materializeOp->getLoc(), context.currentPgRow);
+          std::vector<mlir::Value> values;
+          std::vector<mlir::db::PgRowFieldAttr> fields;
+          values.reserve(orderedAttributes.getAttrs().size());
+          fields.reserve(orderedAttributes.getAttrs().size());
+
+          for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
+              auto value = orderedAttributes.resolve(context, i);
+              if (!value) {
+                  PGX_ERROR("MaterializeOp row output: Column resolution failed for position %zu", i);
+                  continue;
+              }
+              auto field = rowOutputFieldForValue(value, static_cast<uint32_t>(values.size()),
+                                                  outputNameFor(materializeOp, i, builder), builder);
+              if (!field) {
+                  PGX_ERROR("MaterializeOp row output: failed to build output field metadata for position %zu", i);
+                  continue;
+              }
+              values.push_back(value);
+              fields.push_back(field);
+          }
+
+          auto schema = mlir::db::PgRowSchemaAttr::get(builder.getContext(), fields);
+          builder.create<mlir::db::PgEmitRowOp>(materializeOp->getLoc(), values, schema);
+          return;
       }
 
       if (materializeOp.getCols().empty()) {
@@ -110,6 +180,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp::produce called");
+      const bool rowPath = moduleRequestsRowLowerPath(materializeOp);
       if (materializeOp.getCols().empty()) {
          auto emptyTupleType = mlir::TupleType::get(builder.getContext(), {});
          auto tableBuilderType = mlir::dsa::TableBuilderType::get(builder.getContext(), emptyTupleType);
@@ -134,27 +205,29 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       }
       
       std::string descr = "";
-      auto tupleType = orderedAttributes.getTupleType(builder.getContext());
+      auto tupleType = rowPath ? mlir::TupleType::get(builder.getContext(), {})
+                               : orderedAttributes.getTupleType(builder.getContext());
       PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Building description for %zu columns", materializeOp.getColumns().size());
-      for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
-         if (!descr.empty()) {
-            descr += ";";
-         }
-         auto colAttr = materializeOp.getColumns()[i];
-         if (!colAttr) {
-            PGX_ERROR("MaterializeTranslator::produce column attribute at index %zu is null", i);
-            continue;
-         }
-         
-         if (!isa<::mlir::StringAttr>(colAttr)) {
-            PGX_ERROR("MaterializeTranslator::produce column attribute is not a StringAttr");
-            continue;
-         }
-         
-         auto colName = cast<::mlir::StringAttr>(colAttr).str();
-         auto typeDescr = arrowDescrFromType(getBaseType(tupleType.getType(i)));
-         PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Column %zu: '%s' type '%s'", i, colName.c_str(), typeDescr.c_str());
-         descr += colName + ":" + typeDescr;
+      for (size_t i = 0; !rowPath && i < materializeOp.getColumns().size(); i++) {
+          if (!descr.empty()) {
+              descr += ";";
+          }
+          auto colAttr = materializeOp.getColumns()[i];
+          if (!colAttr) {
+              PGX_ERROR("MaterializeTranslator::produce column attribute at index %zu is null", i);
+              continue;
+          }
+
+          if (!isa<::mlir::StringAttr>(colAttr)) {
+              PGX_ERROR("MaterializeTranslator::produce column attribute is not a StringAttr");
+              continue;
+          }
+
+          auto colName = cast<::mlir::StringAttr>(colAttr).str();
+          auto typeDescr = arrowDescrFromType(getBaseType(tupleType.getType(i)));
+          PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Column %zu: '%s' type '%s'", i, colName.c_str(),
+                  typeDescr.c_str());
+          descr += colName + ":" + typeDescr;
       }
       PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Final description string: '%s'", descr.c_str());
       

@@ -57,6 +57,15 @@ struct PgRowRuntime {
                                 int32_t typmod, int32_t collation, bool nullable);
    static bool getInt64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
                               int32_t typmod, int32_t collation, bool nullable);
+
+   static void emitRowStart(int32_t expectedColumns);
+   static void emitBool(int32_t fieldIndex, bool isNull, bool value, int32_t oid, int32_t typmod, int32_t collation,
+                        bool nullable);
+   static void emitInt32(int32_t fieldIndex, bool isNull, int32_t value, int32_t oid, int32_t typmod,
+                         int32_t collation, bool nullable);
+   static void emitInt64(int32_t fieldIndex, bool isNull, int64_t value, int32_t oid, int32_t typmod,
+                         int32_t collation, bool nullable);
+   static void emitRowDone(int32_t expectedColumns);
 };
 
 void setExecutionContext(void* context);

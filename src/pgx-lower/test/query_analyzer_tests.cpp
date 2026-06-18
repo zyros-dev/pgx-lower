@@ -1070,6 +1070,43 @@ PGX_TEST_FN(query_analyzer_accepts_bpchar_sort_operator) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_accepts_resjunk_sort_key_metadata) {
+    auto outputValue = makeIntVar(1);
+    auto sortValue = makeIntVar(2);
+
+    auto outputTarget = TargetEntry{};
+    outputTarget.xpr.type = T_TargetEntry;
+    outputTarget.expr = reinterpret_cast<Expr*>(&outputValue);
+    outputTarget.resno = 1;
+    outputTarget.resjunk = false;
+
+    auto sortTarget = TargetEntry{};
+    sortTarget.xpr.type = T_TargetEntry;
+    sortTarget.expr = reinterpret_cast<Expr*>(&sortValue);
+    sortTarget.resno = 2;
+    sortTarget.resjunk = true;
+
+    auto sort = Sort{};
+    AttrNumber sortColIdx[1]{2};
+    Oid sortOperators[1]{Int4LessOperator};
+    Oid sortCollations[1]{InvalidOid};
+    bool nullsFirst[1]{false};
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    sort.plan.type = T_Sort;
+    sort.plan.targetlist = list_make2(&outputTarget, &sortTarget);
+    sort.plan.lefttree = reinterpret_cast<Plan*>(&scan);
+    sort.numCols = 1;
+    sort.sortColIdx = sortColIdx;
+    sort.sortOperators = sortOperators;
+    sort.collations = sortCollations;
+    sort.nullsFirst = nullsFirst;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeNodeForTesting(reinterpret_cast<Plan*>(&sort));
+    REQUIRE(result.isSupported());
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_rejects_unsupported_sort_collation) {
     SortPlanFixture fixture;
     fixture.collations[0] = 999999;
@@ -1780,6 +1817,51 @@ PGX_TEST_FN(query_analyzer_row_first_slice_rejects_not_equal_predicate) {
 
     const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
     REQUIRE(path == pgx_lower::LowerPath::legacy);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_row_output_materialization_surface) {
+    auto aTargetVar = makeTypedVar(INT4OID, 1);
+    aTargetVar.varno = 1;
+    auto aNullTestVar = makeTypedVar(INT4OID, 1);
+    aNullTestVar.varno = 1;
+    auto aCompareVar = makeTypedVar(INT4OID, 1);
+    aCompareVar.varno = 1;
+    auto cCompareVar = makeTypedVar(INT4OID, 3);
+    cCompareVar.varno = 1;
+
+    auto aIsNull = NullTest{};
+    aIsNull.xpr.type = T_NullTest;
+    aIsNull.arg = reinterpret_cast<Expr*>(&aNullTestVar);
+    aIsNull.nulltesttype = IS_NULL;
+    aIsNull.argisrow = false;
+
+    auto aEqualsC = makeBinaryOperatorExpr("=", BOOLOID, reinterpret_cast<Node*>(&aCompareVar),
+                                           reinterpret_cast<Node*>(&cCompareVar));
+
+    auto aTarget = TargetEntry{};
+    aTarget.xpr.type = T_TargetEntry;
+    aTarget.expr = reinterpret_cast<Expr*>(&aTargetVar);
+    aTarget.resno = 1;
+    aTarget.resjunk = false;
+    auto nullTarget = TargetEntry{};
+    nullTarget.xpr.type = T_TargetEntry;
+    nullTarget.expr = reinterpret_cast<Expr*>(&aIsNull);
+    nullTarget.resno = 2;
+    nullTarget.resjunk = false;
+    auto compareTarget = TargetEntry{};
+    compareTarget.xpr.type = T_TargetEntry;
+    compareTarget.expr = reinterpret_cast<Expr*>(&aEqualsC);
+    compareTarget.resno = 3;
+    compareTarget.resjunk = false;
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make3(&aTarget, &nullTarget, &compareTarget);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::row);
     PG_RETURN_VOID();
 }
 

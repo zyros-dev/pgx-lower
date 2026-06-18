@@ -422,9 +422,9 @@ def DB_PgRowProjectOp : DB_Op<"pg_row_project", [Pure]> {
 }
 
 def DB_PgEmitRowOp : DB_Op<"pg_emit_row"> {
-    let summary = "Emit a PostgreSQL row value to a PostgreSQL row stream";
-    let arguments = (ins AnyType:$row);
-    let assemblyFormat = "$row `:` type($row) attr-dict";
+    let summary = "Emit targetlist-ordered PostgreSQL values to a PostgreSQL row stream";
+    let arguments = (ins Variadic<AnyType>:$values, DB_PgRowSchemaAttr:$schema);
+    let assemblyFormat = "$values attr-dict `:` type($values)";
     let hasVerifier = 1;
 }
 

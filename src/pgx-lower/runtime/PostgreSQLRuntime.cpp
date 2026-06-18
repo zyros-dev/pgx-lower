@@ -622,6 +622,112 @@ bool PgRowRuntime::getInt64IsNull(void* scan, int32_t fieldIndex, int32_t relid,
     return isNull;
 }
 
+namespace {
+
+TupleTableSlot* validatedOutputSlotOrThrow(const char* operation) {
+    if (!g_tuple_streamer.isActive || !g_tuple_streamer.slot || !g_tuple_streamer.dest) {
+        PGX_ERROR("%s: tuple streamer is not active", operation);
+        elog(ERROR, "%s: tuple streamer is not active", operation);
+    }
+    return g_tuple_streamer.slot;
+}
+
+void validateOutputFieldOrThrow(TupleTableSlot* slot, int32_t fieldIndex, int32_t oid, int32_t typmod,
+                                int32_t collation, bool nullable, bool isNull, const char* operation) {
+    if (!slot || !slot->tts_tupleDescriptor) {
+        PGX_ERROR("%s: result tuple descriptor is not available", operation);
+        elog(ERROR, "%s: result tuple descriptor is not available", operation);
+    }
+    if (fieldIndex < 0 || fieldIndex >= slot->tts_tupleDescriptor->natts) {
+        PGX_ERROR("%s: output field index %d is outside result descriptor with %d columns", operation, fieldIndex,
+                  slot->tts_tupleDescriptor->natts);
+        elog(ERROR, "%s: output field index is outside result descriptor", operation);
+    }
+    const Form_pg_attribute attr = TupleDescAttr(slot->tts_tupleDescriptor, fieldIndex);
+    if (attr->atttypid != static_cast<Oid>(oid)) {
+        PGX_ERROR("%s: output field %d type OID mismatch expected=%u actual=%u", operation, fieldIndex,
+                  static_cast<Oid>(oid), attr->atttypid);
+        elog(ERROR, "%s: output field type OID mismatch", operation);
+    }
+    if (attr->atttypmod != typmod) {
+        PGX_ERROR("%s: output field %d typmod mismatch expected=%d actual=%d", operation, fieldIndex, typmod,
+                  attr->atttypmod);
+        elog(ERROR, "%s: output field typmod mismatch", operation);
+    }
+    if (attr->attcollation != static_cast<Oid>(collation)) {
+        PGX_ERROR("%s: output field %d collation mismatch expected=%u actual=%u", operation, fieldIndex,
+                  static_cast<Oid>(collation), attr->attcollation);
+        elog(ERROR, "%s: output field collation mismatch", operation);
+    }
+    if (!nullable && isNull) {
+        PGX_ERROR("%s: non-nullable output field %d produced NULL", operation, fieldIndex);
+        elog(ERROR, "%s: non-nullable output field produced NULL", operation);
+    }
+}
+
+bool normalizeJitBool(const bool value) {
+    const auto byteValue = static_cast<unsigned char>(value);
+    return byteValue != 0 && byteValue != 254;
+}
+
+void emitDatum(int32_t fieldIndex, bool isNull, Datum datum, int32_t oid, int32_t typmod, int32_t collation,
+               bool nullable, const char* operation) {
+    TupleTableSlot* slot = validatedOutputSlotOrThrow(operation);
+    validateOutputFieldOrThrow(slot, fieldIndex, oid, typmod, collation, nullable, isNull, operation);
+    slot->tts_values[fieldIndex] = isNull ? Datum{0} : datum;
+    slot->tts_isnull[fieldIndex] = isNull;
+}
+
+} // namespace
+
+void PgRowRuntime::emitRowStart(int32_t expectedColumns) {
+    PGX_IO(RUNTIME);
+    TupleTableSlot* slot = validatedOutputSlotOrThrow("PgRowRuntime::emitRowStart");
+    if (!slot->tts_tupleDescriptor || slot->tts_tupleDescriptor->natts != expectedColumns) {
+        PGX_ERROR("PgRowRuntime::emitRowStart: result descriptor column count mismatch expected=%d actual=%d",
+                  expectedColumns, slot->tts_tupleDescriptor ? slot->tts_tupleDescriptor->natts : -1);
+        elog(ERROR, "PgRowRuntime::emitRowStart: result descriptor column count mismatch");
+    }
+    ExecClearTuple(slot);
+    for (int32_t index = 0; index < expectedColumns; ++index) {
+        slot->tts_values[index] = Datum{0};
+        slot->tts_isnull[index] = true;
+    }
+}
+
+void PgRowRuntime::emitBool(int32_t fieldIndex, bool isNull, bool value, int32_t oid, int32_t typmod, int32_t collation,
+                            bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, BoolGetDatum(normalizeJitBool(value)), oid, typmod, collation, nullable,
+              "PgRowRuntime::emitBool");
+}
+
+void PgRowRuntime::emitInt32(int32_t fieldIndex, bool isNull, int32_t value, int32_t oid, int32_t typmod,
+                             int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, Int32GetDatum(value), oid, typmod, collation, nullable, "PgRowRuntime::emitInt32");
+}
+
+void PgRowRuntime::emitInt64(int32_t fieldIndex, bool isNull, int64_t value, int32_t oid, int32_t typmod,
+                             int32_t collation, bool nullable) {
+    PGX_IO(RUNTIME);
+    emitDatum(fieldIndex, isNull, Int64GetDatum(value), oid, typmod, collation, nullable, "PgRowRuntime::emitInt64");
+}
+
+void PgRowRuntime::emitRowDone(int32_t expectedColumns) {
+    PGX_IO(RUNTIME);
+    TupleTableSlot* slot = validatedOutputSlotOrThrow("PgRowRuntime::emitRowDone");
+    if (!slot->tts_tupleDescriptor || slot->tts_tupleDescriptor->natts != expectedColumns) {
+        PGX_ERROR("PgRowRuntime::emitRowDone: result descriptor column count mismatch expected=%d actual=%d",
+                  expectedColumns, slot->tts_tupleDescriptor ? slot->tts_tupleDescriptor->natts : -1);
+        elog(ERROR, "PgRowRuntime::emitRowDone: result descriptor column count mismatch");
+    }
+    slot->tts_nvalid = expectedColumns;
+    ExecStoreVirtualTuple(slot);
+    (void)g_tuple_streamer.dest->receiveSlot(slot, g_tuple_streamer.dest);
+    mark_results_ready_for_streaming();
+}
+
 static bool row_first_slice_runtime_tupledesc_value_null_for_testing_impl() {
     TupleDesc tupleDesc = CreateTemplateTupleDesc(2);
     TupleDescInitEntry(tupleDesc, static_cast<AttrNumber>(1), "id", INT8OID, -1, 0);
