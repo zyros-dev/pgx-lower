@@ -100,12 +100,13 @@ PostgreSQL time/day/month fields; average-month flattening is forbidden.
 
 ## String Type Support
 
-PostgreSQL text, varchar, and bpchar values lower as `!db.pg_text`,
-`!db.pg_varchar`, and `!db.pg_bpchar` semantic types, preserving OID, typmod,
-collation, and nullability metadata. Do not infer PostgreSQL string identity from
-`VarLen32`; unsupported string-like PostgreSQL types route fallback, and
-supported string operations use PostgreSQL-equivalent runtime semantics or are
-rejected by the analyzer.
+Default-collation PostgreSQL text, varchar, and bpchar values lower as
+`!db.pg_text`, `!db.pg_varchar`, and `!db.pg_bpchar` semantic types only where
+the analyzer accepts the full operation plan. Those semantic types carry OID,
+typmod, collation, and nullability metadata; preserve that metadata even when a
+plan falls back. Do not infer PostgreSQL string identity from `VarLen32`.
+Non-default collations, unsupported operations or casts, and unsupported
+string-like PostgreSQL types route fallback rather than lowering.
 
 ### IDE setup (compile_commands.json)
 
