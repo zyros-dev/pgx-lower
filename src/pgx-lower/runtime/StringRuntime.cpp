@@ -130,6 +130,8 @@ bool iterativeLike(const char* str, size_t strLen, const char* pattern, size_t p
 }
 //end taken from noisepage
 
+// Byte-oriented helpers in this file are for non-PG internal string machinery.
+// PG semantic strings lower through the PostgreSQL bridge calls below.
 bool runtime::StringRuntime::like(runtime::VarLen32 str1, runtime::VarLen32 str2) {
    return iterativeLike((str1).data(), (str1).getLen(), (str2).data(), (str2).getLen(), '\\');
 }

@@ -98,6 +98,15 @@ the analyzer accepts the operation. TIME, TIMETZ, and TIMESTAMPTZ are
 fallback-only until explicit support specs exist. Intervals must preserve
 PostgreSQL time/day/month fields; average-month flattening is forbidden.
 
+## String Type Support
+
+PostgreSQL text, varchar, and bpchar values lower as `!db.pg_text`,
+`!db.pg_varchar`, and `!db.pg_bpchar` semantic types, preserving OID, typmod,
+collation, and nullability metadata. Do not infer PostgreSQL string identity from
+`VarLen32`; unsupported string-like PostgreSQL types route fallback, and
+supported string operations use PostgreSQL-equivalent runtime semantics or are
+rejected by the analyzer.
+
 ### IDE setup (compile_commands.json)
 
 The build runs in a Docker container on thor (LLVM 20 / MLIR 20 / PG 17.6 from
