@@ -1,5 +1,6 @@
 #include "pgx-lower/execution/mlir_runner.h"
 #include "pgx-lower/execution/accepted_plan_verifier.h"
+#include "pgx-lower/frontend/SQL/query_analyzer.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
 
@@ -90,6 +91,10 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
             PGX_ERROR("Module is null after AST translation");
             return false;
         }
+
+        const auto lowerPath = pgx_lower::QueryAnalyzer::classifyLowerPath(plannedStmt);
+        const auto* lowerPathAttr = lowerPath == pgx_lower::LowerPath::row ? "row" : "legacy";
+        module->getOperation()->setAttr("pgx_lower.lower_path", mlir::StringAttr::get(&context, lowerPathAttr));
 
         // Phase 2-3: Run complete lowering pipeline with PostgreSQL safety wrapper
         bool pipelineSuccess{};

@@ -88,6 +88,7 @@ extern std::set<Category> enabled_categories;
 
 void log(Category cat, Level level, const char* file, int line, const char* fmt, ...);
 void route_fallback_notice(const char* reason_kind, const char* message, const char* location);
+void route_lower_path_notice(const char* lower_path);
 
 const char* category_name(Category cat);
 const char* level_name(Level level);

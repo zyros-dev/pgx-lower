@@ -3,7 +3,9 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 
 export const validRoutes = ["lower", "fallback", "ignore", "not_asserted"] as const;
+export const validLowerPaths = ["row", "legacy", "not_asserted"] as const;
 export type RouteExpectation = (typeof validRoutes)[number];
+export type LowerPathExpectation = (typeof validLowerPaths)[number];
 
 export type RouteExecutionMode = "stock" | "extension-auto" | "force-fallback" | "force-lower";
 export type StatementKind = "query" | "setup" | "other";
@@ -11,6 +13,7 @@ export type NonComparableReason = "non_comparable_dml_returning" | "non_comparab
 
 export type StatementDirective = {
   autoShouldRouteTo: RouteExpectation;
+  lowerPath?: LowerPathExpectation;
   id: string | undefined;
 };
 
@@ -19,6 +22,7 @@ export type StatementManifestEntry = {
   index: number;
   sql: string;
   autoShouldRouteTo: RouteExpectation;
+  lowerPath: LowerPathExpectation;
   id: string | undefined;
   statementKind: StatementKind;
   comparable: boolean;
@@ -97,6 +101,7 @@ export function parseSqlManifest(options: {
       index: statementIndex,
       sql,
       autoShouldRouteTo: route,
+      lowerPath: pending?.lowerPath ?? "not_asserted",
       id: pending?.id,
       statementKind: classification.statementKind,
       comparable: classification.comparable,
@@ -432,6 +437,11 @@ function parseDirective(text: string, path: string): StatementDirective {
         throw new RouteConfigError(`${path}: invalid auto_should_route_to value ${value}`);
       }
       directive.autoShouldRouteTo = value;
+    } else if (key === "lower_path") {
+      if (!isLowerPathExpectation(value)) {
+        throw new RouteConfigError(`${path}: invalid lower_path value ${value}`);
+      }
+      directive.lowerPath = value;
     } else if (key === "id") {
       if (!markerSafeIdRe.test(value)) {
         throw new RouteConfigError(`${path}: invalid route directive id ${value}`);
@@ -445,7 +455,7 @@ function parseDirective(text: string, path: string): StatementDirective {
   if (!directive.autoShouldRouteTo) {
     throw new RouteConfigError(`${path}: route directive missing auto_should_route_to`);
   }
-  return { autoShouldRouteTo: directive.autoShouldRouteTo, id: directive.id };
+  return { autoShouldRouteTo: directive.autoShouldRouteTo, lowerPath: directive.lowerPath, id: directive.id };
 }
 
 function classifyStatement(sql: string): {
@@ -718,6 +728,10 @@ function readBlockComment(sql: string, start: number, path: string): { text: str
 
 function isRouteExpectation(value: string): value is RouteExpectation {
   return (validRoutes as readonly string[]).includes(value);
+}
+
+function isLowerPathExpectation(value: string): value is LowerPathExpectation {
+  return (validLowerPaths as readonly string[]).includes(value);
 }
 
 function readYamlObject(path: string): Record<string, unknown> {

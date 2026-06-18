@@ -10,12 +10,14 @@ import {
 
 const routeNotice =
   "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported function generate_series() at Plan.targetlist[0]";
+const rowPathNotice = "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower row";
+const legacyPathNotice = "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower legacy";
 
 describe("route directive parsing", () => {
   test("attaches a strict directive to the following query statement", () => {
     const manifest = parseSqlManifest({
       path: "tests/tpch/sql/tpch.sql",
-      sql: "/* <<pgx-lower-config>>: auto_should_route_to=lower id=tpch_q01 */\nSELECT 1;\n",
+      sql: "/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=row id=tpch_q01 */\nSELECT 1;\n",
       defaultRoute: "fallback",
       requireRouteDirectives: true
     });
@@ -26,6 +28,7 @@ describe("route directive parsing", () => {
         index: 0,
         sql: "SELECT 1;",
         autoShouldRouteTo: "lower",
+        lowerPath: "row",
         id: "tpch_q01"
       }
     ]);
@@ -46,6 +49,7 @@ describe("route directive parsing", () => {
     "/* <<pgx-lower-config>>: auto_should_route_to=lower unknown=x */\nSELECT 1;",
     "/* <<pgx-lower-config>>: auto_should_route_to=lower auto_should_route_to=fallback */\nSELECT 1;",
     "/* <<pgx-lower-config>>: auto_should_route_to=maybe id=x */\nSELECT 1;",
+    "/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=batch id=x */\nSELECT 1;",
     "/* <<pgx-lower-config>>: auto_should_route_to lower id=x */\nSELECT 1;"
   ])("rejects malformed directive %s", (sql) => {
     expect(() =>
@@ -144,6 +148,8 @@ describe("route notice assertions", () => {
     const text = [
       "SELECT generate_series(1, 2);",
       routeNotice,
+      rowPathNotice,
+      legacyPathNotice,
       "NOTICE:  [PGX-LOWER] unrelated debug message",
       "(2 rows)"
     ].join("\n");
@@ -188,6 +194,54 @@ describe("route notice assertions", () => {
         reason: "expected lower but observed fallback unsupported_function: unsupported function generate_series()"
       }
     ]);
+  });
+
+  test("checks lower path notices when lower_path is asserted", () => {
+    const manifest = parseSqlManifest({
+      path: "queries.sql",
+      sql: [
+        "/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=row id=q1 */",
+        "SELECT id FROM t;",
+        "/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=legacy id=q2 */",
+        "SELECT id + 1 FROM t;"
+      ].join("\n"),
+      defaultRoute: "lower",
+      requireRouteDirectives: true
+    });
+
+    const report = assertRoutes({
+      runName: "route-test",
+      profile: "debug",
+      executionMode: "extension-auto",
+      manifests: [manifest],
+      outputsByPath: new Map([
+        [
+          "queries.sql",
+          ["SELECT id FROM t;", rowPathNotice, "SELECT id + 1 FROM t;", legacyPathNotice].join("\n")
+        ]
+      ])
+    });
+
+    expect(report.failures).toEqual([]);
+  });
+
+  test("fails lower path mismatches", () => {
+    const manifest = parseSqlManifest({
+      path: "queries.sql",
+      sql: "/* <<pgx-lower-config>>: auto_should_route_to=lower lower_path=row id=q */\nSELECT id FROM t;",
+      defaultRoute: "lower",
+      requireRouteDirectives: true
+    });
+
+    const report = assertRoutes({
+      runName: "route-test",
+      profile: "debug",
+      executionMode: "extension-auto",
+      manifests: [manifest],
+      outputsByPath: new Map([["queries.sql", ["SELECT id FROM t;", legacyPathNotice].join("\n")]])
+    });
+
+    expect(report.failures[0]?.reason).toBe("expected lower_path row but observed lower_path legacy");
   });
 
   test("does not end a multiline statement at a matching first line from the next query", () => {

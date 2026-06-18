@@ -3,9 +3,11 @@ import {
   isQueryStatement,
   parseSqlManifest,
   validateGlobalIds,
+  validLowerPaths,
   validRoutes
 } from "./sql-manifest.js";
 import type {
+  LowerPathExpectation,
   RouteExecutionMode,
   RouteExpectation,
   SqlManifest,
@@ -16,9 +18,11 @@ export {
   RouteConfigError,
   parseSqlManifest,
   validateGlobalIds,
+  validLowerPaths,
   validRoutes
 };
 export type {
+  LowerPathExpectation,
   RouteExecutionMode,
   RouteExpectation,
   SqlManifest,
@@ -30,6 +34,11 @@ export type RouteEvent = {
   kind: string;
   message: string;
   location: string | undefined;
+};
+
+export type LowerPathEvent = {
+  statementIndex: number;
+  lowerPath: Exclude<LowerPathExpectation, "not_asserted">;
 };
 
 export type RouteFailure = {
@@ -50,11 +59,13 @@ export type RouteReport = {
 
 const routeNoticeRe =
   /^NOTICE:\s+\[PGX-LOWER\] \[ROUTE:NOTICE\] fallback (?<kind>[a-z_]+): (?<message>.*?)(?: at (?<location>.*))?$/;
+const lowerPathNoticeRe =
+  /^NOTICE:\s+\[PGX-LOWER\] \[ROUTE:NOTICE\] lower (?<lowerPath>row|legacy)$/;
 
 export function normalizeRouteNotices(outputText: string): string {
   return outputText
     .split(/\r?\n/)
-    .filter((line) => !routeNoticeRe.test(line))
+    .filter((line) => !routeNoticeRe.test(line) && !lowerPathNoticeRe.test(line))
     .join("\n");
 }
 
@@ -73,6 +84,8 @@ export function assertRoutes(options: {
     const output = options.outputsByPath.get(manifest.path) ?? "";
     const events = extractRouteEvents(manifest, output);
     const eventsByStatement = groupEventsByStatement(events);
+    const lowerPathEvents = extractLowerPathEvents(manifest, output);
+    const lowerPathEventsByStatement = groupLowerPathEventsByStatement(lowerPathEvents);
 
     for (const statement of manifest.statements) {
       const effective = effectiveExpectation(statement, options.executionMode);
@@ -104,6 +117,32 @@ export function assertRoutes(options: {
           reason: "expected fallback but no fallback notice was observed"
         });
       }
+
+      if (effective === "lower" && statement.lowerPath !== "not_asserted" && statementEvents.length === 0) {
+        const statementLowerPathEvents = lowerPathEventsByStatement.get(statement.index) ?? [];
+        if (statementLowerPathEvents.length === 0) {
+          failures.push({
+            statementId: statement.id,
+            path: statement.path,
+            statementIndex: statement.index,
+            reason: `expected lower_path ${statement.lowerPath} but no lower_path notice was observed`
+          });
+        } else if (statementLowerPathEvents.length > 1) {
+          failures.push({
+            statementId: statement.id,
+            path: statement.path,
+            statementIndex: statement.index,
+            reason: `expected lower_path ${statement.lowerPath} but observed multiple lower_path notices`
+          });
+        } else if (statementLowerPathEvents[0]?.lowerPath !== statement.lowerPath) {
+          failures.push({
+            statementId: statement.id,
+            path: statement.path,
+            statementIndex: statement.index,
+            reason: `expected lower_path ${statement.lowerPath} but observed lower_path ${statementLowerPathEvents[0]?.lowerPath}`
+          });
+        }
+      }
     }
   }
 
@@ -115,6 +154,36 @@ export function assertRoutes(options: {
     observedFallbacks,
     failures
   };
+}
+
+function extractLowerPathEvents(manifest: SqlManifest, output: string): LowerPathEvent[] {
+  const lines = output.split(/\r?\n/);
+  const events: LowerPathEvent[] = [];
+  let cursor = 0;
+
+  for (const statement of manifest.statements) {
+    const start = findStatementStart(lines, statement.sql, cursor);
+    if (start === -1) {
+      continue;
+    }
+    const nextStatement = manifest.statements[statement.index + 1];
+    const nextStart = nextStatement ? findStatementStart(lines, nextStatement.sql, start + 1) : lines.length;
+    const end = nextStart === -1 ? lines.length : nextStart;
+    for (let i = start + 1; i < end; i++) {
+      const match = lowerPathNoticeRe.exec(lines[i] ?? "");
+      const lowerPath = match?.groups?.lowerPath;
+      if (lowerPath !== "row" && lowerPath !== "legacy") {
+        continue;
+      }
+      events.push({
+        statementIndex: statement.index,
+        lowerPath
+      });
+    }
+    cursor = end;
+  }
+
+  return events;
 }
 
 export function writeRouteSummary(report: RouteReport): string {
@@ -223,6 +292,16 @@ function findLine(lines: readonly string[], expected: string, start: number): nu
 
 function groupEventsByStatement(events: readonly RouteEvent[]): Map<number, RouteEvent[]> {
   const grouped = new Map<number, RouteEvent[]>();
+  for (const event of events) {
+    const list = grouped.get(event.statementIndex) ?? [];
+    list.push(event);
+    grouped.set(event.statementIndex, list);
+  }
+  return grouped;
+}
+
+function groupLowerPathEventsByStatement(events: readonly LowerPathEvent[]): Map<number, LowerPathEvent[]> {
+  const grouped = new Map<number, LowerPathEvent[]>();
   for (const event of events) {
     const list = grouped.get(event.statementIndex) ?? [];
     list.push(event);

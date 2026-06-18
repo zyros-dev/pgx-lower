@@ -25,6 +25,7 @@ static bool pgx_lower_log_io = false;
 static bool pgx_lower_log_trace = false;
 static char *pgx_lower_enabled_categories = NULL;
 static char *pgx_lower_execution_mode = NULL;
+static bool pgx_lower_route_path_notices = false;
 
 extern void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char *categories);
 
@@ -72,6 +73,10 @@ const char *pgx_lower_get_execution_mode(void) {
     return pgx_lower_execution_mode ? pgx_lower_execution_mode : "auto";
 }
 
+bool pgx_lower_get_route_path_notices(void) {
+    return pgx_lower_route_path_notices;
+}
+
 static bool check_execution_mode(char **newval, void **extra, GucSource source) {
     (void)extra;
     (void)source;
@@ -99,6 +104,8 @@ void _PG_init(void) {
     register_bool_guc("pgx_lower.log_ir", "Enable IR (intermediate representation) logging", &pgx_lower_log_ir);
     register_bool_guc("pgx_lower.log_io", "Enable I/O boundary logging", &pgx_lower_log_io);
     register_bool_guc("pgx_lower.log_trace", "Enable trace logging", &pgx_lower_log_trace);
+    register_bool_guc("pgx_lower.route_path_notices", "Emit row/legacy lower-path route notices",
+                      &pgx_lower_route_path_notices);
     register_string_guc("pgx_lower.enabled_categories", "Comma-separated list of enabled log categories",
                         &pgx_lower_enabled_categories);
     DefineCustomStringVariable("pgx_lower.execution_mode",

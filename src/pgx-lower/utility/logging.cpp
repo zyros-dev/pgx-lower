@@ -1,4 +1,7 @@
 #include "pgx-lower/utility/logging.h"
+#ifdef POSTGRESQL_EXTENSION
+#include "pgx-lower/execution/postgres/executor_c.h"
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
@@ -202,6 +205,19 @@ void route_fallback_notice(const char* reason_kind, const char* message, const c
     } else {
         fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback %s: %s\n", safe_kind, safe_message);
     }
+#endif
+}
+
+void route_lower_path_notice(const char* lower_path) {
+    const auto* safe_path = lower_path != nullptr && lower_path[0] != '\0' ? lower_path : "legacy";
+
+#ifdef POSTGRESQL_EXTENSION
+    if (!pgx_lower_get_route_path_notices()) {
+        return;
+    }
+    elog(NOTICE, "[PGX-LOWER] [ROUTE:NOTICE] lower %s", safe_path);
+#else
+    fprintf(stderr, "NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] lower %s\n", safe_path);
 #endif
 }
 

@@ -53,6 +53,15 @@ auto unsupportedReasonKindName(const UnsupportedReasonKind kind) -> const char* 
     return "invalid";
 }
 
+auto lowerPathName(const LowerPath path) -> const char* {
+    switch (path) {
+    case LowerPath::not_applicable: return "not_applicable";
+    case LowerPath::row: return "row";
+    case LowerPath::legacy: return "legacy";
+    }
+    return "not_applicable";
+}
+
 AnalyzerResult::AnalyzerResult() {
     reasons_.push_back({UnsupportedReasonKind::invalid, "analyzer result was not explicitly constructed", {}});
 }
@@ -376,21 +385,11 @@ static constexpr PgOperatorTypeSignature supportedOrderingOperatorSignatures[] =
 };
 
 static constexpr PgOperatorTypeSignature supportedArithmeticOperatorSignatures[] = {
-    {INT2OID, INT2OID, INT2OID},
-    {INT4OID, INT4OID, INT4OID},
-    {INT8OID, INT8OID, INT8OID},
-    {INT4OID, INT2OID, INT4OID},
-    {INT4OID, INT4OID, INT2OID},
-    {INT8OID, INT2OID, INT8OID},
-    {INT8OID, INT8OID, INT2OID},
-    {INT8OID, INT4OID, INT8OID},
-    {INT8OID, INT8OID, INT4OID},
-    {FLOAT4OID, FLOAT4OID, FLOAT4OID},
-    {FLOAT8OID, FLOAT8OID, FLOAT8OID},
-    {FLOAT8OID, FLOAT4OID, FLOAT8OID},
-    {FLOAT8OID, FLOAT8OID, FLOAT4OID},
-    {NUMERICOID, NUMERICOID, NUMERICOID},
-    {DATEOID, DATEOID, INT4OID},
+    {INT2OID, INT2OID, INT2OID},       {INT4OID, INT4OID, INT4OID},          {INT8OID, INT8OID, INT8OID},
+    {INT4OID, INT2OID, INT4OID},       {INT4OID, INT4OID, INT2OID},          {INT8OID, INT2OID, INT8OID},
+    {INT8OID, INT8OID, INT2OID},       {INT8OID, INT4OID, INT8OID},          {INT8OID, INT8OID, INT4OID},
+    {FLOAT4OID, FLOAT4OID, FLOAT4OID}, {FLOAT8OID, FLOAT8OID, FLOAT8OID},    {FLOAT8OID, FLOAT4OID, FLOAT8OID},
+    {FLOAT8OID, FLOAT8OID, FLOAT4OID}, {NUMERICOID, NUMERICOID, NUMERICOID}, {DATEOID, DATEOID, INT4OID},
     {DATEOID, INT4OID, DATEOID},
 };
 
@@ -957,6 +956,103 @@ static auto collectTargetListAggregateRefs(const List* targetList) -> std::set<I
         collectAggregateRefs(static_cast<const Node*>(lfirst(lc)), aggNos);
     }
     return aggNos;
+}
+
+static auto rowFirstSliceTypeIsSupported(const Oid typeOid) -> bool {
+    return typeOid == INT4OID || typeOid == INT8OID;
+}
+
+static auto rowFirstSliceScalarIsSupported(const Node* expr) -> bool {
+    if (!expr) {
+        return false;
+    }
+    switch (nodeTag(expr)) {
+    case T_Var: {
+        const auto* var = reinterpret_cast<const Var*>(expr);
+        return var->varlevelsup == 0 && var->varattno > 0 && rowFirstSliceTypeIsSupported(var->vartype);
+    }
+    case T_Const: {
+        const auto* value = reinterpret_cast<const Const*>(expr);
+        return rowFirstSliceTypeIsSupported(value->consttype);
+    }
+    default: return false;
+    }
+}
+
+static auto rowFirstSliceTargetListIsSupported(const List* targetList) -> bool {
+    if (!targetList) {
+        return false;
+    }
+
+    bool hasOutputColumn = false;
+    ListCell* lc = nullptr;
+    foreach (lc, targetList) {
+        const auto* target = static_cast<const TargetEntry*>(lfirst(lc));
+        if (!target || target->resjunk) {
+            continue;
+        }
+        hasOutputColumn = true;
+        const auto* expr = reinterpret_cast<const Node*>(target->expr);
+        if (!expr || nodeTag(expr) != T_Var || !rowFirstSliceScalarIsSupported(expr)) {
+            return false;
+        }
+    }
+    return hasOutputColumn;
+}
+
+static auto rowFirstSliceFilterExprIsSupported(const Node* expr) -> bool {
+    if (!expr) {
+        return true;
+    }
+
+    switch (nodeTag(expr)) {
+    case T_OpExpr: {
+        const auto* op = reinterpret_cast<const OpExpr*>(expr);
+        if (!op || !op->args || list_length(op->args) != 2 || op->opresulttype != BOOLOID) {
+            return false;
+        }
+        const auto* lhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 0)));
+        const auto* rhs = static_cast<const Node*>(lfirst(list_nth_cell(op->args, 1)));
+        return rowFirstSliceScalarIsSupported(lhs) && rowFirstSliceScalarIsSupported(rhs)
+               && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(lhs)))
+               && rowFirstSliceTypeIsSupported(exprType(const_cast<Node*>(rhs))) && operatorExprMatchesCatalog(op)
+               && operatorSignatureIsLowerable(op);
+    }
+    case T_BoolExpr: {
+        const auto* boolExpr = reinterpret_cast<const BoolExpr*>(expr);
+        if (!boolExpr || boolExpr->boolop != AND_EXPR) {
+            return false;
+        }
+        ListCell* lc = nullptr;
+        foreach (lc, boolExpr->args) {
+            if (!rowFirstSliceFilterExprIsSupported(static_cast<const Node*>(lfirst(lc)))) {
+                return false;
+            }
+        }
+        return true;
+    }
+    default: return false;
+    }
+}
+
+static auto rowFirstSliceQualIsSupported(const List* quals) -> bool {
+    if (!quals) {
+        return true;
+    }
+    ListCell* lc = nullptr;
+    foreach (lc, quals) {
+        if (!rowFirstSliceFilterExprIsSupported(static_cast<const Node*>(lfirst(lc)))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static auto planIsRowFirstSliceEligible(const Plan* plan) -> bool {
+    if (!plan || nodeTag(plan) != T_SeqScan || plan->lefttree || plan->righttree) {
+        return false;
+    }
+    return rowFirstSliceTargetListIsSupported(plan->targetlist) && rowFirstSliceQualIsSupported(plan->qual);
 }
 
 static auto collectExpressionListAggregateRefs(const List* expressions) -> std::set<Index> {
@@ -1680,6 +1776,22 @@ auto QueryAnalyzer::analyzeNodeForTesting(const Plan* plan) -> AnalyzerResult {
 
 auto QueryAnalyzer::analyzeExprForTesting(const Node* expr) -> AnalyzerResult {
     return analyzeExpr(expr, "Expr");
+}
+
+auto QueryAnalyzer::classifyLowerPath(const PlannedStmt* stmt) -> LowerPath {
+    const auto analysis = analyzePlan(stmt);
+    if (!analysis.isSupported()) {
+        return LowerPath::not_applicable;
+    }
+    return planIsRowFirstSliceEligible(stmt->planTree) ? LowerPath::row : LowerPath::legacy;
+}
+
+auto QueryAnalyzer::classifyLowerPathForTesting(const Plan* plan) -> LowerPath {
+    const auto analysis = analyzeNode(plan, "Plan");
+    if (!analysis.isSupported()) {
+        return LowerPath::not_applicable;
+    }
+    return planIsRowFirstSliceEligible(plan) ? LowerPath::row : LowerPath::legacy;
 }
 
 auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {

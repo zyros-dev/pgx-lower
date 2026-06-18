@@ -7,6 +7,7 @@
 #include "runtime-defs/DumpRuntime.h"
 #include "runtime-defs/StringRuntime.h"
 #include "runtime-defs/NumericRuntime.h"
+#include "runtime-defs/PostgreSQLRuntime.h"
 #include "runtime-defs/PrintRuntime.h"
 
 extern "C" {
@@ -230,6 +231,9 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
        return t.isInteger(1) || mlir::isa<mlir::db::PgBoolType>(t);
    };
    auto resTypeIsString = [](::mlir::Type t, ::mlir::TypeRange) { return t.isa<mlir::db::StringType>(); };
+   auto i32Like = [](::mlir::Type t) { return t.isInteger(32); };
+   auto rowLike = [](::mlir::Type t) { return mlir::isa<mlir::db::PgRowType>(t); };
+   auto resTypeIsRow = [](::mlir::Type t, ::mlir::TypeRange) { return mlir::isa<mlir::db::PgRowType>(t); };
    builtinRegistry->add("Substring")
        .implementedAs(rt::StringRuntime::substr)
        .matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike},
@@ -256,6 +260,19 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument()).implementedAs(absIntImpl);
    builtinRegistry->add("AbsDecimal").handlesInvalid().matchesTypes({RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(absDecimalImpl);
    builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateSubImpl);
+
+   builtinRegistry->add("PgRowScanStart")
+       .handlesInvalid()
+       .matchesTypes({i32Like}, resTypeIsRow)
+       .implementedAs(rt::PgRowRuntime::scanStart);
+   builtinRegistry->add("PgRowScanNext")
+       .handlesInvalid()
+       .matchesTypes({rowLike}, resTypeIsBool)
+       .implementedAs(rt::PgRowRuntime::scanNext);
+   builtinRegistry->add("PgRowScanEnd")
+       .handlesInvalid()
+       .matchesTypes({rowLike}, RuntimeFunction::noReturnType)
+       .implementedAs(rt::PgRowRuntime::scanEnd);
 
    // PG-native NUMERIC: decimal arithmetic/compare go through PostgreSQL's own
    // numeric_* functions (full precision, NaN/Inf, any scale) instead of i128.

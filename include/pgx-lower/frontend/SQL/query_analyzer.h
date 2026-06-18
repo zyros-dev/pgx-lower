@@ -27,6 +27,14 @@ enum class UnsupportedReasonKind {
 
 auto unsupportedReasonKindName(UnsupportedReasonKind kind) -> const char*;
 
+enum class LowerPath {
+    not_applicable,
+    row,
+    legacy,
+};
+
+auto lowerPathName(LowerPath path) -> const char*;
+
 struct UnsupportedReason {
     UnsupportedReasonKind kind = UnsupportedReasonKind::invalid;
     std::string message;
@@ -61,6 +69,8 @@ class QueryAnalyzer {
     static AnalyzerResult analyzeExpr(const Node* expr, const std::string& location);
     static AnalyzerResult analyzeNodeForTesting(const Plan* plan);
     static AnalyzerResult analyzeExprForTesting(const Node* expr);
+    static LowerPath classifyLowerPath(const PlannedStmt* stmt);
+    static LowerPath classifyLowerPathForTesting(const Plan* plan);
 
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);

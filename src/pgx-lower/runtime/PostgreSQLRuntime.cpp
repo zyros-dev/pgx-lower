@@ -30,12 +30,20 @@
 
 extern "C" {
 #include "postgres.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/relscan.h"
+#include "access/table.h"
+#include "access/tableam.h"
 #include "catalog/pg_type_d.h"
+#include "executor/tuptable.h"
+#include "storage/lockdefs.h"
 #include "utils/elog.h"
 #include "utils/numeric.h"
 #include "utils/datum.h"
 #include "utils/memutils.h"
+#include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "fmgr.h"
 #include "utils/fmgrprotos.h"
 #include "utils/builtins.h"
@@ -266,6 +274,112 @@ static void cleanup_tablebuilder_callback(void* arg) {
 
 namespace runtime {
 
+namespace {
+
+struct PgRowScanState {
+    Oid relid{InvalidOid};
+    Relation rel{};
+    TableScanDesc scanDesc{};
+    TupleDesc tupleDesc{};
+    TupleTableSlot* slot{};
+    bool isOpen{};
+};
+
+PgRowScanState* asRowScanState(void* scan) {
+    return static_cast<PgRowScanState*>(scan);
+}
+
+void reportPgRowFieldMismatch(const char* reason, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                              int32_t typmod, int32_t collation, bool nullable) {
+    PGX_ERROR("pg row field validation failed: %s (fieldIndex=%d relid=%d attno=%d oid=%d typmod=%d collation=%d "
+              "nullable=%s)",
+              reason, fieldIndex, relid, attno, oid, typmod, collation, nullable ? "true" : "false");
+}
+
+bool pgRowFieldMatches(const PgRowScanState* state, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                       int32_t typmod, int32_t collation, bool nullable, const char** reason = nullptr) {
+    auto fail = [&](const char* message) {
+        if (reason) {
+            *reason = message;
+        }
+        return false;
+    };
+
+    if (!state || !state->isOpen || !state->tupleDesc) {
+        return fail("scan is not open");
+    }
+    if (relid <= 0 || state->relid != static_cast<Oid>(relid)) {
+        return fail("relation oid mismatch");
+    }
+    if (fieldIndex < 0) {
+        return fail("negative row field index");
+    }
+    if (attno <= 0 || attno > state->tupleDesc->natts) {
+        return fail("attribute number out of range");
+    }
+
+    const Form_pg_attribute attr = TupleDescAttr(state->tupleDesc, attno - 1);
+    if (attr->attisdropped) {
+        return fail("attribute is dropped");
+    }
+    if (attr->atttypid != static_cast<Oid>(oid)) {
+        return fail("type oid mismatch");
+    }
+    if (attr->atttypmod != typmod) {
+        return fail("typmod mismatch");
+    }
+    if (attr->attcollation != static_cast<Oid>(collation)) {
+        return fail("collation mismatch");
+    }
+    if (!nullable && !attr->attnotnull) {
+        return fail("nullability mismatch");
+    }
+    return true;
+}
+
+void validatePgRowFieldOrThrow(const PgRowScanState* state, int32_t fieldIndex, int32_t relid, int32_t attno,
+                               int32_t oid, int32_t typmod, int32_t collation, bool nullable) {
+    const char* reason = nullptr;
+    if (!pgRowFieldMatches(state, fieldIndex, relid, attno, oid, typmod, collation, nullable, &reason)) {
+        reportPgRowFieldMismatch(reason ? reason : "unknown mismatch", fieldIndex, relid, attno, oid, typmod, collation,
+                                 nullable);
+        elog(ERROR, "pg row field validation failed");
+    }
+}
+
+Datum pgRowGetDatum(const PgRowScanState* state, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                    int32_t typmod, int32_t collation, bool nullable, bool* isNull) {
+    validatePgRowFieldOrThrow(state, fieldIndex, relid, attno, oid, typmod, collation, nullable);
+    if (!state->slot) {
+        reportPgRowFieldMismatch("tuple slot is not available", fieldIndex, relid, attno, oid, typmod, collation,
+                                 nullable);
+        elog(ERROR, "pg row field validation failed");
+    }
+
+    bool localIsNull = true;
+    const Datum value = slot_getattr(state->slot, static_cast<AttrNumber>(attno), &localIsNull);
+    if (!nullable && localIsNull) {
+        reportPgRowFieldMismatch("non-nullable field produced NULL", fieldIndex, relid, attno, oid, typmod, collation,
+                                 nullable);
+        elog(ERROR, "pg row field validation failed");
+    }
+    if (isNull) {
+        *isNull = localIsNull;
+    }
+    return localIsNull ? Datum{0} : value;
+}
+
+PgRowScanState makeTestingRowState(TupleDesc tupleDesc, TupleTableSlot* slot, Oid relid) {
+    PgRowScanState state;
+    state.relid = relid;
+    state.tupleDesc = tupleDesc;
+    state.slot = slot;
+    state.isOpen = true;
+    return state;
+}
+
+} // namespace
+
 TableBuilder::TableBuilder()
 : data(nullptr)
 , row_count(0)
@@ -422,6 +536,125 @@ void TableBuilder::addBinary(const bool is_valid, const VarLen32 value) {
 void TableBuilder::setNextDecimalScale(int32_t scale) {
     PGX_IO(RUNTIME);
     this->next_decimal_scale = scale;
+}
+
+void* PgRowRuntime::scanStart(int32_t relid) {
+    PGX_IO(RUNTIME);
+    if (relid <= 0) {
+        PGX_ERROR("PgRowRuntime::scanStart: invalid relid %d", relid);
+        return nullptr;
+    }
+
+    auto* state = new PgRowScanState();
+    state->relid = static_cast<Oid>(relid);
+    state->rel = table_open(state->relid, AccessShareLock);
+    state->tupleDesc = RelationGetDescr(state->rel);
+    state->slot = MakeSingleTupleTableSlot(state->tupleDesc, &TTSOpsBufferHeapTuple);
+
+    const uint32 flags = SO_TYPE_SEQSCAN | SO_ALLOW_PAGEMODE | SO_ALLOW_SYNC;
+    state->scanDesc = heap_beginscan(state->rel, GetActiveSnapshot(), 0, nullptr, nullptr, flags);
+    if (const auto currentSnapshot = GetActiveSnapshot()) {
+        state->scanDesc->rs_snapshot = currentSnapshot;
+    }
+    heap_rescan(state->scanDesc, nullptr, false, false, false, false);
+    state->isOpen = true;
+    return state;
+}
+
+bool PgRowRuntime::scanNext(void* scan) {
+    PGX_IO(RUNTIME);
+    auto* state = asRowScanState(scan);
+    if (!state || !state->isOpen || !state->scanDesc || !state->slot) {
+        return false;
+    }
+    return table_scan_getnextslot(state->scanDesc, ForwardScanDirection, state->slot);
+}
+
+void PgRowRuntime::scanEnd(void* scan) {
+    PGX_IO(RUNTIME);
+    auto* state = asRowScanState(scan);
+    if (!state) {
+        return;
+    }
+    if (state->slot) {
+        ExecDropSingleTupleTableSlot(state->slot);
+        state->slot = nullptr;
+    }
+    if (state->scanDesc) {
+        table_endscan(state->scanDesc);
+        state->scanDesc = nullptr;
+    }
+    if (state->rel) {
+        table_close(state->rel, AccessShareLock);
+        state->rel = nullptr;
+    }
+    state->isOpen = false;
+    delete state;
+}
+
+int32_t PgRowRuntime::getInt32Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable,
+                                      &isNull);
+    return isNull ? 0 : DatumGetInt32(value);
+}
+
+bool PgRowRuntime::getInt32IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                  int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    (void)pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull;
+}
+
+int64_t PgRowRuntime::getInt64Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                    int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    const Datum value = pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable,
+                                      &isNull);
+    return isNull ? 0 : DatumGetInt64(value);
+}
+
+bool PgRowRuntime::getInt64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                  int32_t typmod, int32_t collation, bool nullable) {
+    bool isNull = true;
+    (void)pgRowGetDatum(asRowScanState(scan), fieldIndex, relid, attno, oid, typmod, collation, nullable, &isNull);
+    return isNull;
+}
+
+static bool row_first_slice_runtime_tupledesc_value_null_for_testing_impl() {
+    TupleDesc tupleDesc = CreateTemplateTupleDesc(2);
+    TupleDescInitEntry(tupleDesc, static_cast<AttrNumber>(1), "id", INT8OID, -1, 0);
+    TupleDescInitEntry(tupleDesc, static_cast<AttrNumber>(2), "payload", INT4OID, -1, 0);
+    TupleDescAttr(tupleDesc, 0)->attnotnull = true;
+
+    Datum values[2] = {Int64GetDatum(42), Datum{0}};
+    bool nulls[2] = {false, true};
+    HeapTuple tuple = heap_form_tuple(tupleDesc, values, nulls);
+    TupleTableSlot* slot = MakeSingleTupleTableSlot(tupleDesc, &TTSOpsHeapTuple);
+    ExecStoreHeapTuple(tuple, slot, false);
+
+    auto state = makeTestingRowState(tupleDesc, slot, 12345);
+    const auto id = PgRowRuntime::getInt64Value(&state, 0, 12345, 1, INT8OID, -1, InvalidOid, false);
+    const bool payloadIsNull = PgRowRuntime::getInt32IsNull(&state, 1, 12345, 2, INT4OID, -1, InvalidOid, true);
+
+    ExecDropSingleTupleTableSlot(slot);
+    heap_freetuple(tuple);
+    FreeTupleDesc(tupleDesc);
+
+    return id == 42 && payloadIsNull;
+}
+
+static bool row_first_slice_runtime_tupledesc_mismatch_for_testing_impl() {
+    TupleDesc tupleDesc = CreateTemplateTupleDesc(1);
+    TupleDescInitEntry(tupleDesc, static_cast<AttrNumber>(1), "id", INT8OID, -1, 0);
+    TupleDescAttr(tupleDesc, 0)->attnotnull = true;
+
+    auto state = makeTestingRowState(tupleDesc, nullptr, 12345);
+    const bool matches = pgRowFieldMatches(&state, 0, 12345, 1, INT4OID, -1, InvalidOid, false);
+
+    FreeTupleDesc(tupleDesc);
+    return !matches;
 }
 
 static void cleanup_datasourceiterator_callback(void* arg) {
@@ -1010,3 +1243,11 @@ void setExecutionContext(void* context) {
 }
 
 } // namespace runtime
+
+extern "C" bool pgx_lower_row_first_slice_runtime_tupledesc_value_null_for_testing() {
+    return runtime::row_first_slice_runtime_tupledesc_value_null_for_testing_impl();
+}
+
+extern "C" bool pgx_lower_row_first_slice_runtime_tupledesc_mismatch_for_testing() {
+    return runtime::row_first_slice_runtime_tupledesc_mismatch_for_testing_impl();
+}

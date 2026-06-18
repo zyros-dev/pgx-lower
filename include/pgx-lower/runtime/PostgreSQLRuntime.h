@@ -44,8 +44,27 @@ struct TableBuilder {
    void setNextDecimalScale(int32_t scale);
 };
 
+struct PgRowRuntime {
+   static void* scanStart(int32_t relid);
+   static bool scanNext(void* scan);
+   static void scanEnd(void* scan);
+
+   static int32_t getInt32Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static bool getInt32IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                              int32_t typmod, int32_t collation, bool nullable);
+   static int64_t getInt64Value(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                                int32_t typmod, int32_t collation, bool nullable);
+   static bool getInt64IsNull(void* scan, int32_t fieldIndex, int32_t relid, int32_t attno, int32_t oid,
+                              int32_t typmod, int32_t collation, bool nullable);
+};
+
 void setExecutionContext(void* context);
 void* getExecutionContext();
 
 } // namespace runtime
+
+extern "C" bool pgx_lower_row_first_slice_runtime_tupledesc_value_null_for_testing();
+extern "C" bool pgx_lower_row_first_slice_runtime_tupledesc_mismatch_for_testing();
+
 #endif // RUNTIME_POSTGRESQLRUNTIME_H

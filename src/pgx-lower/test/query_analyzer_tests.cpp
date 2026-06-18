@@ -1685,6 +1685,66 @@ PGX_TEST_FN(query_analyzer_accepts_seq_scan_without_sort_metadata) {
     PG_RETURN_VOID();
 }
 
+PGX_TEST_FN(query_analyzer_row_first_slice_surface) {
+    auto idVar = makeTypedVar(INT8OID, 1);
+    idVar.varno = 1;
+    auto payloadVar = makeTypedVar(INT4OID, 2);
+    payloadVar.varno = 1;
+    auto filterVar = makeTypedVar(INT8OID, 1);
+    filterVar.varno = 1;
+    auto limitValue = makeTypedConst(INT8OID);
+    auto filter = makeBinaryOperatorExpr("<", BOOLOID, reinterpret_cast<Node*>(&filterVar),
+                                         reinterpret_cast<Node*>(&limitValue));
+
+    auto idTarget = TargetEntry{};
+    idTarget.xpr.type = T_TargetEntry;
+    idTarget.expr = reinterpret_cast<Expr*>(&idVar);
+    idTarget.resno = 1;
+    idTarget.resjunk = false;
+    auto payloadTarget = TargetEntry{};
+    payloadTarget.xpr.type = T_TargetEntry;
+    payloadTarget.expr = reinterpret_cast<Expr*>(&payloadVar);
+    payloadTarget.resno = 2;
+    payloadTarget.resjunk = false;
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make2(&idTarget, &payloadTarget);
+    scan.scan.plan.qual = list_make1(&filter);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::row);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_row_first_slice_legacy_for_supported_ineligible_plan) {
+    auto value = makeIntConst();
+    auto target = TargetEntry{};
+    target.xpr.type = T_TargetEntry;
+    target.expr = reinterpret_cast<Expr*>(&value);
+    target.resno = 1;
+    target.resjunk = false;
+
+    auto scan = SeqScan{};
+    scan.scan.plan.type = T_SeqScan;
+    scan.scan.plan.targetlist = list_make1(&target);
+    scan.scan.scanrelid = 1;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(reinterpret_cast<Plan*>(&scan));
+    REQUIRE(path == pgx_lower::LowerPath::legacy);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_row_first_slice_not_applicable_for_unsupported_plan) {
+    auto plan = Plan{};
+    plan.type = T_Invalid;
+
+    const auto path = pgx_lower::QueryAnalyzer::classifyLowerPathForTesting(&plan);
+    REQUIRE(path == pgx_lower::LowerPath::not_applicable);
+    PG_RETURN_VOID();
+}
+
 PGX_TEST_FN(query_analyzer_accepts_limit_without_agg_metadata) {
     auto value = makeIntConst();
     auto limitCount = makeIntConst();

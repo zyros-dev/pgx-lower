@@ -29,6 +29,7 @@
 #include "mlir/Transforms/Passes.h"
 #include "pgx-lower/utility/logging.h"
 #include "runtime-defs/NumericRuntime.h"
+#include "runtime-defs/PostgreSQLRuntime.h"
 #include "runtime-defs/StringRuntime.h"
 
 #include <catalog/pg_type_d.h>
@@ -651,23 +652,85 @@ class RuntimeCallLowering : public OpConversionPattern<mlir::db::RuntimeCall> {
    }
 };
 
+class PgRowGetLowering : public OpConversionPattern<mlir::db::PgRowGetOp> {
+   public:
+    using OpConversionPattern<mlir::db::PgRowGetOp>::OpConversionPattern;
+    LogicalResult matchAndRewrite(mlir::db::PgRowGetOp rowGetOp, OpAdaptor adaptor,
+                                  ConversionPatternRewriter& rewriter) const override {
+        auto rowType = mlir::dyn_cast<mlir::db::PgRowType>(rowGetOp.getRow().getType());
+        if (!rowType) {
+            return failure();
+        }
+        auto field = mlir::db::getPgRowFieldByIndex(rowType, rowGetOp.getIndex());
+        if (!field) {
+            return failure();
+        }
+
+        auto loc = rowGetOp->getLoc();
+        auto i32 = [&](int32_t value) -> mlir::Value { return rewriter.create<arith::ConstantIntOp>(loc, value, 32); };
+        auto bit = [&](bool value) -> mlir::Value {
+            return rewriter.create<arith::ConstantIntOp>(loc, value ? 1 : 0, 1);
+        };
+
+        const bool nullable = field.getNullability() == mlir::db::PgNullability::Maybe;
+        llvm::SmallVector<mlir::Value, 8> args{
+            adaptor.getRow(),
+            i32(static_cast<int32_t>(field.getIndex())),
+            i32(static_cast<int32_t>(field.getRelid())),
+            i32(static_cast<int32_t>(field.getAttno())),
+            i32(static_cast<int32_t>(field.getOid())),
+            i32(field.getTypmod()),
+            i32(static_cast<int32_t>(field.getCollation())),
+            bit(nullable),
+        };
+
+        mlir::Value payload;
+        mlir::Value isNull;
+        mlir::Type baseFieldType = getBaseType(field.getType());
+        if (mlir::isa<mlir::db::PgInt4Type>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getInt32Value(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getInt32IsNull(rewriter, loc)(args)[0];
+            }
+        } else if (mlir::isa<mlir::db::PgInt8Type>(baseFieldType)) {
+            payload = rt::PgRowRuntime::getInt64Value(rewriter, loc)(args)[0];
+            if (nullable) {
+                isNull = rt::PgRowRuntime::getInt64IsNull(rewriter, loc)(args)[0];
+            }
+        } else {
+            return failure();
+        }
+
+        if (nullable) {
+            auto convertedResultType = getTypeConverter()->convertType(rowGetOp.getResult().getType());
+            rewriter.replaceOpWithNewOp<mlir::util::PackOp>(rowGetOp, convertedResultType,
+                                                            mlir::ValueRange{isNull, payload});
+            return success();
+        }
+
+        rewriter.replaceOp(rowGetOp, payload);
+        return success();
+    }
+};
+
 class NotOpLowering : public OpConversionPattern<mlir::db::NotOp> {
    public:
-   using OpConversionPattern<mlir::db::NotOp>::OpConversionPattern;
-   LogicalResult matchAndRewrite(mlir::db::NotOp notOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-       auto loc = notOp->getLoc();
-       Value falseValue = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
-       if (isNullableDbValueType(notOp.getVal().getType())) {
-           auto unPackOp = rewriter.create<mlir::util::UnPackOp>(loc, adaptor.getVal());
-           Value negated = rewriter.create<arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, unPackOp.getVals()[1],
-                                                          falseValue);
-           Value combined = rewriter.create<mlir::util::PackOp>(loc, ValueRange({unPackOp.getVals()[0], negated}));
-           rewriter.replaceOp(notOp, combined);
-           return success();
-       }
-      rewriter.replaceOpWithNewOp<arith::CmpIOp>(notOp, mlir::arith::CmpIPredicate::eq, adaptor.getVal(), falseValue);
-      return success();
-   }
+    using OpConversionPattern<mlir::db::NotOp>::OpConversionPattern;
+    LogicalResult
+    matchAndRewrite(mlir::db::NotOp notOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+        auto loc = notOp->getLoc();
+        Value falseValue = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
+        if (isNullableDbValueType(notOp.getVal().getType())) {
+            auto unPackOp = rewriter.create<mlir::util::UnPackOp>(loc, adaptor.getVal());
+            Value negated = rewriter.create<arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, unPackOp.getVals()[1],
+                                                           falseValue);
+            Value combined = rewriter.create<mlir::util::PackOp>(loc, ValueRange({unPackOp.getVals()[0], negated}));
+            rewriter.replaceOp(notOp, combined);
+            return success();
+        }
+        rewriter.replaceOpWithNewOp<arith::CmpIOp>(notOp, mlir::arith::CmpIPredicate::eq, adaptor.getVal(), falseValue);
+        return success();
+    }
 };
 class DeriveTruthLowering : public OpConversionPattern<mlir::db::DeriveTruth> {
    public:
@@ -1995,12 +2058,16 @@ void DBToStdLoweringPass::runOnOperation() {
        }
    });
    typeConverter.addConversion([&](mlir::db::NullableType type) {
-      mlir::Type payloadType = typeConverter.convertType(type.getType());
-      if (payloadType.isa<mlir::NoneType>()) {
-         payloadType = IntegerType::get(ctxt, 1);
-      }
-      return (Type) TupleType::get(ctxt, {IntegerType::get(ctxt, 1), payloadType});
+       mlir::Type payloadType = typeConverter.convertType(type.getType());
+       if (payloadType.isa<mlir::NoneType>()) {
+           payloadType = IntegerType::get(ctxt, 1);
+       }
+       return (Type)TupleType::get(ctxt, {IntegerType::get(ctxt, 1), payloadType});
    });
+   typeConverter.addConversion(
+       [&](mlir::db::PgRowType) { return (Type)mlir::util::RefType::get(ctxt, IntegerType::get(ctxt, 8)); });
+   typeConverter.addConversion(
+       [&](mlir::db::PgRowStreamType) { return (Type)mlir::util::RefType::get(ctxt, IntegerType::get(ctxt, 8)); });
    auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
    target.addDynamicallyLegalDialect<dsa::DSADialect>(opIsWithoutDBTypes);
@@ -2084,6 +2151,7 @@ void DBToStdLoweringPass::runOnOperation() {
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::ForOp>>(typeConverter, &getContext());
    patterns.insert<StringCmpOpLowering>(typeConverter, ctxt);
    patterns.insert<StringCastOpLowering>(typeConverter, ctxt);
+   patterns.insert<PgRowGetLowering>(typeConverter, ctxt);
    patterns.insert<RuntimeCallLowering>(typeConverter, ctxt);
    patterns.insert<CmpOpLowering>(typeConverter, ctxt);
    patterns.insert<BetweenLowering>(typeConverter, ctxt);

@@ -406,6 +406,7 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 #ifdef POSTGRESQL_EXTENSION
     const auto* stmt = plan->plannedstmt;
     const auto mode = currentExecutionMode();
+    const auto lowerPath = pgx_lower::QueryAnalyzer::classifyLowerPath(stmt);
 
     if (mode == ExecutionMode::force_fallback) {
         pgx_lower::log::route_fallback_notice("force_fallback", "execution mode forced stock PostgreSQL",
@@ -432,6 +433,13 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 #endif
 
     bool mlir_success = run_mlir_with_ast_translation(plan);
+
+#ifdef POSTGRESQL_EXTENSION
+    if (mlir_success) {
+        pgx_lower::log::route_lower_path_notice(
+            pgx_lower::lowerPathName(lowerPath == pgx_lower::LowerPath::row ? lowerPath : pgx_lower::LowerPath::legacy));
+    }
+#endif
 
     PGX_LOG(GENERAL, DEBUG, "MyCppExecutor::execute completed, returning %s", mlir_success ? "true" : "false");
     return mlir_success;

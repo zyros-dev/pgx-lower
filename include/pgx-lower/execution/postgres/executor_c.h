@@ -13,6 +13,7 @@ extern "C" {
 
 bool try_cpp_executor_direct(const QueryDesc* queryDesc);
 const char* pgx_lower_get_execution_mode(void);
+bool pgx_lower_get_route_path_notices(void);
 
 Datum try_cpp_executor(PG_FUNCTION_ARGS);
 Datum log_cpp_notice(PG_FUNCTION_ARGS);
