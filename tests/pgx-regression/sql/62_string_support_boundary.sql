@@ -47,7 +47,7 @@ SELECT 'pgx_lower'::name AS name_value, id AS witness FROM string_boundary_suppo
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_006 */
 SELECT 'pgx'::cstring AS cstring_value, id AS witness FROM string_boundary_supported WHERE id = 1;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_007 */
 SELECT t, id AS witness FROM string_boundary_supported WHERE t = 'alpha'::text;
 
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_008 */
@@ -56,7 +56,7 @@ SELECT c, id AS witness FROM string_boundary_supported WHERE c = 'A'::char(5);
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_009 */
 SELECT t, id AS witness FROM string_boundary_supported WHERE t LIKE 'a%'::text;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_010 */
 SELECT c, id AS witness FROM string_boundary_supported WHERE c LIKE 'A%'::text;
 
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_011 */

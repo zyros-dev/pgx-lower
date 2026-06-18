@@ -12,10 +12,10 @@ INSERT INTO sort_test VALUES
     (3, 'Mango'),
     (4, 'Banana');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_001 */
 SELECT name FROM sort_test ORDER BY name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_002 */
 SELECT t1.name
 FROM sort_test t1
 JOIN sort_test t2 ON t1.id = t2.id
@@ -48,14 +48,14 @@ INSERT INTO countries VALUES
     (5, 'Brazil', 3),
     (6, 'Canada', 3);
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_003 */
 SELECT r.region_name, COUNT(*) as country_count
 FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_004 */
 SELECT c.country_name
 FROM countries c
 JOIN regions r1 ON c.region_id = r1.region_id
@@ -88,7 +88,7 @@ INSERT INTO bpchar_test VALUES
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_006 */
 SELECT code FROM bpchar_test ORDER BY code;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_007 */
 SELECT c.country_name, SUM(c.country_id) as total
 FROM countries c
 JOIN regions r ON c.region_id = r.region_id
@@ -125,7 +125,7 @@ INSERT INTO timestamp_test VALUES
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_009 */
 SELECT event_time FROM timestamp_test ORDER BY event_time;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_010 */
 SELECT r.region_name,
        COUNT(*) as country_count,
        SUM(c.country_id) as total_ids
@@ -134,7 +134,7 @@ JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY total_ids DESC, r.region_name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_011 */
 SELECT r.region_name, COUNT(*) as cnt
 FROM regions r
 JOIN regions r2 ON r.region_id = r2.region_id
@@ -155,12 +155,12 @@ INSERT INTO mixed_sort_test VALUES
     (4, 'Gamma', 100.50),
     (5, 'Beta', 100.50);
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_012 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_012 */
 SELECT value, name
 FROM mixed_sort_test
 ORDER BY value DESC, name ASC;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_013 */
 SELECT r.region_name,
        COUNT(*) as cnt,
        SUM(c.country_id) as total
@@ -169,12 +169,12 @@ JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY cnt DESC, r.region_name ASC;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_014 */
 SELECT value, name
 FROM mixed_sort_test
 ORDER BY value DESC, name DESC;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_015 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_015 */
 SELECT r.region_name,
        c.country_name,
        c.country_id
@@ -200,7 +200,7 @@ FROM countries c
 GROUP BY category
 ORDER BY category;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_018 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_018 */
 SELECT r.region_name,
        SUM(c.country_id) as total,
        COUNT(*) as cnt,

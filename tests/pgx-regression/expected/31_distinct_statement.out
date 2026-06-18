@@ -71,11 +71,10 @@ ORDER BY combined;
        44
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_31_distinct_statement_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_31_distinct_statement_005 */
 SELECT DISTINCT name
 FROM test_distinct
 ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
    name    
 -----------
  apple

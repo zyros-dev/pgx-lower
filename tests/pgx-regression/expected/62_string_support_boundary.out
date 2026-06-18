@@ -52,9 +52,8 @@ SELECT 'pgx'::cstring AS cstring_value, id AS witness FROM string_boundary_suppo
 NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_type: unsupported type cstring at Plan.targetlist[0].expr.type
 cstring_value,witness
 pgx,1
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_007 */
 SELECT t, id AS witness FROM string_boundary_supported WHERE t = 'alpha'::text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.qual[0]
 t,witness
 alpha,1
 /* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_008 */
@@ -65,9 +64,8 @@ A    ,1
 SELECT t, id AS witness FROM string_boundary_supported WHERE t LIKE 'a%'::text;
 t,witness
 alpha,1
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_62_string_support_boundary_010 */
 SELECT c, id AS witness FROM string_boundary_supported WHERE c LIKE 'A%'::text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator bpchar ~~ text at Plan.qual[0]
 c,witness
 A    ,1
 /* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_62_string_support_boundary_011 */

@@ -1693,7 +1693,7 @@ group by
         cntrycode
 order by
         cntrycode;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.groupCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function text() at Plan.lefttree.lefttree.targetlist[0].expr.args[0]
  cntrycode | numcust | totacctbal 
 -----------+---------+------------
  13        |      10 |   75359.29

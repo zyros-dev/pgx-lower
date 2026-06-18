@@ -231,9 +231,32 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
        return t.isInteger(1) || mlir::isa<mlir::db::PgBoolType>(t);
    };
    auto resTypeIsString = [](::mlir::Type t, ::mlir::TypeRange) { return t.isa<mlir::db::StringType>(); };
+   auto resTypeIsStringLike = [](::mlir::Type t, ::mlir::TypeRange) { return RuntimeFunction::stringLike(t); };
    auto i32Like = [](::mlir::Type t) { return t.isInteger(32); };
+   auto pgBridgeI32Like = [](::mlir::Type t) {
+       t = getBaseType(t);
+       return t.isInteger(32) || mlir::isa<mlir::db::PgInt4Type>(t);
+   };
    auto rowLike = [](::mlir::Type t) { return mlir::isa<mlir::db::PgRowType>(t); };
    auto resTypeIsRow = [](::mlir::Type t, ::mlir::TypeRange) { return mlir::isa<mlir::db::PgRowType>(t); };
+   builtinRegistry->add("PgStringBool2")
+       .implementedAs(rt::StringRuntime::pgCallBool2)
+       .matchesTypes({RuntimeFunction::stringLike, i32Like, RuntimeFunction::stringLike, i32Like, i32Like, i32Like},
+                     resTypeIsBool)
+       .needsWrapping();
+   builtinRegistry->add("PgStringCall1")
+       .implementedAs(rt::StringRuntime::pgCallString1)
+       .matchesTypes({RuntimeFunction::stringLike, i32Like, i32Like, i32Like}, resTypeIsStringLike)
+       .needsWrapping();
+   builtinRegistry->add("PgStringCall2")
+       .implementedAs(rt::StringRuntime::pgCallString2)
+       .matchesTypes({RuntimeFunction::stringLike, i32Like, pgBridgeI32Like, i32Like, i32Like}, resTypeIsStringLike)
+       .needsWrapping();
+   builtinRegistry->add("PgStringCall3")
+       .implementedAs(rt::StringRuntime::pgCallString3)
+       .matchesTypes({RuntimeFunction::stringLike, i32Like, pgBridgeI32Like, pgBridgeI32Like, i32Like, i32Like},
+                     resTypeIsStringLike)
+       .needsWrapping();
    builtinRegistry->add("Substring")
        .implementedAs(rt::StringRuntime::substr)
        .matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike},

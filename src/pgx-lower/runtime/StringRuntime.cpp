@@ -153,6 +153,20 @@ auto pgStringDatumFromVarLen32(runtime::VarLen32 value, uint32_t typeOid) -> Dat
     return static_cast<Datum>(0);
 }
 
+auto varLen32FromPgStringDatum(Datum datum) -> runtime::VarLen32 {
+    auto* value = reinterpret_cast<struct varlena*>(DatumGetPointer(datum));
+    auto* detoasted = pg_detoast_datum_packed(value);
+    const auto length = static_cast<uint32_t>(VARSIZE_ANY_EXHDR(detoasted));
+    auto* result = pgx_alloc(length);
+    if (length > 0) {
+        std::memcpy(result, VARDATA_ANY(detoasted), length);
+    }
+    if (detoasted != value) {
+        pfree(detoasted);
+    }
+    return runtime::VarLen32(result, length);
+}
+
 } // namespace
 
 bool runtime::StringRuntime::pgCallBool2(runtime::VarLen32 left, uint32_t leftTypeOid, runtime::VarLen32 right,
@@ -166,6 +180,25 @@ uint64_t runtime::StringRuntime::pgCallHash1(runtime::VarLen32 value, uint32_t t
                                              uint32_t collationOid) {
     const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
     return static_cast<uint64_t>(DatumGetUInt32(OidFunctionCall1Coll(functionOid, collationOid, datum)));
+}
+
+runtime::VarLen32 runtime::StringRuntime::pgCallString1(runtime::VarLen32 value, uint32_t typeOid, uint32_t functionOid,
+                                                        uint32_t collationOid) {
+    const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
+    return varLen32FromPgStringDatum(OidFunctionCall1Coll(functionOid, collationOid, datum));
+}
+
+runtime::VarLen32 runtime::StringRuntime::pgCallString2(runtime::VarLen32 value, uint32_t typeOid, int32_t arg1,
+                                                        uint32_t functionOid, uint32_t collationOid) {
+    const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
+    return varLen32FromPgStringDatum(OidFunctionCall2Coll(functionOid, collationOid, datum, Int32GetDatum(arg1)));
+}
+
+runtime::VarLen32 runtime::StringRuntime::pgCallString3(runtime::VarLen32 value, uint32_t typeOid, int32_t arg1,
+                                                        int32_t arg2, uint32_t functionOid, uint32_t collationOid) {
+    const Datum datum = pgStringDatumFromVarLen32(value, typeOid);
+    return varLen32FromPgStringDatum(
+        OidFunctionCall3Coll(functionOid, collationOid, datum, Int32GetDatum(arg1), Int32GetDatum(arg2)));
 }
 
 // Helper function to trim leading and trailing spaces

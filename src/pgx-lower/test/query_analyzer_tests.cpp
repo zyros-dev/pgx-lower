@@ -151,6 +151,28 @@ auto makeBinaryOperatorExpr(const char* name, Oid resultType, Node* lhs, Node* r
     return op;
 }
 
+auto makeRelabel(Expr* arg, Oid resultType, int32_t resultTypmod, Oid resultCollation) -> RelabelType {
+    auto relabel = RelabelType{};
+    relabel.xpr.type = T_RelabelType;
+    relabel.arg = arg;
+    relabel.resulttype = resultType;
+    relabel.resulttypmod = resultTypmod;
+    relabel.resultcollid = resultCollation;
+    relabel.relabelformat = COERCE_EXPLICIT_CAST;
+    return relabel;
+}
+
+auto makeFunctionExpr(Oid functionOid, Oid resultType, Oid inputCollation, Oid resultCollation, List* args) -> FuncExpr {
+    auto func = FuncExpr{};
+    func.xpr.type = T_FuncExpr;
+    func.funcid = functionOid;
+    func.funcresulttype = resultType;
+    func.inputcollid = inputCollation;
+    func.funccollid = resultCollation;
+    func.args = args;
+    return func;
+}
+
 auto makeOutputTarget(Expr* expr, AttrNumber resno) -> TargetEntry {
     auto target = TargetEntry{};
     target.xpr.type = T_TargetEntry;
@@ -929,8 +951,13 @@ PGX_TEST_FN(query_analyzer_string_operator_boundary) {
     textEq.args = list_make2(&textLhs, &textRhs);
 
     const auto textEqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&textEq));
-    REQUIRE(!textEqResult.isSupported());
-    REQUIRE(textEqResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(textEqResult.isSupported());
+
+    auto textLt = makeBinaryOperatorExpr("<", BOOLOID, reinterpret_cast<Node*>(&textLhs),
+                                         reinterpret_cast<Node*>(&textRhs));
+    textLt.inputcollid = DEFAULT_COLLATION_OID;
+    const auto textLtResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&textLt));
+    REQUIRE(textLtResult.isSupported());
 
     const Oid bpcharEqOid = OpernameGetOprid(list_make1(makeString(const_cast<char*>("="))), BPCHAROID, BPCHAROID);
     auto bpcharLhs = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
@@ -946,6 +973,12 @@ PGX_TEST_FN(query_analyzer_string_operator_boundary) {
 
     const auto bpcharEqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpcharEq));
     REQUIRE(bpcharEqResult.isSupported());
+
+    auto bpcharLt = makeBinaryOperatorExpr("<", BOOLOID, reinterpret_cast<Node*>(&bpcharLhs),
+                                           reinterpret_cast<Node*>(&bpcharRhs));
+    bpcharLt.inputcollid = DEFAULT_COLLATION_OID;
+    const auto bpcharLtResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpcharLt));
+    REQUIRE(bpcharLtResult.isSupported());
 
     auto varcharLhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
     auto varcharRhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
@@ -998,8 +1031,92 @@ PGX_TEST_FN(query_analyzer_string_operator_boundary) {
     bpcharLike.args = list_make2(&bpcharLhs, &likePattern);
 
     const auto bpcharLikeResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&bpcharLike));
-    REQUIRE(!bpcharLikeResult.isSupported());
-    REQUIRE(bpcharLikeResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_operator);
+    REQUIRE(bpcharLikeResult.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_accepts_varchar_relabel_string_operator_boundary) {
+    auto varcharLhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
+    auto varcharRhs = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
+    auto textPattern = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto lhsAsText = makeRelabel(reinterpret_cast<Expr*>(&varcharLhs), TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto rhsAsText = makeRelabel(reinterpret_cast<Expr*>(&varcharRhs), TEXTOID, -1, DEFAULT_COLLATION_OID);
+
+    auto eq = makeBinaryOperatorExpr("=", BOOLOID, reinterpret_cast<Node*>(&lhsAsText),
+                                     reinterpret_cast<Node*>(&rhsAsText));
+    eq.inputcollid = DEFAULT_COLLATION_OID;
+    const auto eqResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&eq));
+    REQUIRE(eqResult.isSupported());
+
+    auto lt = makeBinaryOperatorExpr("<", BOOLOID, reinterpret_cast<Node*>(&lhsAsText),
+                                     reinterpret_cast<Node*>(&rhsAsText));
+    lt.inputcollid = DEFAULT_COLLATION_OID;
+    const auto ltResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&lt));
+    REQUIRE(ltResult.isSupported());
+
+    auto like = makeBinaryOperatorExpr("~~", BOOLOID, reinterpret_cast<Node*>(&lhsAsText),
+                                       reinterpret_cast<Node*>(&textPattern));
+    like.inputcollid = DEFAULT_COLLATION_OID;
+    const auto likeResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&like));
+    REQUIRE(likeResult.isSupported());
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_rejects_non_default_string_operator_collation) {
+    auto lhs = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto rhs = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto op = makeBinaryOperatorExpr("<", BOOLOID, reinterpret_cast<Node*>(&lhs), reinterpret_cast<Node*>(&rhs));
+    op.inputcollid = C_COLLATION_OID;
+
+    const auto result = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&op));
+    REQUIRE(!result.isSupported());
+    REQUIRE(result.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_collation);
+    PG_RETURN_VOID();
+}
+
+PGX_TEST_FN(query_analyzer_string_function_boundary) {
+    auto text = makeTypedConst(TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto varchar = makeTypedConst(VARCHAROID, 16, DEFAULT_COLLATION_OID);
+    auto varcharAsText = makeRelabel(reinterpret_cast<Expr*>(&varchar), TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto bpchar = makeTypedConst(BPCHAROID, 8, DEFAULT_COLLATION_OID);
+    auto bpcharAsText = makeRelabel(reinterpret_cast<Expr*>(&bpchar), TEXTOID, -1, DEFAULT_COLLATION_OID);
+    auto start = makeTypedConst(INT4OID);
+    auto length = makeTypedConst(INT4OID);
+
+    auto upperText = makeFunctionExpr(F_UPPER_TEXT, TEXTOID, DEFAULT_COLLATION_OID, DEFAULT_COLLATION_OID,
+                                      list_make1(&text));
+    const auto upperTextResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&upperText));
+    REQUIRE(upperTextResult.isSupported());
+
+    auto lowerVarchar = makeFunctionExpr(F_LOWER_TEXT, TEXTOID, DEFAULT_COLLATION_OID, DEFAULT_COLLATION_OID,
+                                         list_make1(&varcharAsText));
+    const auto lowerVarcharResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(
+        reinterpret_cast<Node*>(&lowerVarchar));
+    REQUIRE(lowerVarcharResult.isSupported());
+
+    auto substringText = makeFunctionExpr(F_SUBSTRING_TEXT_INT4_INT4, TEXTOID, DEFAULT_COLLATION_OID,
+                                          DEFAULT_COLLATION_OID, list_make3(&text, &start, &length));
+    const auto substringTextResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(
+        reinterpret_cast<Node*>(&substringText));
+    REQUIRE(substringTextResult.isSupported());
+
+    auto substringTextWithoutLength = makeFunctionExpr(F_SUBSTRING_TEXT_INT4, TEXTOID, DEFAULT_COLLATION_OID,
+                                                       DEFAULT_COLLATION_OID, list_make2(&text, &start));
+    const auto substringTextWithoutLengthResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(
+        reinterpret_cast<Node*>(&substringTextWithoutLength));
+    REQUIRE(substringTextWithoutLengthResult.isSupported());
+
+    auto substringVarchar = makeFunctionExpr(F_SUBSTRING_TEXT_INT4_INT4, TEXTOID, DEFAULT_COLLATION_OID,
+                                             DEFAULT_COLLATION_OID, list_make3(&varcharAsText, &start, &length));
+    const auto substringVarcharResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(
+        reinterpret_cast<Node*>(&substringVarchar));
+    REQUIRE(substringVarcharResult.isSupported());
+
+    auto upperBpchar = makeFunctionExpr(F_UPPER_TEXT, TEXTOID, DEFAULT_COLLATION_OID, DEFAULT_COLLATION_OID,
+                                        list_make1(&bpcharAsText));
+    const auto upperBpcharResult = pgx_lower::QueryAnalyzer::analyzeExprForTesting(reinterpret_cast<Node*>(&upperBpchar));
+    REQUIRE(!upperBpcharResult.isSupported());
+    REQUIRE(upperBpcharResult.primaryReason().kind == pgx_lower::UnsupportedReasonKind::unsupported_function);
     PG_RETURN_VOID();
 }
 

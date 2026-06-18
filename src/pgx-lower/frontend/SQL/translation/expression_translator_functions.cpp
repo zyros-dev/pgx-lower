@@ -267,7 +267,17 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         mlir::Type resultType;
         if (mlir::db::isPgValueType(args[0].getType())) {
-            resultType = mlir::db::withPgNullability(args[0].getType(), mlir::db::combineSqlNullability(args));
+            const auto typeMapper = PostgreSQLTypeMapper(context_);
+            resultType = typeMapper.map_postgre_sqltype(func_expr->funcresulttype, -1, func_expr->funccollid,
+                                                        pgx_lower::frontend::sql::is_sql_nullable_type(args[0].getType()));
+            auto baseArgType = getBaseType(args[0].getType());
+            auto typeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(baseArgType), 32);
+            auto functionOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, func_expr->funcid, 32);
+            auto collationOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, func_expr->inputcollid, 32);
+            auto op = ctx.builder.create<mlir::db::RuntimeCall>(
+                loc, resultType, ctx.builder.getStringAttr("PgStringCall1"),
+                mlir::ValueRange{args[0], typeOid, functionOid, collationOid});
+            return op.getRes();
         } else {
             const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
             resultType = hasNullableOperand
@@ -288,7 +298,17 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         mlir::Type resultType;
         if (mlir::db::isPgValueType(args[0].getType())) {
-            resultType = mlir::db::withPgNullability(args[0].getType(), mlir::db::combineSqlNullability(args));
+            const auto typeMapper = PostgreSQLTypeMapper(context_);
+            resultType = typeMapper.map_postgre_sqltype(func_expr->funcresulttype, -1, func_expr->funccollid,
+                                                        pgx_lower::frontend::sql::is_sql_nullable_type(args[0].getType()));
+            auto baseArgType = getBaseType(args[0].getType());
+            auto typeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(baseArgType), 32);
+            auto functionOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, func_expr->funcid, 32);
+            auto collationOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, func_expr->inputcollid, 32);
+            auto op = ctx.builder.create<mlir::db::RuntimeCall>(
+                loc, resultType, ctx.builder.getStringAttr("PgStringCall1"),
+                mlir::ValueRange{args[0], typeOid, functionOid, collationOid});
+            return op.getRes();
         } else {
             const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
             resultType = hasNullableOperand
@@ -319,7 +339,24 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         mlir::Type resultType;
         if (mlir::db::isPgValueType(args[0].getType())) {
-            resultType = mlir::db::withPgNullability(args[0].getType(), mlir::db::combineSqlNullability(args));
+            const auto typeMapper = PostgreSQLTypeMapper(context_);
+            resultType = typeMapper.map_postgre_sqltype(func_expr->funcresulttype, -1, func_expr->funccollid,
+                                                        mlir::db::combineSqlNullability(mlir::ValueRange(args))
+                                                            == mlir::db::PgNullability::Maybe);
+            auto baseArgType = getBaseType(args[0].getType());
+            auto typeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, mlir::db::getPgTypeOid(baseArgType), 32);
+            auto functionOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, func_expr->funcid, 32);
+            auto collationOid = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, func_expr->inputcollid, 32);
+            if (args.size() == 2) {
+                auto op = ctx.builder.create<mlir::db::RuntimeCall>(
+                    loc, resultType, ctx.builder.getStringAttr("PgStringCall2"),
+                    mlir::ValueRange{args[0], typeOid, substringArgs[1], functionOid, collationOid});
+                return op.getRes();
+            }
+            auto op = ctx.builder.create<mlir::db::RuntimeCall>(
+                loc, resultType, ctx.builder.getStringAttr("PgStringCall3"),
+                mlir::ValueRange{args[0], typeOid, substringArgs[1], substringArgs[2], functionOid, collationOid});
+            return op.getRes();
         } else {
             const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
             resultType = hasNullableOperand

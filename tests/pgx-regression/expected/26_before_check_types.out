@@ -109,7 +109,7 @@ SELECT string_col,
        string_col || '!' AS concatenated,
        LENGTH(string_col) AS str_length
 FROM type_test_table;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.targetlist[1].expr
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text || text at Plan.targetlist[5].expr
  string_col | is_hello | after_a | before_z | starts_with_h | concatenated | str_length 
 ------------+----------+---------+----------+---------------+--------------+------------
  hello      | t        | t       | t        | t             | hello!       |          5

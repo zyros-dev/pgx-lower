@@ -76,7 +76,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
     }
 
     {
-        if (auto result = translate_comparison_op(ctx, opOid, lhs, rhs)) {
+        if (auto result = translate_comparison_op(ctx, op_expr, lhs, rhs)) {
             return result;
         }
     }
@@ -86,7 +86,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         pfree(oprname);
 
         if (op == "~~") {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to PostgreSQL string bridge");
 
             auto convertedLhs = lhs;
             auto convertedRhs = rhs;
@@ -107,13 +107,31 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
             llvm::SmallVector<mlir::Value, 2> operands{convertedLhs, convertedRhs};
             auto resultType = pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, operands);
 
+            auto leftBaseType = getBaseType(convertedLhs.getType());
+            auto rightBaseType = getBaseType(convertedRhs.getType());
+            if (mlir::db::isPgValueType(leftBaseType) && mlir::db::isPgValueType(rightBaseType)) {
+                auto leftTypeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(
+                    ctx.builder.getUnknownLoc(), mlir::db::getPgTypeOid(leftBaseType), 32);
+                auto rightTypeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(
+                    ctx.builder.getUnknownLoc(), mlir::db::getPgTypeOid(rightBaseType), 32);
+                auto functionOid = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                                  op_expr->opfuncid, 32);
+                auto collationOid = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                                   op_expr->inputcollid, 32);
+                llvm::SmallVector<mlir::Value, 6> bridgeOperands{convertedLhs, leftTypeOid, convertedRhs,
+                                                                 rightTypeOid, functionOid, collationOid};
+                auto op2 = ctx.builder.create<mlir::db::RuntimeCall>(
+                    ctx.builder.getUnknownLoc(), resultType, ctx.builder.getStringAttr("PgStringBool2"), bridgeOperands);
+                return op2.getRes();
+            }
+
             auto op2 = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(), resultType,
                                                                  ctx.builder.getStringAttr("Like"), operands);
 
             return op2.getRes();
         }
         if (op == "!~~") {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NOT LIKE operator to negated db.runtime_call");
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NOT LIKE operator to PostgreSQL string bridge");
             auto convertedLhs = lhs;
             auto convertedRhs = rhs;
 
@@ -132,6 +150,24 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
 
             llvm::SmallVector<mlir::Value, 2> operands{convertedLhs, convertedRhs};
             auto resultType = pgx_lower::frontend::sql::sql_bool_result_type(ctx.builder, operands);
+
+            auto leftBaseType = getBaseType(convertedLhs.getType());
+            auto rightBaseType = getBaseType(convertedRhs.getType());
+            if (mlir::db::isPgValueType(leftBaseType) && mlir::db::isPgValueType(rightBaseType)) {
+                auto leftTypeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(
+                    ctx.builder.getUnknownLoc(), mlir::db::getPgTypeOid(leftBaseType), 32);
+                auto rightTypeOid = ctx.builder.create<mlir::arith::ConstantIntOp>(
+                    ctx.builder.getUnknownLoc(), mlir::db::getPgTypeOid(rightBaseType), 32);
+                auto functionOid = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                                  op_expr->opfuncid, 32);
+                auto collationOid = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                                   op_expr->inputcollid, 32);
+                llvm::SmallVector<mlir::Value, 6> bridgeOperands{convertedLhs, leftTypeOid, convertedRhs,
+                                                                 rightTypeOid, functionOid, collationOid};
+                auto notLikeOp = ctx.builder.create<mlir::db::RuntimeCall>(
+                    ctx.builder.getUnknownLoc(), resultType, ctx.builder.getStringAttr("PgStringBool2"), bridgeOperands);
+                return notLikeOp.getRes();
+            }
 
             auto likeOp = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(), resultType,
                                                                     ctx.builder.getStringAttr("Like"), operands);
@@ -696,14 +732,15 @@ auto PostgreSQLASTTranslator::Impl::print_type(const mlir::Type val) -> void {
     PGX_LOG(AST_TRANSLATE, TRACE, "%s", valueStr.c_str());
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx, const Oid op_oid,
+auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx, const OpExpr* op_expr,
                                                             const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!lhs || !rhs) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: nullptr operands for OID %d", op_oid);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: nullptr operands");
         throw std::runtime_error("invalid state");
     }
+    const Oid op_oid = op_expr ? op_expr->opno : InvalidOid;
 
     char* oprname = get_opname(op_oid);
     if (!oprname) {
@@ -746,8 +783,17 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     if (mlir::db::isPgValueType(convertedLhs.getType()) || mlir::db::isPgValueType(convertedRhs.getType())) {
         auto resultType = mlir::db::PgBoolType::get(
             ctx.builder.getContext(), mlir::db::combineSqlNullability(mlir::ValueRange{convertedLhs, convertedRhs}));
-        return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), resultType, predicate, convertedLhs,
-                                                   convertedRhs);
+        auto cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), resultType, predicate, convertedLhs,
+                                                       convertedRhs);
+        auto leftBaseType = getBaseType(convertedLhs.getType());
+        auto rightBaseType = getBaseType(convertedRhs.getType());
+        if (op_expr && mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType, mlir::db::PgBpcharType>(leftBaseType)
+            && mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType, mlir::db::PgBpcharType>(rightBaseType))
+        {
+            cmp->setAttr("pg_function_oid", ctx.builder.getI32IntegerAttr(op_expr->opfuncid));
+            cmp->setAttr("pg_input_collation_oid", ctx.builder.getI32IntegerAttr(op_expr->inputcollid));
+        }
+        return cmp;
     }
     return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
 }

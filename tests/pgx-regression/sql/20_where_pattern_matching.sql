@@ -77,17 +77,17 @@ SELECT id, name
 FROM test_where_patterns
 WHERE salary IN (75000, 80000, 85000);
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_014 */
 SELECT id, name, department
 FROM test_where_patterns
 WHERE department NOT IN ('Marketing');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_015 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_015 */
 SELECT id, name, status
 FROM test_where_patterns
 WHERE status NOT IN ('inactive');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_016 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_016 */
 SELECT id, name, department
 FROM test_where_patterns
 WHERE name LIKE 'C%'
@@ -102,14 +102,14 @@ SELECT id, name
 FROM test_where_patterns
 WHERE department IN ('Engineering', 'Sales')
   AND status = 'active';
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_019 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_019 */
 SELECT id, name, email
 FROM test_where_patterns
 WHERE name LIKE '%a%'
   AND email LIKE '%@company.com'
   AND department NOT IN ('Marketing');
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_20_where_pattern_matching_020 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_20_where_pattern_matching_020 */
 SELECT id, name, department
 FROM test_where_patterns
 WHERE (name NOT LIKE 'A%' AND name NOT LIKE 'B%')

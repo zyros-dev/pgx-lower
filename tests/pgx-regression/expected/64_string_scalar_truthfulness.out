@@ -1,0 +1,115 @@
+LOAD 'pgx_lower.so';
+CREATE TEMP TABLE string_scalar_truthfulness(
+    id int4,
+    t text,
+    v varchar(20),
+    c3 char(3),
+    c5 char(5)
+);
+INSERT INTO string_scalar_truthfulness VALUES
+    (1, 'alpha', 'alpha', 'ab', 'ab'),
+    (2, 'beta', 'beta', 'xy', 'xy'),
+    (3, convert_from(decode('c3a9636c616972', 'hex'), 'UTF8'),
+        convert_from(decode('c3a9636c616972', 'hex'), 'UTF8')::varchar(20), 'zz', 'zz');
+/* <<pgx-lower-config>>: auto_should_route_to=ignore id=pgx_64_string_scalar_truthfulness_pset */
+\pset format csv
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_001 */
+SELECT id, t = v::text AS text_varchar_eq FROM string_scalar_truthfulness ORDER BY id;
+id,text_varchar_eq
+1,t
+2,t
+3,t
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_002 */
+SELECT id, c3 = c5 AS bpchar_cross_width_eq FROM string_scalar_truthfulness ORDER BY id;
+id,bpchar_cross_width_eq
+1,t
+2,t
+3,t
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_003 */
+SELECT id, t LIKE 'a%' AS starts_with_a, t NOT LIKE 'b%' AS not_b FROM string_scalar_truthfulness ORDER BY id;
+id,starts_with_a,not_b
+1,t,t
+2,f,f
+3,f,t
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_004 */
+SELECT id, v LIKE 'a%' AS varchar_starts_with_a, c5 LIKE 'a%' AS bpchar_starts_with_a
+FROM string_scalar_truthfulness
+ORDER BY id;
+id,varchar_starts_with_a,bpchar_starts_with_a
+1,t,t
+2,f,f
+3,f,f
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_005 */
+SELECT id, substring(t from 1 for 1) AS text_first_char, substring(v from 1 for 1) AS varchar_first_char
+FROM string_scalar_truthfulness
+ORDER BY id;
+id,text_first_char,varchar_first_char
+1,a,a
+2,b,b
+3,é,é
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_006 */
+SELECT id, upper(t) AS upper_t, lower(t) AS lower_t FROM string_scalar_truthfulness ORDER BY id;
+id,upper_t,lower_t
+1,ALPHA,alpha
+2,BETA,beta
+3,ÉCLAIR,éclair
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_007 */
+SELECT id, upper(v) AS upper_v, lower(v) AS lower_v FROM string_scalar_truthfulness ORDER BY id;
+id,upper_v,lower_v
+1,ALPHA,alpha
+2,BETA,beta
+3,ÉCLAIR,éclair
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_64_string_scalar_truthfulness_008 */
+SELECT t COLLATE "C" < 'z' COLLATE "C" FROM string_scalar_truthfulness ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_collation: unsupported operator collation at Plan.lefttree.targetlist[0].expr
+?column?
+t
+t
+f
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_64_string_scalar_truthfulness_009 */
+SELECT t || v FROM string_scalar_truthfulness ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text || text at Plan.lefttree.targetlist[0].expr
+?column?
+alphaalpha
+betabeta
+éclairéclair
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_64_string_scalar_truthfulness_010 */
+SELECT length(t) FROM string_scalar_truthfulness ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function length() at Plan.lefttree.targetlist[0].expr
+length
+5
+4
+6
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_64_string_scalar_truthfulness_011 */
+SELECT id, substring(c5 from 1 for 1) AS bpchar_first_char FROM string_scalar_truthfulness ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function text() at Plan.lefttree.targetlist[1].expr.args[0]
+id,bpchar_first_char
+1,a
+2,x
+3,z
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_64_string_scalar_truthfulness_012 */
+SELECT id, upper(c5) AS upper_c5, lower(c5) AS lower_c5 FROM string_scalar_truthfulness ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function text() at Plan.lefttree.targetlist[1].expr.args[0]
+id,upper_c5,lower_c5
+1,AB,ab
+2,XY,xy
+3,ZZ,zz
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_64_string_scalar_truthfulness_013 */
+SELECT id,
+       t < 'delta' AS text_lt_delta,
+       v < 'delta'::varchar(20) AS varchar_lt_delta,
+       c5 < 'zzzzz'::char(5) AS bpchar_lt_zzzzz
+FROM string_scalar_truthfulness
+ORDER BY id;
+id,text_lt_delta,varchar_lt_delta,bpchar_lt_zzzzz
+1,t,t,t
+2,t,t,t
+3,f,f,t
+/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_64_string_scalar_truthfulness_014 */
+SELECT id, t::varchar(8) AS text_to_varchar FROM string_scalar_truthfulness ORDER BY id;
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function varchar() at Plan.lefttree.targetlist[1].expr
+id,text_to_varchar
+1,alpha
+2,beta
+3,éclair
+DROP TABLE string_scalar_truthfulness;

@@ -89,10 +89,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Spinach (vegetable)
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_13_text_operations_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_13_text_operations_007 */
 SELECT SUBSTRING(name FROM 1 FOR 3) AS name_prefix
 FROM test_text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function substring() at Plan.targetlist[0].expr
  name_prefix 
 -------------
  App
@@ -102,10 +101,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported s
  Spi
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_13_text_operations_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_13_text_operations_008 */
 SELECT SUBSTRING(description FROM 1 FOR 10) AS desc_start
 FROM test_text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function substring() at Plan.targetlist[0].expr
  desc_start 
 ------------
  Fresh red 
@@ -115,10 +113,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported s
  Green leaf
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_13_text_operations_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_13_text_operations_009 */
 SELECT UPPER(name) AS upper_name
 FROM test_text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function upper() at Plan.targetlist[0].expr
  upper_name 
 ------------
  APPLE
@@ -128,10 +125,9 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported s
  SPINACH
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_13_text_operations_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_13_text_operations_010 */
 SELECT LOWER(description) AS lower_desc
 FROM test_text;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_function: unsupported string function lower() at Plan.targetlist[0].expr
       lower_desc       
 -----------------------
  fresh red apple fruit

@@ -10,9 +10,8 @@ INSERT INTO sort_test VALUES
     (2, 'Apple'),
     (3, 'Mango'),
     (4, 'Banana');
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_001 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_001 */
 SELECT name FROM sort_test ORDER BY name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
   name  
 --------
  Apple
@@ -21,12 +20,11 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Zebra
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_002 */
 SELECT t1.name
 FROM sort_test t1
 JOIN sort_test t2 ON t1.id = t2.id
 ORDER BY t1.name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
   name  
 --------
  Apple
@@ -59,13 +57,12 @@ INSERT INTO countries VALUES
     (4, 'Germany', 2),
     (5, 'Brazil', 3),
     (6, 'Canada', 3);
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_003 */
 SELECT r.region_name, COUNT(*) as country_count
 FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  region_name | country_count 
 -------------+---------------
  Americas    |             2
@@ -73,14 +70,13 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Europe      |             2
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_004 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_004 */
 SELECT c.country_name
 FROM countries c
 JOIN regions r1 ON c.region_id = r1.region_id
 JOIN regions r2 ON r1.region_id = r2.region_id
 WHERE r2.region_name = 'Asia'
 ORDER BY c.country_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  country_name 
 --------------
  China
@@ -96,7 +92,7 @@ FROM (
     WHERE r.region_name IN ('Asia', 'Europe')
 ) sub
 ORDER BY country_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported ScalarArrayOpExpr array operand at Plan.lefttree.righttree.lefttree.qual[0].right
  country_name 
 --------------
  China
@@ -126,13 +122,12 @@ SELECT code FROM bpchar_test ORDER BY code;
  ZZZ  
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_007 */
 SELECT c.country_name, SUM(c.country_id) as total
 FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY c.country_name
 ORDER BY total DESC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.lefttree.groupCol[0]
  country_name | total 
 --------------+-------
  Canada       |     6
@@ -185,7 +180,7 @@ SELECT event_time FROM timestamp_test ORDER BY event_time;
  Tue Dec 31 23:59:59 2024
 (4 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_010 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_010 */
 SELECT r.region_name,
        COUNT(*) as country_count,
        SUM(c.country_id) as total_ids
@@ -193,7 +188,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY total_ids DESC, r.region_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[1]
  region_name | country_count | total_ids 
 -------------+---------------+-----------
  Americas    |             2 |        11
@@ -201,13 +195,12 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Asia        |             2 |         3
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_011 */
 SELECT r.region_name, COUNT(*) as cnt
 FROM regions r
 JOIN regions r2 ON r.region_id = r2.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  region_name | cnt 
 -------------+-----
  Americas    |   1
@@ -228,11 +221,10 @@ INSERT INTO mixed_sort_test VALUES
     (3, 'Alpha', 150.25),
     (4, 'Gamma', 100.50),
     (5, 'Beta', 100.50);
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_012 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_012 */
 SELECT value, name
 FROM mixed_sort_test
 ORDER BY value DESC, name ASC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[1]
  value  | name  
 --------+-------
  200.75 | Beta
@@ -242,7 +234,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  100.50 | Gamma
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_013 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_013 */
 SELECT r.region_name,
        COUNT(*) as cnt,
        SUM(c.country_id) as total
@@ -250,7 +242,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY cnt DESC, r.region_name ASC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[1]
  region_name | cnt | total 
 -------------+-----+-------
  Americas    |   2 |    11
@@ -258,11 +249,10 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Europe      |   2 |     7
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_014 */
 SELECT value, name
 FROM mixed_sort_test
 ORDER BY value DESC, name DESC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 666 at Plan.sortCol[1]
  value  | name  
 --------+-------
  200.75 | Beta
@@ -272,14 +262,13 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  100.50 | Alpha
 (5 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_015 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_015 */
 SELECT r.region_name,
        c.country_name,
        c.country_id
 FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 ORDER BY r.region_name ASC, country_id DESC, c.country_name ASC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
  region_name | country_name | country_id 
 -------------+--------------+------------
  Americas    | Canada       |          6
@@ -311,7 +300,7 @@ SELECT
 FROM countries c
 GROUP BY category
 ORDER BY category;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 32 at Plan.lefttree.lefttree.targetlist[0].expr
  category | cnt 
 ----------+-----
  High     |   2
@@ -319,7 +308,7 @@ NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported s
  Medium   |   2
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_41_sorts_018 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_41_sorts_018 */
 SELECT r.region_name,
        SUM(c.country_id) as total,
        COUNT(*) as cnt,
@@ -328,7 +317,6 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY avg_id DESC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.lefttree.groupCol[0]
  region_name | total | cnt | avg_id 
 -------------+-------+-----+--------
  Americas    |    11 |   2 |      5
@@ -358,7 +346,7 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 32 at Plan.lefttree.targetlist[1].expr.args[0].expr
  region_name | conditional_sum | total_sum 
 -------------+-----------------+-----------
  Americas    |               0 |        11
@@ -378,7 +366,7 @@ FROM (
     GROUP BY r.region_name
 ) sub
 ORDER BY ratio DESC;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported aggregate grouping operator OID 98 at Plan.lefttree.subplan.groupCol[0]
+NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_expr_node: unsupported expression node tag 32 at Plan.lefttree.subplan.targetlist[1].expr.args[0].expr
  region_name | ratio 
 -------------+-------
  Asia        |     1

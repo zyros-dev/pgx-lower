@@ -42,12 +42,11 @@ WHERE active = true
  Engineering |  22
 (2 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_003 */
 SELECT id, department
 FROM test_where_logical
 WHERE score >= 85
   AND department = 'Engineering';
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.qual[1]
  id | department  
 ----+-------------
   1 | Engineering
@@ -66,12 +65,11 @@ WHERE age < 25
   5 |  28 |    95
 (3 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_005 */
 SELECT department, active
 FROM test_where_logical
 WHERE department = 'Sales'
    OR department = 'Marketing';
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.qual[0].args[0]
  department | active 
 ------------+--------
  Marketing  | f
@@ -117,11 +115,10 @@ WHERE NOT (age < 25);
   26 |    89
 (6 rows)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_009 */
 SELECT department
 FROM test_where_logical
 WHERE NOT (department = 'Engineering');
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text <> text at Plan.qual[0]
  department 
 ------------
  Marketing
@@ -179,13 +176,12 @@ WHERE age > 25
   35 |    88 | Sales
 (1 row)
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_014 */
 SELECT id, age
 FROM test_where_logical
 WHERE age < 30
    OR score > 90
    OR department = 'Sales';
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported string operator text = text at Plan.qual[0].args[2]
  id | age 
 ----+-----
   1 |  25

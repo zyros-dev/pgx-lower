@@ -31,7 +31,7 @@ SELECT department, age
 FROM test_where_logical
 WHERE active = true
   AND age < 30;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_003 */
 SELECT id, department
 FROM test_where_logical
 WHERE score >= 85
@@ -41,7 +41,7 @@ SELECT id, age, score
 FROM test_where_logical
 WHERE age < 25
    OR score > 90;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_005 */
 SELECT department, active
 FROM test_where_logical
 WHERE department = 'Sales'
@@ -60,7 +60,7 @@ SELECT age, score
 FROM test_where_logical
 WHERE NOT (age < 25);
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_009 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_009 */
 SELECT department
 FROM test_where_logical
 WHERE NOT (department = 'Engineering');
@@ -88,7 +88,7 @@ FROM test_where_logical
 WHERE age > 25
   AND score > 80
   AND active = true;
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_18_where_logical_combinations_014 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_18_where_logical_combinations_014 */
 SELECT id, age
 FROM test_where_logical
 WHERE age < 30

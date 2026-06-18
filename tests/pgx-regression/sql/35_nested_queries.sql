@@ -53,7 +53,7 @@ FROM products
 WHERE category_id = ANY(ARRAY(SELECT category_id FROM categories WHERE active = 1))
 ORDER BY name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_002 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_002 */
 SELECT name, price
 FROM products
 WHERE price > (SELECT AVG(price)
@@ -76,7 +76,7 @@ WHERE price > (SELECT AVG(price)
                WHERE category_id = p.category_id)
 ORDER BY name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_005 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_005 */
 SELECT name
 FROM products
 WHERE category_id IN (SELECT category_id FROM categories WHERE active = 1)
@@ -88,13 +88,13 @@ FROM products
 WHERE category_id NOT IN (SELECT category_id FROM categories WHERE active = 0)
 ORDER BY name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_007 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_007 */
 SELECT name
 FROM categories c
 WHERE EXISTS (SELECT 1 FROM products WHERE category_id = c.category_id)
 ORDER BY name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_008 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_008 */
 SELECT name
 FROM categories c
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE category_id = c.category_id)
@@ -116,7 +116,7 @@ SELECT name, price,
 FROM products p
 ORDER BY name;
 
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_35_nested_queries_011 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_35_nested_queries_011 */
 SELECT c.name, stats.total_price
 FROM categories c
 JOIN (SELECT category_id, SUM(price) as total_price

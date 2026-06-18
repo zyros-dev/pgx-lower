@@ -15,12 +15,11 @@ SELECT id FROM pgx_bool_truth_source WHERE flag IS NULL ORDER BY id;
 id
 3
 (1 row)
-/* <<pgx-lower-config>>: auto_should_route_to=fallback id=pgx_47_pg_bool_predicate_truth_003 */
+/* <<pgx-lower-config>>: auto_should_route_to=lower id=pgx_47_pg_bool_predicate_truth_003 */
 SELECT s.id, m.marker
 FROM pgx_bool_truth_source s
 JOIN pgx_bool_truth_marker m ON s.flag
 ORDER BY s.id, m.marker;
-NOTICE:  [PGX-LOWER] [ROUTE:NOTICE] fallback unsupported_operator: unsupported sort operator OID 664 at Plan.sortCol[1]
 id|marker
 1|joined
 (1 row)

@@ -805,7 +805,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
             throw std::runtime_error("Failed to translate operands in CASE OpExpr");
         }
 
-        return translate_comparison_op(ctx, opExpr->opno, leftValue, rightValue);
+        return translate_comparison_op(ctx, opExpr, leftValue, rightValue);
     }
 
     return translate_expression(ctx, expr);

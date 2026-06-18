@@ -13,6 +13,11 @@ struct StringRuntime {
                                            uint32_t functionOid, uint32_t collationOid);
    static uint64_t NO_SIDE_EFFECTS pgCallHash1(VarLen32 value, uint32_t typeOid, uint32_t functionOid,
                                               uint32_t collationOid);
+   static VarLen32 pgCallString1(VarLen32 value, uint32_t typeOid, uint32_t functionOid, uint32_t collationOid);
+   static VarLen32 pgCallString2(VarLen32 value, uint32_t typeOid, int32_t arg1, uint32_t functionOid,
+                                 uint32_t collationOid);
+   static VarLen32 pgCallString3(VarLen32 value, uint32_t typeOid, int32_t arg1, int32_t arg2, uint32_t functionOid,
+                                 uint32_t collationOid);
    static bool NO_SIDE_EFFECTS like(VarLen32 l, VarLen32 r);
    static bool NO_SIDE_EFFECTS startsWith(VarLen32 str, VarLen32 substr);
    static bool NO_SIDE_EFFECTS endsWith(VarLen32 str, VarLen32 substr);

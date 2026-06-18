@@ -278,6 +278,16 @@ static void setOriginalPgTypeAttrs(mlir::Operation* op, const char* prefix, mlir
 
 static uint32_t pgStringCompareFunctionOid(mlir::Type type, mlir::db::DBCmpPredicate predicate) {
     type = getBaseType(type);
+    if (mlir::isa<mlir::db::PgTextType, mlir::db::PgVarcharType>(type)) {
+        switch (predicate) {
+        case mlir::db::DBCmpPredicate::eq: return F_TEXTEQ;
+        case mlir::db::DBCmpPredicate::neq: return F_TEXTNE;
+        case mlir::db::DBCmpPredicate::lt: return F_TEXT_LT;
+        case mlir::db::DBCmpPredicate::gt: return F_TEXT_GT;
+        case mlir::db::DBCmpPredicate::lte: return F_TEXT_LE;
+        case mlir::db::DBCmpPredicate::gte: return F_TEXT_GE;
+        }
+    }
     if (mlir::isa<mlir::db::PgBpcharType>(type)) {
         switch (predicate) {
         case mlir::db::DBCmpPredicate::eq: return F_BPCHAREQ;
@@ -558,13 +568,19 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
        auto rightOperand = unwrapNullableOperand(rewriter, cmpOp->getLoc(), adaptor.getRight());
        Value left = leftOperand.payload;
        Value right = rightOperand.payload;
-       const uint32_t pgFunctionOid = pgStringCompareFunctionOid(type, cmpOp.getPredicate());
+       uint32_t pgFunctionOid = pgStringCompareFunctionOid(type, cmpOp.getPredicate());
+       if (auto functionOidAttr = cmpOp->getAttrOfType<mlir::IntegerAttr>("pg_function_oid")) {
+           pgFunctionOid = static_cast<uint32_t>(functionOidAttr.getUInt());
+       }
        if (mlir::db::isPgValueType(type) && pgFunctionOid != InvalidOid) {
            Value leftTypeOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgTypeOid(type), 32);
            Value rightTypeOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgTypeOid(type), 32);
            Value functionOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), pgFunctionOid, 32);
-           Value collationOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), mlir::db::getPgCollation(type),
-                                                                      32);
+           uint32_t pgCollationOid = mlir::db::getPgCollation(type);
+           if (auto collationAttr = cmpOp->getAttrOfType<mlir::IntegerAttr>("pg_input_collation_oid")) {
+               pgCollationOid = static_cast<uint32_t>(collationAttr.getUInt());
+           }
+           Value collationOid = rewriter.create<arith::ConstantIntOp>(cmpOp->getLoc(), pgCollationOid, 32);
            res = rt::StringRuntime::pgCallBool2(
                rewriter, cmpOp->getLoc())({left, leftTypeOid, right, rightTypeOid, functionOid, collationOid})[0];
        } else {
